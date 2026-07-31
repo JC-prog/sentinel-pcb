@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Project: SentinelPCB — Agentic Multi-Modal Automatic Defect Classification (ADC) platform for
+  PCB Automated Optical Inspection (AOI). NUS-ISS SWE5008 Practice Module, Team 10.
+
+  Tech stack: Python 3.12, uv (package manager), FastAPI, Pydantic + pydantic-settings,
+  LangGraph (agent orchestration), langchain-anthropic (Claude API), SQLAlchemy 2.0 async +
+  asyncpg (Postgres via Supabase, also hosts pgvector for Case Context retrieval),
+  Guardrails-AI (validates every LLM proposal as a typed object before it's trusted),
+  Streamlit (review UI prototype), pytest/pytest-asyncio/httpx, ruff + mypy strict.
+
+  Architecture: 8 specialist agents coordinated by an Orchestrator (LangGraph state machine).
+  Only 3 agents genuinely reason via a bounded ReAct-style propose-then-validate loop
+  (Orchestrator, Dataset Preparation, Explainability & Review) — everything else is
+  deterministic by design. Agents never call each other directly; the Orchestrator routes
+  every hand-off as a typed JSON envelope. Full agent-level specs (Purpose, Reasoning mode,
+  Inputs, Outputs, Tools/allowlist, Decision logic, Fallback, Acceptance criteria) already
+  exist per agent — see the sibling `pcb-ai-agent` repo's `specs/<agent>.md` files; use those
+  as the source of truth when generating a change's proposal/design/tasks, don't re-derive
+  agent behaviour from scratch.
+
+  Conventions: application code lives under `app/` (`app/agents/<agent>/` one subpackage per
+  agent, `app/tools/` tool contracts, `app/prompts/` and `app/policies/` for prompts/policies
+  respectively, `app/main.py` FastAPI entrypoint). Tests mirror this under `tests/`, outside
+  `app/`. Infra config (`Dockerfile`, etc.) lives under `infra/`; code-level docs under `docs/`.
+  Security: external text (filenames, XML, operator notes) is always treated as data, never
+  instructions; every LLM proposal is validated against a hard action allowlist before execution.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

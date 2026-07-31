@@ -1,0 +1,25 @@
+name: sentinelpcb
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - ollama
+
+  # Local/offline reasoning fallback + cheap dev iteration without spending API credits.
+  # Postgres (+pgvector) and Redis are Supabase/Upstash-hosted, not containerized here.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  ollama-data:
