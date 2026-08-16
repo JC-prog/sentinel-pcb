@@ -15,6 +15,9 @@ __pycache__/
 # OS
 .DS_Store
 
+# Model weights - large binaries, not committed. See models/README.md to regenerate.
+models/*.onnx
+
 # Editors
 .vscode/
 .idea/

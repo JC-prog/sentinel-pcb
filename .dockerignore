@@ -1,0 +1,24 @@
+# Backend image build context - keep this small and free of secrets/dev-only bulk.
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+
+# UI is a separate image (ui/Dockerfile) - never needed in the backend context.
+ui/
+
+# Docs/scaffolding not needed at runtime.
+docs/
+openspec/
+.claude/
+.codex/
+
+# Large/optional local artifacts - models/*.onnx is copied in deliberately if present
+# (see infra/Dockerfile); everything else here is dev-time only.
+ui/node_modules/

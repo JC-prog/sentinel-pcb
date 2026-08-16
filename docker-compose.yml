@@ -21,5 +21,16 @@ services:
     volumes:
       - ollama-data:/root/.ollama
 
+  # Mapped to the same :4200 the Angular dev server uses, so the backend's default
+  # cors_allow_origins (app/settings.py) works unchanged in both dev and this compose setup.
+  ui:
+    build:
+      context: ui
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - app
+
 volumes:
   ollama-data:

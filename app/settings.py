@@ -11,5 +11,18 @@ class Settings(BaseSettings):
     langsmith_project: str = "sentinel-pcb"
     ollama_base_url: str = "http://localhost:11434"
 
+    # Multi-Modal Inference: trusted ADC model (see docs/ADC-Design-Doc-Team10-V2.md §7).
+    # Exported from https://huggingface.co/JcProg/PCBInspect-AI (YOLOv12-Medium, ONNX, NMS baked
+    # in). Labels file is derived by replacing the ".onnx" suffix with ".labels.json".
+    adc_model_path: str = "models/pcb_feature_detector.onnx"
+    adc_input_size: int = 640
+    adc_detection_confidence: float = 0.25
+    """Per-box confidence floor for a detection to be reported at all - separate from the
+    policy-level auto_accept/hitl_escalation thresholds in app.policies.thresholds, which decide
+    what to *do* with the detections once we have them."""
+
+    # ui/ (Angular + Vite) dev server origin. Add the deployed origin here once one exists.
+    cors_allow_origins: list[str] = ["http://localhost:4200"]
+
 
 settings = Settings()

@@ -10,20 +10,23 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
     "guardrails-ai>=0.10.2",
+    "httpx>=0.28.1",
     "langchain-anthropic>=1.5.3",
     "langgraph>=1.2.10",
     "langsmith>=0.10.14",
+    "numpy>=2.1.0",
+    "onnxruntime>=1.20.0",
     "pgvector>=0.5.0",
+    "pillow>=11.0.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
+    "python-multipart>=0.0.20",
     "sqlalchemy[asyncio]>=2.0.51",
-    "streamlit>=1.60.0",
     "uvicorn[standard]>=0.52.0",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "mypy>=2.3.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
@@ -36,6 +39,10 @@ line-length = 100
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "onnxruntime"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

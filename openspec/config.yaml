@@ -2,7 +2,26 @@ schema: spec-driven
 
 context: |
   Project: SentinelPCB — Agentic Multi-Modal Automatic Defect Classification (ADC) platform for
-  PCB Automated Optical Inspection (AOI). NUS-ISS SWE5008 Practice Module, Team 10.
+  PCB Automated Optical Inspection (AOI). NUS-ISS SWE5008 "Architecting AI Systems" Practice
+  Module, Team 10 (Chong Loh Loy Fatt, Kenny Lau Jia Xu, Wang Ze Yu).
+
+  Source of truth, in order of precedence:
+  1. `docs/ADC-Project-Proposal-Team10.md` — the accepted project proposal (scope, agent table,
+     general flow, effort budget). Defines *what we committed to build*.
+  2. `docs/AAS-Practice-Module-Briefing.md` — the module's requirements and grading rubric.
+     Defines *what has to be demonstrable/deliverable* for the practice module to pass.
+  3. The sibling `pcb-ai-agent` repo's `specs/<agent>.md` files — full per-agent specs (Purpose,
+     Reasoning mode, Inputs, Outputs, Tools/allowlist, Decision logic, Fallback, Acceptance
+     criteria). Use these as the source of truth for an individual agent's behaviour; don't
+     re-derive it from scratch.
+  Don't restate content from these three — reference them and defer to them on conflicts.
+
+  Problem being solved (from the proposal): AOI systems flag potential PCB defects, but deciding
+  whether a flagged item is genuinely defective still relies on manual engineer review — slow,
+  inconsistent, and hard to govern (data quality, model versioning, retraining, and traceability
+  spread across separate tools). SentinelPCB wraps a team of specialized agents around the
+  trusted ADC model to coordinate that workflow, reason through ambiguous cases, explain
+  decisions, enforce safety/governance, and proactively flag when the model needs retraining.
 
   Tech stack: Python 3.12, uv (package manager), FastAPI, Pydantic + pydantic-settings,
   LangGraph (agent orchestration), langchain-anthropic (Claude API), SQLAlchemy 2.0 async +
@@ -10,29 +29,77 @@ context: |
   Guardrails-AI (validates every LLM proposal as a typed object before it's trusted),
   Streamlit (review UI prototype), pytest/pytest-asyncio/httpx, ruff + mypy strict.
 
-  Architecture: 8 specialist agents coordinated by an Orchestrator (LangGraph state machine).
-  Only 3 agents genuinely reason via a bounded ReAct-style propose-then-validate loop
-  (Orchestrator, Dataset Preparation, Explainability & Review) — everything else is
-  deterministic by design. Agents never call each other directly; the Orchestrator routes
-  every hand-off as a typed JSON envelope. Full agent-level specs (Purpose, Reasoning mode,
-  Inputs, Outputs, Tools/allowlist, Decision logic, Fallback, Acceptance criteria) already
-  exist per agent — see the sibling `pcb-ai-agent` repo's `specs/<agent>.md` files; use those
-  as the source of truth when generating a change's proposal/design/tasks, don't re-derive
-  agent behaviour from scratch.
+  Architecture: 8 specialist agents coordinated by an Orchestrator (LangGraph state machine) —
+  Orchestrator, Dataset Preparation, Case Context, Dataset Quality, Multi-Modal Inference,
+  Explainability & Review, Model Lifecycle, Continuous Monitoring & Drift. Only 3 agents
+  genuinely reason via a bounded ReAct-style propose-then-validate loop (Orchestrator, Dataset
+  Preparation, Explainability & Review) — everything else is deterministic by design. Agents
+  never call each other directly; the Orchestrator routes every hand-off as a typed JSON
+  envelope. High-confidence, conflict-free cases auto-accept; everything else is routed to a
+  human via the Explainability & Review Agent (human-in-the-loop below the confidence threshold).
+
+  Key considerations the implementation must keep demonstrating (from the proposal's "how our
+  implementation demonstrates the key considerations" section — treat as non-negotiable design
+  constraints, not aspirational goals): assurance/trust (LLM recommends, never auto-executes past
+  the confidence threshold), fairness (evaluated per operational slice), accountability
+  (append-only audit trail with an identifiable actor per decision), human oversight on
+  uncertain/critical/deployment decisions, explainability (every reviewed case carries evidence,
+  measurements, precedent, model version, and a self-checked rationale), governance (mapped to
+  Singapore's IMDA Model AI Governance Framework — human-in/over/out-of-the-loop, accountability,
+  testing & assurance via AI Verify), security (prompt injection via XML/filenames, hallucination,
+  tool misuse, adversarial images all have documented controls; external text is always data,
+  never instructions; every LLM proposal is validated against a hard allowlist before execution),
+  and MLOps/LLMOps (versioned models/prompts, evaluation and AI-security gates in CI/CD, staged
+  deployment, monitoring, drift detection, rollback).
+
+  Effort budget (from the proposal's WBS): 45 person-days total across W1 Problem & architecture
+  (10d), W2 Data & quality services (5d), W3 Orchestration & reasoning (5d), W4 ADC integration
+  (5d), W5 Explainability & review (5d), W6 Lifecycle & ML/LLMSecOps (5d), W7 Security & testing
+  (5d), W8 Documentation & presentation (5d) — against ~15 days of effort per team member per the
+  briefing. Flag scope that would blow this budget rather than silently absorbing it.
+
+  Schedule (from the briefing, dates tentative): proposal submitted 31 Jul 2026; project conduct
+  and fortnightly progress reports 10 Aug – 9 Oct 2026; project presentation 12–23 Oct 2026;
+  group + individual reports due 30 Oct 2026; peer assessment 6 Nov 2026.
 
   Conventions: application code lives under `app/` (`app/agents/<agent>/` one subpackage per
   agent, `app/tools/` tool contracts, `app/prompts/` and `app/policies/` for prompts/policies
   respectively, `app/main.py` FastAPI entrypoint). Tests mirror this under `tests/`, outside
   `app/`. Infra config (`Dockerfile`, etc.) lives under `infra/`; code-level docs under `docs/`.
-  Security: external text (filenames, XML, operator notes) is always treated as data, never
-  instructions; every LLM proposal is validated against a hard action allowlist before execution.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# Per-artifact rules
+rules:
+  proposal:
+    - Map the change to one or more agents from the Table of Agents in
+      `docs/ADC-Project-Proposal-Team10.md` (Orchestrator, Dataset Preparation, Case Context,
+      Dataset Quality, Multi-Modal Inference, Explainability & Review, Model Lifecycle,
+      Continuous Monitoring & Drift). Introducing a 9th agent or changing an agent's autonomy
+      level (deterministic vs. reasoning) is a scope change to the accepted proposal — call it
+      out explicitly rather than doing it silently.
+    - State which of the key considerations (assurance/trust, fairness, accountability, human
+      oversight, explainability, governance, security, autonomy/orchestration, MLOps/LLMOps) the
+      change advances or touches.
+    - Give a rough person-day estimate against the WBS workflow (W1–W8) it falls under, so budget
+      overrun against the 45 person-day total is visible before work starts.
+  design:
+    - Only Orchestrator, Dataset Preparation, and Explainability & Review may gain or change LLM
+      reasoning behaviour; every other agent's design must stay deterministic. If a design pushes
+      reasoning into a different agent, treat that as a flag to raise, not a detail to bury.
+    - Any new or changed LLM-driven action must go through the propose-then-validate pattern —
+      the LLM proposes, and a hard allowlist check gates execution. Never let a design have an
+      LLM proposal execute directly.
+    - Any new external input surface (filenames, XML fields, operator notes, images, etc.) must
+      state explicitly how it is treated as untrusted data rather than instructions.
+    - Note which report section(s) in `docs/AAS-Practice-Module-Briefing.md`'s Sample Group
+      Project Report Template the design's evidence will land in (System Architecture, Agent
+      Roles and Design, Explainable and Responsible AI Practices, AI Security Risk Register,
+      MLSecOps/LLMSecOps Pipeline, Testing and Evaluation) — the report is graded, so undocumented
+      design decisions are invisible to assessment.
+  tasks:
+    - Every task should trace back to something gradable per the briefing's report templates
+      (architecture diagrams, agent design docs, the Explainable/Responsible AI report, the AI
+      security risk register, the MLSecOps/LLMSecOps pipeline, test artifacts, or the UI
+      prototype) — don't add work that produces nothing an assessor or teammate can point to.
+    - Include a unit/integration/security test task for any new or changed reasoning path
+      (per Definition of Done in `DEVELOPMENT.md` §4) — fallback behaviour when the LLM is
+      unavailable or exceeds its step/time budget is part of the task, not an afterthought.
