@@ -24,5 +24,13 @@ class Settings(BaseSettings):
     # ui/ (Angular + Vite) dev server origin. Add the deployed origin here once one exists.
     cors_allow_origins: list[str] = ["http://localhost:4200"]
 
+    # Artificial pause between persisted workflow phases (app.agents.orchestrator.runner), so the
+    # Tracing view's SSE stream is visibly paced instead of flashing through states in <100ms.
+    # Off by default - set via .env for a demo.
+    demo_phase_delay_seconds: float = 0.0
+
+    # Where uploaded inspection images are stored on disk (app.agents.orchestrator.runner).
+    image_storage_dir: str = "data/images"
+
 
 settings = Settings()

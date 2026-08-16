@@ -9,11 +9,38 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Overrides whatever DATABASE_URL is in .env when running under compose, since "db" is
+      # only resolvable on the compose network - bare local dev (uv run uvicorn ...) still reads
+      # .env's own DATABASE_URL directly.
+      DATABASE_URL: postgresql+asyncpg://sentinelpcb:sentinelpcb@db:5432/sentinelpcb
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
+      db:
+        condition: service_healthy
+
+  # Local Postgres for dev/demo. Real deployments may still point DATABASE_URL at a
+  # Supabase-hosted Postgres (+pgvector) instead - this container is just for self-contained
+  # local runs, see .env.example.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinelpcb
+      POSTGRES_PASSWORD: sentinelpcb
+      POSTGRES_DB: sentinelpcb
+    ports:
+      - "5433:5432" # host 5433 to avoid clashing with any native local Postgres on 5432
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinelpcb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   # Local/offline reasoning fallback + cheap dev iteration without spending API credits.
-  # Postgres (+pgvector) and Redis are Supabase/Upstash-hosted, not containerized here.
+  # Redis is Upstash-hosted, not containerized here.
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -34,3 +61,4 @@ services:
 
 volumes:
   ollama-data:
+  db-data:

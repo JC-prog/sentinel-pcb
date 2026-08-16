@@ -18,6 +18,9 @@ __pycache__/
 # Model weights - large binaries, not committed. See models/README.md to regenerate.
 models/*.onnx
 
+# Uploaded inspection images (app.settings.image_storage_dir) - runtime data, not source.
+/data/
+
 # Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
 planning/
 
