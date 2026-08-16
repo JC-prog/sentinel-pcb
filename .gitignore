@@ -18,6 +18,9 @@ __pycache__/
 # Model weights - large binaries, not committed. See models/README.md to regenerate.
 models/*.onnx
 
+# Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
+planning/
+
 # Editors
 .vscode/
 .idea/
