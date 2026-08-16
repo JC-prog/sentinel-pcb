@@ -1,6 +1,9 @@
 """Simulation server: stands in for the AOI Camera + PLC edge (docs/ADC-Design-Doc-Team10-V2.md
 §5) until real line hardware is wired up. Loops over a directory of images, posting each to the
-ingest API at a configurable interval, and prints the Orchestrator's decision.
+queue API at a configurable interval, and prints the workflow it created.
+
+Also doubles as the seed-data script for the Queue/History views' demo content:
+    uv run python simulation/simulate_line.py --images-dir simulation/images/seed --once
 
 Usage:
     uv run python simulation/simulate_line.py
@@ -20,31 +23,42 @@ import httpx
 DEFAULT_IMAGES_DIR = Path(__file__).parent / "images"
 SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tiff"}
 
+# Demo-plausible board/component/recipe identity per image - the source dataset's own
+# annotations don't carry this, so these are just illustrative, cycled by index.
+_DEMO_BOARD_INFO = [
+    {"board_id": "MB-2024-REV3", "component_id": "R47", "recipe_id": "RCP-MB2024-R3-v5"},
+    {"board_id": "MB-2024-REV3", "component_id": "C12", "recipe_id": "RCP-MB2024-R3-v5"},
+    {"board_id": "MB-2031-REV1", "component_id": "R12", "recipe_id": "RCP-MB2031-R1-v2"},
+    {"board_id": "MB-2031-REV1", "component_id": "C08", "recipe_id": "RCP-MB2031-R1-v2"},
+]
+
 
 def _load_images(images_dir: Path) -> list[Path]:
     images = sorted(p for p in images_dir.iterdir() if p.suffix.lower() in SUPPORTED_SUFFIXES)
     if not images:
         raise SystemExit(
             f"No images found in {images_dir}. Seed it with sample PCB images - see "
-            "simulation/images/pcb-demo.png for the one currently checked in."
+            "simulation/images/pcb-demo.png for the one currently checked in, or "
+            "simulation/images/seed/ for a small real-dataset sample."
         )
     return images
 
 
-def _post_image(client: httpx.Client, base_url: str, image_path: Path) -> None:
+def _post_image(client: httpx.Client, base_url: str, image_path: Path, index: int) -> None:
+    board_info = _DEMO_BOARD_INFO[index % len(_DEMO_BOARD_INFO)]
     with image_path.open("rb") as f:
         response = client.post(
-            f"{base_url}/inspections",
+            f"{base_url}/workflows",
             files={"image": (image_path.name, f, "image/png")},
-            data={"metadata": "{}"},
+            data={**board_info, "metadata": "{}"},
             timeout=30.0,
         )
     response.raise_for_status()
     result = response.json()
     print(
         f"[{image_path.name}] workflow_id={result['workflow_id']} "
-        f"decision={result['decision']} confidence={result['overall_confidence']:.3f} "
-        f"-> {result['rationale']}"
+        f"board={result['board_id']} component={result['component_id']} "
+        f"status={result['status']}"
     )
 
 
@@ -61,9 +75,9 @@ def main() -> None:
 
     with httpx.Client() as client:
         sequence: list[Path] | itertools.cycle[Path] = images if args.once else itertools.cycle(images)
-        for image_path in sequence:
+        for index, image_path in enumerate(sequence):
             try:
-                _post_image(client, args.base_url, image_path)
+                _post_image(client, args.base_url, image_path, index)
             except httpx.ConnectError:
                 print(
                     f"Could not reach {args.base_url} - is `uv run uvicorn app.main:app` running?",
