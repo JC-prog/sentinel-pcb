@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, ViewChild } from '@angular/core';
-import { Detection } from '../inspection.service';
+import { Detection } from '../workflows.service';
 
 const LABEL_COLORS: Record<string, string> = {
   MountingHole: '#42a5f5',

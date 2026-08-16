@@ -1,13 +1,15 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { App } from './app';
+import { routes } from './app.routes';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter(routes)],
     }).compileComponents();
   });
 
@@ -17,27 +19,19 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('renders the review UI heading', async () => {
+  it('renders the app heading', () => {
     const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
+    fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('h1')?.textContent).toContain('SentinelPCB');
   });
 
-  it('disables "Run inspection" until a file is selected', async () => {
+  it('renders Queue and History nav links', () => {
     const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    const button = compiled.querySelector('button');
-    expect(button?.disabled).toBe(true);
-  });
-
-  it('shows the empty-state message before any inspection has run', async () => {
-    const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain("Run an inspection to see the Orchestrator's decision");
+    const links = Array.from(compiled.querySelectorAll('a')).map((a) => a.textContent?.trim());
+    expect(links).toContain('Queue');
+    expect(links).toContain('History');
   });
 });

@@ -1,0 +1,51 @@
+@if (workflow(); as wf) {
+  <div class="bg-slate-900 rounded-xl p-5 border border-slate-800">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-medium">
+          Tracing — {{ wf.board_id ?? wf.workflow_id }} / {{ wf.component_id ?? '—' }}
+        </h2>
+        <p class="text-xs text-slate-500 font-mono mt-1">{{ wf.workflow_id }}</p>
+      </div>
+      <span class="px-3 py-1 rounded-full text-sm font-semibold border border-indigo-500/40 bg-indigo-500/20 text-indigo-300">
+        {{ currentStatus() }}
+      </span>
+    </div>
+
+    @if (!done()) {
+      <p class="text-xs text-slate-500 mb-3">Live — watching for new state transitions…</p>
+    } @else {
+      <p class="text-xs text-slate-500 mb-3">
+        Reached a terminal state.
+        <a [routerLink]="['/board', wf.workflow_id]" class="text-indigo-400 hover:text-indigo-300">View board information →</a>
+      </p>
+    }
+
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-slate-400 border-b border-slate-800">
+          <th class="py-1.5 font-medium">Actor</th>
+          <th class="py-1.5 font-medium">Action</th>
+          <th class="py-1.5 font-medium">Transition</th>
+          <th class="py-1.5 font-medium">Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (event of events(); track event.id) {
+          <tr class="border-b border-slate-800/50">
+            <td class="py-1.5">{{ event.actor }}</td>
+            <td class="py-1.5">{{ event.action }}</td>
+            <td class="py-1.5 font-mono text-xs">{{ event.from_status ?? '∅' }} → {{ event.to_status }}</td>
+            <td class="py-1.5 text-xs text-slate-500">{{ event.created_at | date: 'HH:mm:ss.SSS' }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="4" class="py-3 text-slate-500">Waiting for the first transition…</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+} @else {
+  <p class="text-slate-500 text-sm">Loading…</p>
+}

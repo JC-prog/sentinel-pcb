@@ -1,131 +1,26 @@
-<div class="min-h-screen bg-slate-950 text-slate-100 p-6">
-  <header class="max-w-6xl mx-auto mb-6">
-    <h1 class="text-2xl font-semibold">SentinelPCB — Inspection Review</h1>
-    <p class="text-slate-400 text-sm mt-1">
-      Human-facing surface for the Orchestrator's decision. Talks to the FastAPI backend's
-      <code class="text-slate-300">/inspections</code> endpoint — the same contract
-      <code class="text-slate-300">simulation/simulate_line.py</code> uses.
-    </p>
+<div class="min-h-screen bg-slate-950 text-slate-100">
+  <header class="border-b border-slate-800">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold">SentinelPCB</h1>
+        <p class="text-slate-500 text-xs mt-0.5">Automated Optical Inspection review</p>
+      </div>
+      <nav class="flex gap-1 text-sm">
+        <a
+          routerLink="/queue"
+          routerLinkActive="bg-slate-800 text-white"
+          class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+        >Queue</a>
+        <a
+          routerLink="/history"
+          routerLinkActive="bg-slate-800 text-white"
+          class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+        >History</a>
+      </nav>
+    </div>
   </header>
 
-  <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- Input column -->
-    <section class="bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 class="text-lg font-medium mb-3">Sample</h2>
-
-      <label class="block">
-        <span class="text-sm text-slate-400">PCB image</span>
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/bmp,image/tiff"
-          (change)="onFileSelected($event)"
-          class="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
-        />
-      </label>
-
-      @if (imagePreviewUrl()) {
-        <img [src]="imagePreviewUrl()" class="mt-4 rounded-lg border border-slate-800 max-h-80 w-auto" alt="preview" />
-      }
-
-      <button
-        (click)="runInspection()"
-        [disabled]="!selectedFile() || loading()"
-        class="mt-4 w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium py-2.5 transition-colors"
-      >
-        {{ loading() ? 'Running inspection…' : 'Run inspection' }}
-      </button>
-
-      @if (error()) {
-        <p class="mt-3 text-sm text-rose-400">{{ error() }}</p>
-      }
-    </section>
-
-    <!-- Result column -->
-    <section class="bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 class="text-lg font-medium mb-3">Result</h2>
-
-      @if (latest; as result) {
-        <span
-          class="inline-block px-3 py-1 rounded-full text-sm font-semibold border {{ decisionStyles[result.decision].classes }}"
-        >
-          {{ decisionStyles[result.decision].label }}
-        </span>
-
-        <dl class="mt-4 space-y-2 text-sm">
-          <div class="flex justify-between">
-            <dt class="text-slate-400">Overall confidence</dt>
-            <dd class="font-mono">{{ result.overall_confidence | number: '1.3-3' }}</dd>
-          </div>
-          <div>
-            <dt class="text-slate-400">Rationale</dt>
-            <dd class="mt-1">{{ result.rationale }}</dd>
-          </div>
-          <div class="flex justify-between">
-            <dt class="text-slate-400">workflow_id</dt>
-            <dd class="font-mono text-xs text-slate-500">{{ result.workflow_id }}</dd>
-          </div>
-        </dl>
-
-        @if (imagePreviewUrl()) {
-          <app-bbox-overlay
-            class="block mt-4"
-            [imageUrl]="imagePreviewUrl()"
-            [detections]="result.detections"
-          ></app-bbox-overlay>
-        }
-
-        @if (result.detections.length) {
-          <table class="mt-4 w-full text-sm">
-            <thead>
-              <tr class="text-left text-slate-400 border-b border-slate-800">
-                <th class="py-1.5 font-medium">Label</th>
-                <th class="py-1.5 font-medium">Confidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (det of result.detections; track $index) {
-                <tr class="border-b border-slate-800/50">
-                  <td class="py-1.5">{{ det.label }}</td>
-                  <td class="py-1.5 font-mono">{{ det.confidence | number: '1.3-3' }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        }
-      } @else {
-        <p class="text-slate-500 text-sm">Run an inspection to see the Orchestrator's decision here.</p>
-      }
-    </section>
+  <main class="max-w-6xl mx-auto p-6">
+    <router-outlet></router-outlet>
   </main>
-
-  @if (history().length > 1) {
-    <section class="max-w-6xl mx-auto mt-6 bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 class="text-lg font-medium mb-3">Session history</h2>
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-slate-400 border-b border-slate-800">
-            <th class="py-1.5 font-medium">File</th>
-            <th class="py-1.5 font-medium">Decision</th>
-            <th class="py-1.5 font-medium">Confidence</th>
-            <th class="py-1.5 font-medium">workflow_id</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (entry of history(); track entry.workflow_id) {
-            <tr class="border-b border-slate-800/50">
-              <td class="py-1.5">{{ entry.filename }}</td>
-              <td class="py-1.5">{{ decisionStyles[entry.decision].label }}</td>
-              <td class="py-1.5 font-mono">{{ entry.overall_confidence | number: '1.3-3' }}</td>
-              <td class="py-1.5 font-mono text-xs text-slate-500">{{ entry.workflow_id }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </section>
-  }
-
-  <footer class="max-w-6xl mx-auto mt-6 text-xs text-slate-600">
-    Escalation currently stops at a decision — Explainability &amp; Review (evidence, precedent,
-    self-checked narrative) is not implemented yet. See docs/ADC-Group-Report-Team10-v1.md §4.
-  </footer>
 </div>
