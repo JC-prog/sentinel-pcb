@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agents.continuous_monitoring_drift import ObservabilityReport, compute_metrics
 from app.agents.orchestrator.runner import continue_workflow, create_workflow
 from app.db import AuditEvent, Explanation, Workflow, WorkflowStatus, get_session, init_models
 from app.db.session import async_session_factory
@@ -243,3 +244,13 @@ async def trace_workflow(workflow_id: str, session: SessionDep) -> StreamingResp
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     return StreamingResponse(_trace_stream(workflow_id), media_type="text/event-stream")
+
+
+@app.get("/observability/metrics")
+async def observability_metrics(session: SessionDep) -> ObservabilityReport:
+    """Observability view: decision distribution, confidence averages, feature/defect
+    disagreement rate, and dashboard-only threshold-breach alerts - see
+    app.agents.continuous_monitoring_drift.
+    """
+
+    return await compute_metrics(session)
