@@ -1,8 +1,8 @@
-"""Multi-Modal Inference (deterministic service): wraps the trusted ADC model.
-
-See docs/ADC-Design-Doc-Team10-V2.md §7 (interface contract) and §8 (ONNX rationale).
-"""
-
+from app.agents.multi_modal_inference.defect_classifier import (
+    DefectPrediction,
+    PlaceholderDefectClassifier,
+    get_defect_classifier,
+)
 from app.agents.multi_modal_inference.detector import (
     Detection,
     InferenceResult,
@@ -12,9 +12,12 @@ from app.agents.multi_modal_inference.detector import (
 )
 
 __all__ = [
+    "DefectPrediction",
     "Detection",
     "InferenceResult",
     "ModelNotAvailableError",
     "PCBFeatureDetector",
+    "PlaceholderDefectClassifier",
+    "get_defect_classifier",
     "get_detector",
 ]

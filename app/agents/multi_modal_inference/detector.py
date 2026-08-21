@@ -90,7 +90,9 @@ class PCBFeatureDetector:
         return tensor, r, pad_x, pad_y
 
     def predict(self, image: Image.Image, conf_threshold: float | None = None) -> InferenceResult:
-        threshold = conf_threshold if conf_threshold is not None else settings.adc_detection_confidence
+        threshold = (
+            conf_threshold if conf_threshold is not None else settings.adc_detection_confidence
+        )
 
         tensor, ratio, pad_x, pad_y = self._letterbox(image)
         (raw,) = self.session.run(None, {self.input_name: tensor})  # shape (1, 300, 6)
