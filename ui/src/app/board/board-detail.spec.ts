@@ -37,11 +37,14 @@ describe('BoardDetail', () => {
       image_filename: 'board.png',
       decision: 'auto_accept',
       overall_confidence: 0.97,
+      feature_confidence: 0.95,
+      defect_label: null,
       created_at: '2026-08-16T00:00:00Z',
       completed_at: '2026-08-16T00:00:01Z',
       metadata: {},
       detections: [],
       rationale: 'ok',
+      explanation: null,
     });
     fixture.detectChanges();
 

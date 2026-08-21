@@ -1,0 +1,85 @@
+@if (workflow(); as wf) {
+  @if (wf.explanation; as explanation) {
+    <div class="bg-slate-900 rounded-xl p-6 border border-slate-800 max-w-3xl mx-auto">
+      <div class="border-b border-slate-800 pb-4 mb-5">
+        <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">
+          Explainability &amp; Review Report
+        </p>
+        <h2 class="text-xl font-semibold">
+          {{ wf.defect_label ?? 'Unclassified' }} — {{ wf.board_id ?? '—' }} /
+          {{ wf.component_id ?? '—' }}
+        </h2>
+        <p class="text-xs text-slate-500 font-mono mt-1">{{ wf.workflow_id }}</p>
+      </div>
+
+      <section class="mb-6">
+        <h3 class="text-sm font-semibold text-slate-300 mb-2">Evidence</h3>
+        <ul class="space-y-2 text-sm">
+          @for (claim of explanation.claims; track claim.text) {
+            <li class="flex gap-2">
+              <span
+                class="mt-0.5"
+                [class.text-emerald-400]="claim.supported"
+                [class.text-rose-400]="!claim.supported"
+              >{{ claim.supported ? '✓' : '✗' }}</span>
+              <div>
+                <p>{{ claim.text }}</p>
+                <p class="text-xs text-slate-500 font-mono">{{ claim.evidence_ref }}</p>
+              </div>
+            </li>
+          }
+        </ul>
+        @if (!explanation.grounded_flag) {
+          <p class="text-xs text-amber-400 mt-2">
+            {{ explanation.stripped_claims.length }} claim(s) were stripped as unsupported.
+          </p>
+        }
+      </section>
+
+      <section class="mb-6">
+        <h3 class="text-sm font-semibold text-slate-300 mb-2">Similar past cases</h3>
+        @if (explanation.retrieved_precedents.length) {
+          <ul class="space-y-1 text-sm">
+            @for (p of explanation.retrieved_precedents; track p.workflow_id) {
+              <li>
+                <a [routerLink]="['/board', p.workflow_id]" class="text-indigo-400 hover:text-indigo-300">
+                  {{ p.board_id ?? '—' }} / {{ p.component_id ?? '—' }}
+                </a>
+                <span class="text-slate-500"> — {{ p.defect_label ?? '—' }} ({{ p.decision ?? '—' }})</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="text-slate-500 text-sm">No similar past cases yet.</p>
+        }
+      </section>
+
+      <section class="mb-6">
+        <h3 class="text-sm font-semibold text-slate-300 mb-2">Retrieved guidance</h3>
+        @if (explanation.retrieved_guidance.length) {
+          <div class="space-y-3 text-sm">
+            @for (g of explanation.retrieved_guidance; track g.title) {
+              <div>
+                <p class="font-medium">{{ g.title }}</p>
+                <p class="text-slate-400">{{ g.content }}</p>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="text-slate-500 text-sm">No guidance retrieved.</p>
+        }
+      </section>
+
+      <section class="border-t border-slate-800 pt-4">
+        <h3 class="text-sm font-semibold text-slate-300 mb-2">Recommendation</h3>
+        <p class="text-sm">{{ explanation.recommendation }}</p>
+      </section>
+    </div>
+  } @else {
+    <p class="text-slate-500 text-sm">This workflow has no report - it wasn't escalated for review.</p>
+  }
+} @else if (error()) {
+  <p class="text-rose-400 text-sm">{{ error() }}</p>
+} @else {
+  <p class="text-slate-500 text-sm">Loading…</p>
+}

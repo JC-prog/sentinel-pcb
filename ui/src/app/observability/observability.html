@@ -1,0 +1,70 @@
+@if (report(); as r) {
+  <div class="space-y-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 uppercase">Total workflows</p>
+        <p class="text-2xl font-semibold mt-1">{{ r.total_workflows }}</p>
+      </div>
+      <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 uppercase">Escalation rate</p>
+        <p class="text-2xl font-semibold mt-1">{{ r.escalation_rate | percent: '1.0-0' }}</p>
+      </div>
+      <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 uppercase">Disagreement rate</p>
+        <p class="text-2xl font-semibold mt-1">{{ r.disagreement_rate | percent: '1.0-0' }}</p>
+      </div>
+      <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+        <p class="text-xs text-slate-500 uppercase">Policy violations</p>
+        <p class="text-2xl font-semibold mt-1">{{ r.policy_violation_count }}</p>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 rounded-xl p-5 border border-slate-800">
+      <h2 class="text-lg font-medium mb-3">Decision distribution</h2>
+      <dl class="space-y-2 text-sm">
+        @for (entry of r.decision_counts | keyvalue; track entry.key) {
+          <div class="flex justify-between">
+            <dt class="text-slate-400">{{ entry.key }}</dt>
+            <dd class="font-mono">{{ entry.value }}</dd>
+          </div>
+        }
+      </dl>
+      <dl class="space-y-2 text-sm mt-4 pt-4 border-t border-slate-800">
+        <div class="flex justify-between">
+          <dt class="text-slate-400">Avg feature confidence</dt>
+          <dd class="font-mono">{{ r.avg_feature_confidence | number: '1.3-3' }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-400">Avg defect confidence</dt>
+          <dd class="font-mono">{{ r.avg_defect_confidence | number: '1.3-3' }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="bg-slate-900 rounded-xl p-5 border border-slate-800">
+      <h2 class="text-lg font-medium mb-3">Alerts</h2>
+      @if (r.alerts.length) {
+        <ul class="space-y-2 text-sm">
+          @for (alert of r.alerts; track alert.metric) {
+            <li class="flex items-start gap-2">
+              <span
+                class="px-2 py-0.5 rounded-full text-xs shrink-0"
+                [class.bg-amber-500/20]="alert.severity === 'warning'"
+                [class.text-amber-400]="alert.severity === 'warning'"
+                [class.bg-rose-500/20]="alert.severity === 'critical'"
+                [class.text-rose-400]="alert.severity === 'critical'"
+              >{{ alert.severity }}</span>
+              <span>{{ alert.message }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="text-slate-500 text-sm">No active alerts.</p>
+      }
+    </div>
+  </div>
+} @else if (error()) {
+  <p class="text-rose-400 text-sm">{{ error() }}</p>
+} @else {
+  <p class="text-slate-500 text-sm">Loading…</p>
+}

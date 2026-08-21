@@ -43,14 +43,29 @@
             <dd>{{ wf.decision }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-slate-400">Confidence</dt>
+            <dt class="text-slate-400">Defect label</dt>
+            <dd class="font-mono">{{ wf.defect_label ?? '—' }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-400">Defect confidence</dt>
             <dd class="font-mono">{{ wf.overall_confidence | number: '1.3-3' }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-400">Feature confidence</dt>
+            <dd class="font-mono">{{ wf.feature_confidence | number: '1.3-3' }}</dd>
           </div>
           <div>
             <dt class="text-slate-400">Rationale</dt>
             <dd class="mt-1">{{ wf.rationale }}</dd>
           </div>
         </dl>
+
+        @if (wf.explanation) {
+          <a
+            [routerLink]="['/report', wf.workflow_id]"
+            class="inline-block mb-4 text-indigo-400 hover:text-indigo-300 text-sm"
+          >View full report →</a>
+        }
       } @else {
         <p class="text-slate-500 text-sm mb-4">No decision yet - still in progress.</p>
       }

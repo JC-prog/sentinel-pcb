@@ -13,7 +13,10 @@ export type WorkflowState =
   | 'PREPARING'
   | 'QUALITY_CHECK'
   | 'INFERENCE'
-  | 'COMPLETED'
+  | 'POLICY_DECISION'
+  | 'ACCEPTED'
+  | 'LEARNING_QUEUE'
+  | 'EXPLANATION'
   | 'HUMAN_REVIEW'
   | 'REJECTED_QUALITY';
 
@@ -27,15 +30,49 @@ export interface WorkflowSummary {
   recipe_id: string | null;
   image_filename: string;
   decision: Decision | null;
+  /** The defect classifier's confidence - what actually gates auto-accept/escalate. */
   overall_confidence: number | null;
+  feature_confidence: number | null;
+  defect_label: string | null;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface Claim {
+  text: string;
+  supported: boolean;
+  evidence_ref: string;
+}
+
+export interface Precedent {
+  workflow_id: string;
+  board_id: string | null;
+  component_id: string | null;
+  defect_label: string | null;
+  decision: string | null;
+}
+
+export interface Guidance {
+  title: string;
+  defect_label: string | null;
+  content: string;
+}
+
+export interface Explanation {
+  claims: Claim[];
+  stripped_claims: Claim[];
+  grounded_flag: boolean;
+  recommendation: string;
+  retrieved_precedents: Precedent[];
+  retrieved_guidance: Guidance[];
+  prompt_version: string;
 }
 
 export interface WorkflowDetail extends WorkflowSummary {
   metadata: Record<string, string>;
   detections: Detection[] | null;
   rationale: string | null;
+  explanation: Explanation | null;
 }
 
 export interface BoardInfo {
@@ -65,10 +102,13 @@ export class WorkflowsService {
     return this.http.post<WorkflowSummary>(`${this.apiUrl}/workflows`, formData);
   }
 
-  /** Omit `terminal` for everything, `false` for the Queue view, `true` for History. */
-  list(terminal?: boolean): Observable<WorkflowSummary[]> {
+  /** Omit both for everything. `terminal` picks Queue (false) vs. History (true). A specific
+   * `status` (e.g. "LEARNING_QUEUE") takes precedence over `terminal`. */
+  list(terminal?: boolean, status?: WorkflowState): Observable<WorkflowSummary[]> {
     let params = new HttpParams();
-    if (terminal !== undefined) {
+    if (status !== undefined) {
+      params = params.set('status', status);
+    } else if (terminal !== undefined) {
       params = params.set('terminal', String(terminal));
     }
     return this.http.get<WorkflowSummary[]>(`${this.apiUrl}/workflows`, { params });

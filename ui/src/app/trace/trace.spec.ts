@@ -41,6 +41,8 @@ describe('Trace', () => {
       image_filename: 'board.png',
       decision: null,
       overall_confidence: null,
+      feature_confidence: null,
+      defect_label: null,
       created_at: '2026-08-16T00:00:00Z',
       completed_at: null,
     });
