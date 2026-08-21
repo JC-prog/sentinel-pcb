@@ -1,10 +1,11 @@
 [project]
 name = "sentinel-pcb"
 version = "0.1.0"
-description = "Add your description here"
+description = "Agentic multi-modal Automatic Defect Classification (ADC) platform for PCB Automated Optical Inspection (AOI)"
 authors = [
     { name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }
 ]
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "asyncpg>=0.31.0",
