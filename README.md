@@ -8,28 +8,35 @@ auto-accept vs. escalate to a human reviewer.
 Built for the NUS-ISS SWE5008 "Architecting AI Systems" Practice Module, Team 10 (Chong Loh Loy
 Fatt, Kenny Lau Jia Xu, Wang Ze Yu).
 
-> Project planning and design docs live in **this repo's `docs/`** — proposal, design doc, and
-> `docs/ADC-Group-Report-Team10-v1.md`, which doubles as the living design doc and tracks what's
-> actually implemented vs. still planned. The trusted model's source repo is the sibling
+> Project planning docs (proposal, PRD, scenarios) live in the gitignored `planning/` folder.
+> **This repo's `docs/`** holds documentation tied to the codebase itself — **`docs/USER-GUIDE.md`**
+> for how to run and use the app, `docs/AGENT-DESIGN.md`, the living as-built design doc that
+> tracks what's actually implemented vs. still planned, and `docs/MODEL-TRAINING.md` (replacing
+> the placeholder defect classifier). The trusted model's source repo is the sibling
 > `pcb-inspect-ai` (see `models/README.md`).
 
 ## Architecture, honestly
 
-Three components reason (Orchestrator, Explainability & Review, Continuous Monitoring & Drift);
-four are deterministic services the agents call (Dataset Preparation, Dataset Quality,
-Multi-Modal Inference, Model Lifecycle). Right now, only the deterministic backbone is built and
-tested end to end: **ingest → Dataset Preparation → Dataset Quality → Multi-Modal Inference →
-Orchestrator's threshold decision → auto-accept / escalate**. The reasoning agents, the human
-review handoff, and the retraining loop are designed but not yet implemented.
+One image submitted = one persisted `Workflow`, moving through
+`RECEIVED → PREPARING → QUALITY_CHECK → INFERENCE → POLICY_DECISION →` either
+`ACCEPTED → LEARNING_QUEUE` or `EXPLANATION → HUMAN_REVIEW` — see `app/agents/orchestrator/runner.py`.
+Every component in that path is real and DB-backed today: Dataset Preparation, Dataset Quality,
+and Multi-Modal Inference (a real ONNX feature detector plus a deterministic placeholder defect
+classifier) are deterministic subagents; the Orchestrator's accept/escalate decision and
+Explainability & Review's templated report (backed by Case Context, a two-source RAG tool) are
+coded as agents but run **no live LLM** — deliberately, so Continuous Monitoring & Drift's
+agent/policy-health metrics exist before any genuinely agentic reasoning does. Model Lifecycle is
+still an empty stub, and `HUMAN_REVIEW` is still a dead end (no reviewer-action endpoint, so
+escalated cases can't yet feed back into the learning queue).
 
-Full status per component: `docs/ADC-Group-Report-Team10-v1.md` §2-4 (uses a ✅/⚠️/❌ legend so
-it's clear what's real vs. aspirational).
+Full status per component, including what's deliberately deferred: `docs/AGENT-DESIGN.md`.
 
 ## Tech stack
 
 **Backend:** Python 3.12 · [uv](https://docs.astral.sh/uv/) · FastAPI · Pydantic ·
-ONNX Runtime (trusted model inference) · Pillow/NumPy · SQLAlchemy (async) + asyncpg ·
-Postgres/pgvector (Supabase, provisioned, not yet wired) · pytest · ruff + mypy (strict).
+ONNX Runtime (trusted feature-detection model) · Pillow/NumPy · SQLAlchemy (async) + asyncpg ·
+Postgres/pgvector (local via `docker compose up db`, or Supabase-hosted) · sentence-transformers
+(local embeddings for Case Context RAG — pulls in torch) · pytest · ruff + mypy (strict).
 
 **Frontend:** Angular (Vite/esbuild-based `@angular/build:application` builder) · Tailwind CSS v4 ·
 Vitest.
@@ -41,23 +48,27 @@ Langsmith (observability), Guardrails-AI.
 
 ```
 app/
-├── main.py                        # FastAPI entrypoint, POST /inspections
+├── main.py                        # FastAPI entrypoint - /workflows, /observability/metrics
 ├── settings.py                    # pydantic-settings, reads .env
-├── agents/orchestrator/           # deterministic routing + policy decision (real)
-├── agents/dataset_preparation/    # assembles a SamplePackage (real)
+├── db/                            # SQLAlchemy models (Workflow, AuditEvent, Explanation,
+│                                   #   RemediationDoc) + async session/engine (real)
+├── services/embeddings.py         # EmbeddingProvider abstraction (local sentence-transformers)
+├── agents/orchestrator/           # deterministic routing + policy decision, no LLM (real)
+├── agents/dataset_preparation/    # assembles a SamplePackage (real, always succeeds)
 ├── agents/dataset_quality/        # rule-based validation (real)
-├── agents/multi_modal_inference/  # ONNX Runtime wrapper around the trusted model (real)
-├── agents/{explainability_review,continuous_monitoring_drift,model_lifecycle,case_context}/
-│                                   # designed, not implemented yet (empty)
+├── agents/multi_modal_inference/  # ONNX feature detector + placeholder defect classifier (real)
+├── agents/explainability_review/  # templated report + case_context.py RAG tool, no LLM (real)
+├── agents/continuous_monitoring_drift/  # model + agent/policy health metrics (real)
+├── agents/model_lifecycle/        # designed, not implemented yet (empty stub)
 ├── policies/                      # hard allowlist + thresholds, versioned like prompts (real)
 └── tools/                         # per-agent tool contracts (empty - none built yet)
-tests/                             # mirrors app/
+tests/                             # mirrors app/ - DB-backed tests need `docker compose up db`
 models/                            # pcb_feature_detector.onnx (gitignored) + labels.json
 simulation/                        # simulate_line.py - stands in for the AOI camera/PLC edge
+scripts/                           # setup-dev.sh, build-prod.sh, seed_remediation_docs.py
 ui/                                # Angular review UI - see ui/README.md
 infra/Dockerfile                   # backend image
-scripts/                           # setup-dev.sh, build-prod.sh
-docs/                              # proposal, design doc, group report (design doc + tracker)
+docs/                              # AGENT-DESIGN.md (as-built), MODEL-TRAINING.md
 openspec/                          # spec-driven change tracking - see DEVELOPMENT.md
 ```
 
@@ -68,7 +79,8 @@ bash scripts/setup-dev.sh
 ```
 
 Installs backend + UI dependencies, creates `.env` from `.env.example`, checks whether the
-ADC model is present, and runs the backend test suite. Then, in two terminals:
+ADC model is present, and runs the backend test suite (DB-backed tests skip cleanly unless
+Postgres is up — `docker compose up db`). Then, in two terminals:
 
 ```bash
 uv run uvicorn app.main:app --reload   # http://localhost:8000
@@ -89,7 +101,7 @@ generate it.
 ### Docker
 
 ```bash
-docker-compose up --build   # backend (:8000) + ui (:4200) + ollama (:11434)
+docker-compose up --build   # backend (:8000) + ui (:4200) + db (:5433) + ollama (:11434)
 ```
 
 ### Production build
