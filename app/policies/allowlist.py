@@ -56,7 +56,9 @@ class PolicyViolation(Exception):
     def __init__(self, action: ProposedAction, reason: str) -> None:
         self.action = action
         self.reason = reason
-        super().__init__(f"policy violation for {action.action!r} by {action.proposed_by!r}: {reason}")
+        super().__init__(
+            f"policy violation for {action.action!r} by {action.proposed_by!r}: {reason}"
+        )
 
 
 def validate_action(action: ProposedAction) -> ProposedAction:

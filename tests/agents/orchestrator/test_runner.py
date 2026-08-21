@@ -59,6 +59,6 @@ async def test_full_pipeline_reaches_a_decision(db_session: AsyncSession) -> Non
 
     workflow = await db_session.get(Workflow, created.id)
     assert workflow is not None
-    assert workflow.status in (WorkflowStatus.COMPLETED, WorkflowStatus.HUMAN_REVIEW)
+    assert workflow.status in (WorkflowStatus.LEARNING_QUEUE, WorkflowStatus.HUMAN_REVIEW)
     assert workflow.decision in ("auto_accept", "escalate_to_human")
     assert workflow.completed_at is not None

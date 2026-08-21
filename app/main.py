@@ -11,9 +11,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator.runner import continue_workflow, create_workflow
-from app.db import AuditEvent, Workflow, WorkflowStatus, get_session, init_models
+from app.db import AuditEvent, Explanation, Workflow, WorkflowStatus, get_session, init_models
 from app.db.session import async_session_factory
 from app.settings import settings
 
@@ -48,14 +49,28 @@ class WorkflowSummary(BaseModel):
     image_filename: str
     decision: str | None
     overall_confidence: float | None
+    """The defect classifier's confidence - what actually gates auto-accept/escalate."""
+    feature_confidence: float | None
+    defect_label: str | None
     created_at: datetime
     completed_at: datetime | None
+
+
+class ExplanationOut(BaseModel):
+    claims: list[dict[str, object]]
+    stripped_claims: list[dict[str, object]]
+    grounded_flag: bool
+    recommendation: str
+    retrieved_precedents: list[dict[str, object]]
+    retrieved_guidance: list[dict[str, object]]
+    prompt_version: str
 
 
 class WorkflowDetail(WorkflowSummary):
     metadata: dict[str, str]
     detections: list[dict[str, object]] | None
     rationale: str | None
+    explanation: ExplanationOut | None
 
 
 def _to_summary(workflow: Workflow) -> WorkflowSummary:
@@ -68,8 +83,22 @@ def _to_summary(workflow: Workflow) -> WorkflowSummary:
         image_filename=workflow.image_filename,
         decision=workflow.decision,
         overall_confidence=workflow.overall_confidence,
+        feature_confidence=workflow.feature_confidence,
+        defect_label=workflow.defect_label,
         created_at=workflow.created_at,
         completed_at=workflow.completed_at,
+    )
+
+
+def _to_explanation(explanation: Explanation) -> ExplanationOut:
+    return ExplanationOut(
+        claims=explanation.claims,
+        stripped_claims=explanation.stripped_claims,
+        grounded_flag=explanation.grounded_flag,
+        recommendation=explanation.recommendation,
+        retrieved_precedents=explanation.retrieved_precedents,
+        retrieved_guidance=explanation.retrieved_guidance,
+        prompt_version=explanation.prompt_version,
     )
 
 
@@ -79,6 +108,7 @@ def _to_detail(workflow: Workflow) -> WorkflowDetail:
         metadata=workflow.metadata_json,
         detections=workflow.detections,
         rationale=workflow.rationale,
+        explanation=_to_explanation(workflow.explanation) if workflow.explanation else None,
     )
 
 
@@ -124,12 +154,17 @@ async def submit_workflow(
 async def list_workflows(
     session: SessionDep,
     terminal: bool | None = None,
+    status: str | None = None,
     limit: int = 100,
 ) -> list[WorkflowSummary]:
-    """Queue view: `terminal=false`. History view: `terminal=true`. Omit for everything."""
+    """Queue view: `terminal=false`. History view: `terminal=true`. A specific `status` (e.g.
+    `LEARNING_QUEUE`) takes precedence over `terminal`. Omit both for everything.
+    """
 
     stmt = select(Workflow).order_by(Workflow.created_at.desc()).limit(limit)
-    if terminal is True:
+    if status is not None:
+        stmt = stmt.where(Workflow.status == status)
+    elif terminal is True:
         stmt = stmt.where(Workflow.status.in_(_TERMINAL_STATUSES))
     elif terminal is False:
         stmt = stmt.where(Workflow.status.in_(_ACTIVE_STATUSES))
@@ -142,7 +177,11 @@ async def list_workflows(
 async def get_workflow(workflow_id: str, session: SessionDep) -> WorkflowDetail:
     """Board Information view + History drill-in."""
 
-    workflow = await session.get(Workflow, workflow_id)
+    # explanation is only ever accessed here (via _to_detail) - eager-load it explicitly, since
+    # a plain lazy relationship access after session.get() isn't supported under async SQLAlchemy.
+    workflow = await session.get(
+        Workflow, workflow_id, options=[selectinload(Workflow.explanation)]
+    )
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     return _to_detail(workflow)

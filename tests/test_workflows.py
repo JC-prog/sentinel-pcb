@@ -17,7 +17,9 @@ def _png_bytes(width: int = 256, height: int = 256) -> bytes:
     return buf.getvalue()
 
 
-def _wait_for_terminal(client: TestClient, workflow_id: str, timeout: float = 5.0) -> dict[str, object]:
+def _wait_for_terminal(
+    client: TestClient, workflow_id: str, timeout: float = 5.0
+) -> dict[str, object]:
     """`continue_workflow` runs as a BackgroundTask - TestClient's ASGI transport drives it to
     completion before `.post()`/`.get()` returns, but this polls defensively rather than
     assuming that timing.
@@ -26,7 +28,7 @@ def _wait_for_terminal(client: TestClient, workflow_id: str, timeout: float = 5.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         body: dict[str, object] = client.get(f"/workflows/{workflow_id}").json()
-        if body["status"] in ("COMPLETED", "HUMAN_REVIEW", "REJECTED_QUALITY"):
+        if body["status"] in ("LEARNING_QUEUE", "HUMAN_REVIEW", "REJECTED_QUALITY"):
             return body
         time.sleep(0.05)
     raise AssertionError(f"workflow {workflow_id} did not reach a terminal state in {timeout}s")
@@ -61,7 +63,7 @@ def test_submit_workflow_with_board_info_reaches_a_decision(client: TestClient) 
 
     detail = _wait_for_terminal(client, body["workflow_id"])
     assert detail["decision"] in ("auto_accept", "escalate_to_human")
-    assert detail["status"] in ("COMPLETED", "HUMAN_REVIEW")
+    assert detail["status"] in ("LEARNING_QUEUE", "HUMAN_REVIEW")
 
 
 def test_list_workflows_filters_by_terminal(client: TestClient) -> None:

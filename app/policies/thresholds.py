@@ -31,6 +31,23 @@ class Thresholds(BaseModel):
         default=0.2,
         description="Population Stability Index above this triggers a retraining proposal.",
     )
+    confidence_disagreement_delta: float = Field(
+        default=0.15,
+        description=(
+            "Above this gap between the feature detector's and defect classifier's confidence, "
+            "the two models are treated as disagreeing about this image - grounds for escalation "
+            "on its own, independent of whether defect confidence alone would have passed."
+        ),
+    )
+    max_escalation_rate: float = Field(
+        default=0.5,
+        description="Continuous Monitoring & Drift alert threshold - fraction of workflows escalated.",
+    )
+    max_disagreement_rate: float = Field(
+        default=0.2,
+        description="Continuous Monitoring & Drift alert threshold - fraction of workflows "
+        "where feature/defect confidence disagreement exceeded confidence_disagreement_delta.",
+    )
 
 
 # TODO(spec): load overrides from settings/env once per-agent specs confirm which
