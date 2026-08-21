@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +33,12 @@ class Settings(BaseSettings):
 
     # Where uploaded inspection images are stored on disk (app.agents.orchestrator.runner).
     image_storage_dir: str = "data/images"
+
+    # Case Context RAG embeddings (app.services.embeddings). "local" is the only implemented
+    # provider today - abstracted so a hosted provider (and eventually an admin panel to pick
+    # one) is a config change later, not a rewrite.
+    embedding_provider: Literal["local"] = "local"
+    embedding_model_name: str = "all-MiniLM-L6-v2"
 
 
 settings = Settings()

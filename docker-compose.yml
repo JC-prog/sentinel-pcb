@@ -22,9 +22,10 @@ services:
 
   # Local Postgres for dev/demo. Real deployments may still point DATABASE_URL at a
   # Supabase-hosted Postgres (+pgvector) instead - this container is just for self-contained
-  # local runs, see .env.example.
+  # local runs, see .env.example. pgvector/pgvector (not plain postgres) - the vector extension
+  # (Case Context RAG, app/db/models.py's Vector columns) isn't available on the stock image.
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: sentinelpcb
       POSTGRES_PASSWORD: sentinelpcb

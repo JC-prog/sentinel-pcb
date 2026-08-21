@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -29,7 +30,13 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_models() -> None:
-    """Create tables if they don't exist yet. Called once from `app/main.py`'s lifespan."""
+    """Create tables if they don't exist yet. Called once from `app/main.py`'s lifespan.
+
+    The `vector` extension must exist before any `Vector`-typed column (Workflow.embedding,
+    RemediationDoc.embedding) can be created - CREATE EXTENSION IF NOT EXISTS is itself
+    idempotent, so this is safe to run on every startup.
+    """
 
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
