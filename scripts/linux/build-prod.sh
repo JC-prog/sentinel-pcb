@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# SentinelPCB production build: backend + UI Docker images.
+# SentinelPCB production build (Linux): backend + UI Docker images.
 #
-# Usage: bash scripts/build-prod.sh [image-tag]   (default tag: latest)
+# Usage: bash scripts/linux/build-prod.sh [image-tag]   (default tag: latest)
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 TAG="${1:-latest}"
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "ERROR: docker not found. Install Docker: https://docs.docker.com/get-docker/"
+  echo "ERROR: docker not found. Install Docker Engine: https://docs.docker.com/engine/install/"
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "ERROR: Docker daemon is not running or the current user lacks permission to reach it."
+  echo "       Try: sudo systemctl start docker    (or add your user to the 'docker' group and re-login)"
   exit 1
 fi
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# SentinelPCB dev environment setup. Idempotent - safe to re-run after pulling changes.
+# SentinelPCB dev environment setup (macOS). Idempotent - safe to re-run after pulling changes.
 #
-# Usage: bash scripts/setup-dev.sh
+# Usage: bash scripts/macos/setup-dev.sh
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "==> Backend: installing Python dependencies (uv sync)"
 if ! command -v uv >/dev/null 2>&1; then
-  echo "ERROR: uv not found. Install it: https://docs.astral.sh/uv/getting-started/installation/"
+  echo "ERROR: uv not found. Install it: brew install uv"
+  echo "       (or https://docs.astral.sh/uv/getting-started/installation/)"
   exit 1
 fi
 uv sync
@@ -34,7 +35,8 @@ fi
 
 echo "==> UI: installing Node dependencies (npm install)"
 if ! command -v npm >/dev/null 2>&1; then
-  echo "ERROR: npm not found. Install Node.js: https://nodejs.org/"
+  echo "ERROR: npm not found. Install Node.js: brew install node"
+  echo "       (or https://nodejs.org/)"
   exit 1
 fi
 # --legacy-peer-deps works around an npm arborist bug (Cannot read properties of null
