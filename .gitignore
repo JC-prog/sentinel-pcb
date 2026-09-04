@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Model weights - large binaries, not committed. See models/README.md to regenerate.
+models/*.onnx
+
+# Uploaded inspection images (app.settings.image_storage_dir) - runtime data, not source.
+/data/
+
+# Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
+planning/
+
+# Editors
+.vscode/
+.idea/
