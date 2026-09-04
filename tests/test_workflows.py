@@ -80,6 +80,10 @@ def test_list_workflows_filters_by_terminal(client: TestClient) -> None:
     assert workflow_id not in active_ids
 
 
+@pytest.mark.skipif(
+    not MODEL_PATH.exists(),
+    reason="ADC model not present - see docs/ADC-Design-Doc-Team10-V2.md §8",
+)
 def test_get_workflow_image_roundtrip(client: TestClient) -> None:
     response = client.post("/workflows", files={"image": ("board.png", _png_bytes(), "image/png")})
     workflow_id = response.json()["workflow_id"]
@@ -92,3 +96,23 @@ def test_get_workflow_image_roundtrip(client: TestClient) -> None:
 def test_get_unknown_workflow_is_404(client: TestClient) -> None:
     assert client.get("/workflows/does-not-exist").status_code == 404
     assert client.get("/workflows/does-not-exist/trace").status_code == 404
+
+
+def test_query_case_context_for_unknown_workflow_is_404(client: TestClient) -> None:
+    response = client.post(
+        "/workflows/does-not-exist/case-context", json={"question": "any precedents?"}
+    )
+    assert response.status_code == 404
+
+
+def test_query_case_context_returns_precedents_and_guidance(client: TestClient) -> None:
+    response = client.post(
+        "/workflows", files={"image": ("garbage.png", b"not an image", "image/png")}
+    )
+    workflow_id = response.json()["workflow_id"]
+
+    query_response = client.post(
+        f"/workflows/{workflow_id}/case-context", json={"question": "any precedents?"}
+    )
+    assert query_response.status_code == 200
+    assert query_response.json() == {"precedents": [], "guidance": []}

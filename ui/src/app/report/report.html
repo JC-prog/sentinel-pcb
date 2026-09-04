@@ -78,6 +78,10 @@
   } @else {
     <p class="text-slate-500 text-sm">This workflow has no report - it wasn't escalated for review.</p>
   }
+
+  <div class="bg-slate-900 rounded-xl p-6 border border-slate-800 max-w-3xl mx-auto mt-4">
+    <app-case-chat [workflowId]="wf.workflow_id" />
+  </div>
 } @else if (error()) {
   <p class="text-rose-400 text-sm">{{ error() }}</p>
 } @else {
