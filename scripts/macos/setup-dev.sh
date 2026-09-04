@@ -23,6 +23,28 @@ else
   echo "==> .env already exists, leaving it alone"
 fi
 
+echo "==> Checking Docker (needed for the local Postgres/pgvector container)"
+if ! command -v docker >/dev/null 2>&1; then
+  echo "ERROR: docker not found. Install Docker Desktop for Mac: https://docs.docker.com/desktop/install/mac-install/"
+  exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+  echo "ERROR: Docker daemon is not running."
+  echo "       Start Docker Desktop (open -a Docker) and wait for it to finish starting, then retry."
+  exit 1
+fi
+
+echo "==> Starting local Postgres/pgvector (docker compose up -d --wait db)"
+docker compose up -d --wait db
+
+echo "==> Checking for Ollama (http://localhost:11434)"
+if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
+  echo "    Found - local reasoning fallback is available."
+else
+  echo "    Not found. Install it if you'll be iterating on a reasoning agent: https://ollama.com"
+  echo "    (not required to run the rest of the app)"
+fi
+
 echo "==> Checking for the ADC model (models/pcb_feature_detector.onnx)"
 if [ ! -f models/pcb_feature_detector.onnx ]; then
   echo "    NOT FOUND - Multi-Modal Inference (and anything that calls it) will fail until this"
@@ -49,7 +71,8 @@ uv run mypy .
 uv run pytest -q
 
 echo ""
-echo "Setup complete. To run the app:"
+echo "Setup complete. Postgres/pgvector is running in Docker (docker compose down to stop it)."
+echo "To run the app:"
 echo "  terminal 1: uv run uvicorn app.main:app --reload         # http://localhost:8000"
 echo "  terminal 2: cd ui && npm start                           # http://localhost:4200"
 echo "  optional:   uv run python simulation/simulate_line.py    # simulated AOI camera"

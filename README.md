@@ -81,9 +81,11 @@ bash scripts/linux/setup-dev.sh              # Linux
 powershell -File scripts\windows\setup-dev.ps1  # Windows
 ```
 
-Installs backend + UI dependencies, creates `.env` from `.env.example`, checks whether the
-ADC model is present, and runs the backend test suite (DB-backed tests skip cleanly unless
-Postgres is up — `docker compose up db`). Then, in two terminals:
+Installs backend + UI dependencies, creates `.env` from `.env.example`, starts a local
+Postgres/pgvector container (`docker compose up -d --wait db`), checks whether the ADC model and
+Ollama are present, and runs the full backend test suite against that database. First time in the
+repo? See [`docs/DEV-ENVIRONMENT-SETUP.md`](docs/DEV-ENVIRONMENT-SETUP.md) for prerequisites and a
+step-by-step walkthrough. Then, in two terminals:
 
 ```bash
 uv run uvicorn app.main:app --reload   # http://localhost:8000

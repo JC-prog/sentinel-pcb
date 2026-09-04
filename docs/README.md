@@ -2,6 +2,8 @@
 
 Code-level/repo documentation (setup notes, ADRs, API docs) lives here.
 
+- **`DEV-ENVIRONMENT-SETUP.md`** — step-by-step environment setup and prerequisites, for someone
+  new to the repo getting their dev environment running for the first time.
 - **`USER-GUIDE.md`** — how to run the app and use it (UI + API), for someone who just wants to
   submit an inspection and read the result.
 - **`AGENT-DESIGN.md`** — as-built architecture: what's actually implemented vs. still planned.
