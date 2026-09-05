@@ -36,3 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ongoing context) across separate conversations, not just within one. Say `/remember <text>` in
   chat to save something explicitly, or let it pick things up on its own as you chat. Backed by
   Qdrant; disable with `MEMORY_ENABLED=False` if it ever needs to be turned off without a deploy.
+- Explainability & Review Agent: `POST /api/agents/explainability-review` diagnoses a PCB
+  component defect from an inspection image, combining GPT-4o visual evidence, historical defect
+  precedents, IPC-A-610 standards, and AOI/ICT telemetry into a grounded root-cause explanation.
+  Accepts a bring-your-own OpenAI key per request, or falls back to
+  `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; disable with `EXPLAINABILITY_AGENT_ENABLED=False`.

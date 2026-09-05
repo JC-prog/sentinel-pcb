@@ -66,5 +66,18 @@ class Settings(BaseSettings):
     # API are served over HTTPS from one CloudFront domain (infra/production/static_site.tf).
     cookie_secure: bool = False
 
+    # Explainability & Review Agent (app/agents/explainability_review_agent/) - POST
+    # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled.
+    explainability_agent_enabled: bool = True
+    # Server-side fallback OpenAI key for this agent only, used when a request doesn't supply
+    # its own bring-your-own-key (ExplainabilityReviewRequest.openai_api_key). Unlike chat, this
+    # agent doesn't have a UI to enter a key into yet, so a fallback is what makes it usable at
+    # all before that exists. Empty by default - never commit a real value.
+    explainability_agent_openai_api_key: str = ""
+    # PCB images (inputs/, admin-provided), the IPC-A-610 reference JSON (ipc_standards/,
+    # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
+    # cwd-relative convention as chat_upload_dir.
+    explainability_agent_data_dir: str = "data/images"
+
 
 settings = Settings()

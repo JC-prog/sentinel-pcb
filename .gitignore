@@ -15,8 +15,16 @@ __pycache__/
 # OS
 .DS_Store
 
-# Uploaded chat images (app.settings.chat_upload_dir) and other runtime data - not source.
-/data/
+# Uploaded chat images (app.settings.chat_upload_dir) - runtime data, not source.
+/data/uploads/
+
+# Explainability & Review Agent (app.settings.explainability_agent_data_dir) - PCB images,
+# generated telemetry, and the embedded Qdrant DB are runtime data, not source. ipc_standards/ is
+# a committed reference document, so it's excluded from this ignore.
+/data/images/inputs/*
+!/data/images/inputs/.gitkeep
+/data/images/outputs/
+/data/images/qdrant_db/
 
 # Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
 planning/
