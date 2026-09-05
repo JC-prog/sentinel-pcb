@@ -14,7 +14,7 @@ INPUT_DIR = r"..\inputs"
 COLLECTION_NAME = "pcb_defects"
 BATCH_SIZE = 32
 
-client = QdrantClient(url="http://localhost:6333")
+client = QdrantClient(path="./qdrant_db")
 encoder = SentenceTransformer("clip-ViT-B-32")
 
 # ----------------------------------------------------
