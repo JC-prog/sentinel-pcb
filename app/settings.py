@@ -28,5 +28,9 @@ class Settings(BaseSettings):
     # database too.
     database_url: str = ""
 
+    # Vector store (infra/development/docker-compose.yml's "qdrant" service) for a future
+    # RAG/semantic-search feature - also provisioned ahead of need, no code reads this yet.
+    qdrant_url: str = "http://localhost:6333"
+
 
 settings = Settings()

@@ -52,8 +52,8 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Starting local Postgres (docker compose up -d --wait db)"
-docker compose -f infra/development/docker-compose.yml up -d --wait db
+echo "==> Starting local Postgres + Qdrant (docker compose up -d --wait db qdrant)"
+docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant
 
 echo "==> Checking for Ollama (http://localhost:11434)"
 if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
@@ -85,7 +85,7 @@ echo "==> UI checks (unit tests)"
 (cd ui && npx ng test --watch=false)
 
 echo ""
-echo "Setup complete. Postgres is running in Docker (docker compose -f infra/development/docker-compose.yml down to stop it)."
+echo "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml down to stop them)."
 echo "To run the app:"
 echo "  terminal 1: uv run uvicorn app.main:app --reload   # http://localhost:8000"
 echo "  terminal 2: cd ui && npm start                     # http://localhost:4200"

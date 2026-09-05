@@ -10,10 +10,10 @@ bash infra/development/scripts/unix/setup-dev.sh        # macOS/Linux
 powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
-Installs backend + UI dependencies, creates `.env` from `.env.example`, and starts a local
-Postgres container (`docker compose -f infra/development/docker-compose.yml up -d --wait db`) -
-provisioned ahead of the multi-user/auth work this project is heading towards; nothing reads it
-yet. Then, in two terminals:
+Installs backend + UI dependencies, creates `.env` from `.env.example`, and starts local
+Postgres and Qdrant containers (`docker compose -f infra/development/docker-compose.yml up -d
+--wait db qdrant`) - both provisioned ahead of need (multi-user/auth work, and a future
+RAG/semantic-search feature, respectively); nothing reads either yet. Then, in two terminals:
 
 ```bash
 uv run uvicorn app.main:app --reload   # http://localhost:8000
