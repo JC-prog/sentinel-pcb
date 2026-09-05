@@ -11,23 +11,25 @@ from app.auth.security import (
     new_refresh_token,
     verify_password,
 )
+from app.core.auth import (
+    EmailAlreadyRegistered,
+    EmployeeIdAlreadyRegistered,
+    InvalidCredentials,
+    InvalidRefreshToken,
+)
 from app.db.models import RefreshToken, User, UserRole
 
-
-class EmailAlreadyRegistered(Exception):
-    pass
-
-
-class EmployeeIdAlreadyRegistered(Exception):
-    pass
-
-
-class InvalidCredentials(Exception):
-    pass
-
-
-class InvalidRefreshToken(Exception):
-    pass
+__all__ = [
+    "EmailAlreadyRegistered",
+    "EmployeeIdAlreadyRegistered",
+    "InvalidCredentials",
+    "InvalidRefreshToken",
+    "authenticate_user",
+    "issue_tokens",
+    "register_user",
+    "revoke_refresh_token",
+    "rotate_refresh_token",
+]
 
 
 async def register_user(session: AsyncSession, data: RegisterRequest) -> User:

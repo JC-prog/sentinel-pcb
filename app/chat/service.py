@@ -1,15 +1,11 @@
-from collections.abc import AsyncGenerator
-from typing import Protocol
-
 from pydantic import SecretStr
 
 from app.chat.providers.ollama import OllamaChatService
 from app.chat.providers.openai import OpenAiChatService
 from app.chat.schemas import LlmProvider
+from app.core.chat import ChatService
 
-
-class ChatService(Protocol):
-    def stream_reply(self, message: str, image_ids: list[str]) -> AsyncGenerator[str, None]: ...
+__all__ = ["ChatService", "get_chat_service"]
 
 
 def get_chat_service(provider: LlmProvider, openai_api_key: SecretStr | None) -> ChatService:
