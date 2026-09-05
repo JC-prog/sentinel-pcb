@@ -18,8 +18,7 @@ import argparse
 import asyncio
 import getpass
 
-from sqlalchemy import select
-
+from app.auth import repository
 from app.auth.security import hash_password
 from app.db.base import Base
 from app.db.models import User, UserRole
@@ -33,10 +32,10 @@ async def create_or_promote_admin(
         await conn.run_sync(Base.metadata.create_all)
 
     async with async_session_factory() as session:
-        existing = await session.scalar(select(User).where(User.email == email))
+        existing = await repository.get_user_by_email(session, email)
         if existing is not None:
             existing.role = UserRole.ADMIN
-            await session.commit()
+            await repository.save_user(session, existing)
             print(f"Promoted existing user {email!r} to Admin.")
             return
 
@@ -48,8 +47,7 @@ async def create_or_promote_admin(
             department_shift=department_shift,
             role=UserRole.ADMIN,
         )
-        session.add(user)
-        await session.commit()
+        await repository.add_user(session, user)
         print(f"Created Admin user {email!r}.")
 
 
