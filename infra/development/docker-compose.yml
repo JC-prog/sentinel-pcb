@@ -1,0 +1,86 @@
+# Project name - namespaces every container/network/volume from this stack under "sentinelchat"
+# so it never collides with another project's stack (e.g. the older sentinel-pcb PCB app) running
+# on the same machine. `docker ps` / `docker volume ls` will show everything prefixed accordingly.
+name: sentinelchat
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    labels:
+      project: sentinelchat
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../.env
+    environment:
+      # Overrides whatever DATABASE_URL is in .env when running under compose, since "db" is
+      # only resolvable on the compose network - bare local dev (uv run uvicorn ...) still reads
+      # .env's own DATABASE_URL directly (localhost:5433).
+      DATABASE_URL: postgresql+asyncpg://sentinelchat:sentinelchat@db:5432/sentinelchat
+      # Ollama runs natively on the host (not containerized - see the note below), and inside a
+      # container "localhost" means the container itself, not the host - host.docker.internal is
+      # the container's route back to the host.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      QDRANT_URL: http://qdrant:6333
+    extra_hosts:
+      # host.docker.internal is built into Docker Desktop (Mac/Windows); on Linux it needs this
+      # explicit mapping to the host gateway.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  # Local Postgres for dev. Not used by any application code yet (the chat app is stateless
+  # today - see app/settings.py's database_url) - provisioned ahead of the multi-user/auth work
+  # this project is heading towards, so it's already there when that lands.
+  db:
+    image: postgres:16-alpine
+    labels:
+      project: sentinelchat
+    environment:
+      POSTGRES_USER: sentinelchat
+      POSTGRES_PASSWORD: sentinelchat
+      POSTGRES_DB: sentinelchat
+    ports:
+      - "5433:5432" # host 5433 to avoid clashing with any native local Postgres on 5432
+    volumes:
+      - sentinelchat-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinelchat"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Vector store for a future RAG/semantic-search feature - provisioned ahead of need, like "db"
+  # above; no application code reads it yet. No official healthcheck here since the image ships
+  # neither curl nor wget to probe its own REST API with.
+  qdrant:
+    image: qdrant/qdrant:latest
+    labels:
+      project: sentinelchat
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - sentinelchat-qdrant-data:/qdrant/storage
+
+  # Full containerized UI for a quick end-to-end smoke test. The primary dev loop is still
+  # `npm start` (hot reload) - see README.md.
+  ui:
+    build:
+      context: ../../ui
+      dockerfile: Dockerfile
+    labels:
+      project: sentinelchat
+    ports:
+      - "4200:80"
+    depends_on:
+      - app
+
+volumes:
+  sentinelchat-db-data:
+  sentinelchat-qdrant-data:

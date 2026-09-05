@@ -21,6 +21,18 @@ __pycache__/
 # Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
 planning/
 
+# Terraform (infra/production/) - local provider cache and any local state/plan output.
+# .terraform.lock.hcl (provider version pins) is NOT ignored - that's meant to be committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # Editors
 .vscode/
 .idea/

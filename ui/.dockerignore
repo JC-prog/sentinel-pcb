@@ -1,0 +1,5 @@
+# Reinstalled fresh inside the image (npm ci) - copying the host's node_modules in over that
+# would clobber it with possibly host-platform-specific binaries.
+node_modules/
+dist/
+.angular/
