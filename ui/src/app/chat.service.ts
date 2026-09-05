@@ -111,29 +111,59 @@ export class ChatService {
     return id;
   }
 
+  /**
+   * The responder streams the reply as zero or more chunks. The first chunk creates the
+   * assistant message; every chunk after that appends to it, so the UI renders the reply
+   * arriving incrementally instead of waiting for the whole thing.
+   */
   private awaitReply(conversationId: string, text: string, images: File[]): void {
     this.loadingIds.update((ids) => new Set(ids).add(conversationId));
-    this.responder.respond(text, images).subscribe((reply) => {
+    let assistantMessageId: string | null = null;
+
+    const appendChunk = (chunk: string): void => {
       const now = this.now();
-      const assistantMessage: ChatMessage = {
-        id: newId(),
-        role: 'assistant',
-        content: reply,
-        createdAt: now,
-      };
       this.conversations.update((all) =>
-        all.map((c) =>
-          c.id === conversationId
-            ? { ...c, messages: [...c.messages, assistantMessage], updatedAt: now }
-            : c,
-        ),
+        all.map((c) => {
+          if (c.id !== conversationId) {
+            return c;
+          }
+          if (assistantMessageId === null) {
+            assistantMessageId = newId();
+            const assistantMessage: ChatMessage = {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: chunk,
+              createdAt: now,
+            };
+            return { ...c, messages: [...c.messages, assistantMessage], updatedAt: now };
+          }
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMessageId ? { ...m, content: m.content + chunk } : m,
+            ),
+            updatedAt: now,
+          };
+        }),
       );
+    };
+
+    const finish = (): void => {
       this.loadingIds.update((ids) => {
         const next = new Set(ids);
         next.delete(conversationId);
         return next;
       });
       this.persist();
+    };
+
+    this.responder.respond(conversationId, text, images).subscribe({
+      next: appendChunk,
+      error: () => {
+        appendChunk('Sorry, something went wrong reaching the assistant.');
+        finish();
+      },
+      complete: finish,
     });
   }
 

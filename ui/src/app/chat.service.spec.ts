@@ -1,4 +1,4 @@
-import { of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { ChatResponder } from './chat-responder';
 import { ChatService } from './chat.service';
@@ -39,25 +39,40 @@ describe('ChatService', () => {
   });
 
   it('sets isLoading while awaiting a reply and clears it once resolved', () => {
-    // A responder that never emits, so we can observe the loading state mid-flight.
-    let resolve!: (value: string) => void;
-    const pending = new Promise<string>((r) => (resolve = r));
-    const slowResponder: ChatResponder = {
-      respond: () => ({
-        subscribe: (cb: (v: string) => void) => {
-          pending.then(cb);
-        },
-      }) as any,
-    };
-    const slowService = new ChatService(slowResponder);
+    const chunks = new Subject<string>();
+    const slowService = new ChatService({ respond: () => chunks.asObservable() });
 
     const id = slowService.send(null, 'hi', []);
     expect(slowService.isLoading(id)()).toBe(true);
 
-    resolve('done');
-    return pending.then(() => {
-      expect(slowService.isLoading(id)()).toBe(false);
-    });
+    chunks.next('done');
+    chunks.complete();
+    expect(slowService.isLoading(id)()).toBe(false);
+  });
+
+  it('accumulates streamed chunks into a single assistant message as they arrive', () => {
+    const chunks = new Subject<string>();
+    const streamingService = new ChatService({ respond: () => chunks.asObservable() });
+
+    const id = streamingService.send(null, 'hi', []);
+    chunks.next('Hel');
+    expect(streamingService.get(id)()?.messages[1].content).toBe('Hel');
+
+    chunks.next('lo');
+    chunks.complete();
+    expect(streamingService.get(id)()?.messages[1].content).toBe('Hello');
+    expect(streamingService.get(id)()?.messages.length).toBe(2);
+  });
+
+  it('appends a fallback message and clears loading when the responder errors', () => {
+    const erroringService = new ChatService({ respond: () => throwError(() => new Error('boom')) });
+
+    const id = erroringService.send(null, 'hi', []);
+
+    const conversation = erroringService.get(id)();
+    expect(conversation?.messages[1].role).toBe('assistant');
+    expect(conversation?.messages[1].content).toContain('went wrong');
+    expect(erroringService.isLoading(id)()).toBe(false);
   });
 
   it('creates object URLs for attached images on the user message', () => {
