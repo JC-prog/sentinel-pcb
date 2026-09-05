@@ -53,11 +53,19 @@ cd ui && npx ng test --watch=false && npx ng build
   point - `HttpChatResponder` talks to the real backend, `MockChatResponder` is a fallback/test
   double. Both stream multiple chunks rather than returning one value; `ChatService` accumulates
   them into the assistant message as they arrive.
+- **Memory**: two tiers, both server-side and scoped per account. Short-term (per-conversation)
+  memory is `Conversation`/`Message` rows in Postgres (`app/db/models/chat.py`), assembled back
+  into context for each reply by `app/chat/history.py`. Long-term (cross-conversation) memory
+  lives in Qdrant behind the `MemoryStore` interface (`app/core/memory.py`) - `app/memory/`
+  extracts durable facts from a conversation and retrieves them for a new one; `MEMORY_ENABLED`
+  is a kill switch, and `app/memory/qdrant_store.py` is the only file that knows it's Qdrant, so
+  swapping the store later doesn't touch the rest of the app.
+- **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
+  model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
+  startup for local/test convenience; a real deploy's schema is Alembic's migration history.
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
-  (Terraform - see its own README). Local dev's Postgres and Qdrant are both provisioned ahead of
-  need - no application code reads them yet (see `CHANGELOG.md` and the settings fields' comments
-  in `app/settings.py` for what they're earmarked for).
+  (Terraform - see its own README).
 
 ## 4. Known gotchas
 
@@ -73,6 +81,10 @@ cd ui && npx ng test --watch=false && npx ng build
   routes both the UI and `/api/*` through one CloudFront distribution specifically so the ALB
   (which has no cert) is never called directly from the browser. Don't add a second, separate
   CloudFront distribution or point the UI at the ALB's own domain - see that file's comments.
+- **Long-term memory needs an embedding model actually pulled**: `OLLAMA_EMBEDDING_MODEL`
+  (default `nomic-embed-text`) isn't auto-pulled - run `ollama pull nomic-embed-text` (or set the
+  env var to a model you've already pulled, e.g. `mxbai-embed-large`) or extraction/retrieval
+  will silently no-op (logged, not raised - see `app/memory/service.py`).
 
 ## 5. Definition of Done (per PR)
 

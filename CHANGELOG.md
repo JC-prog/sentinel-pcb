@@ -28,3 +28,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   httpOnly cookies. The public registration form only offers QA or Operator - the very first
   account ever created becomes Admin automatically; `scripts/create_admin_user.py` creates or
   promotes any account to Admin after that. The chat itself now requires being logged in.
+- Chat now remembers the conversation so far: replies take prior turns in the same conversation
+  into account instead of treating every message as a one-off. Conversations and their messages
+  are persisted server-side and scoped per account, so they survive a reload and follow you to
+  any device you're logged in on, instead of living only in that browser's local storage.
+- Long-term memory: the assistant can recall durable facts about you (stated preferences,
+  ongoing context) across separate conversations, not just within one. Say `/remember <text>` in
+  chat to save something explicitly, or let it pick things up on its own as you chat. Backed by
+  Qdrant; disable with `MEMORY_ENABLED=False` if it ever needs to be turned off without a deploy.

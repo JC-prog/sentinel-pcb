@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 
 import httpx
 
+from app.core.chat import ChatTurn
 from app.settings import settings
 
 
@@ -12,15 +13,25 @@ class OllamaChatService:
     response body is newline-delimited JSON, one object per token/chunk, ending with
     `"done": true`."""
 
-    async def stream_reply(self, message: str, image_ids: list[str]) -> AsyncGenerator[str, None]:
+    async def stream_reply(
+        self,
+        history: list[ChatTurn],
+        message: str,
+        image_ids: list[str],
+        system_prompt: str | None = None,
+    ) -> AsyncGenerator[str, None]:
+        messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+        messages += [{"role": turn.role, "content": turn.content} for turn in history]
+        messages.append({"role": "user", "content": message})
         payload = {
             "model": settings.ollama_model,
-            "messages": [{"role": "user", "content": message}],
+            "messages": messages,
             "stream": True,
         }
-        async with httpx.AsyncClient(timeout=60.0) as client, client.stream(
-            "POST", f"{settings.ollama_base_url}/api/chat", json=payload
-        ) as response:
+        async with (
+            httpx.AsyncClient(timeout=60.0) as client,
+            client.stream("POST", f"{settings.ollama_base_url}/api/chat", json=payload) as response,
+        ):
             if response.status_code != 200:
                 body = await response.aread()
                 raise RuntimeError(

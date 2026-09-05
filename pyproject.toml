@@ -1,6 +1,6 @@
 [project]
 name = "sentinel-chat"
-version = "0.3.0"
+version = "0.4.0"
 description = "FastAPI backend for the SentinelChat UI - SSE chat streaming and image uploads."
 authors = [
     { name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }
@@ -8,6 +8,7 @@ authors = [
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.19.2",
     "asyncpg>=0.31.0",
     "bcrypt>=5.0.0",
     "email-validator>=2.2.0",
@@ -17,6 +18,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.11.0",
     "python-multipart>=0.0.20",
+    "qdrant-client>=1.19.0",
     "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn[standard]>=0.52.0",
 ]

@@ -50,6 +50,13 @@ export class Chat {
     });
 
     effect(() => {
+      const id = this.conversationId();
+      if (id) {
+        this.chatService.ensureLoaded(id);
+      }
+    });
+
+    effect(() => {
       this.conversation();
       this.isLoading();
       queueMicrotask(() => this.scrollAnchor?.nativeElement.scrollIntoView?.({ block: 'end' }));

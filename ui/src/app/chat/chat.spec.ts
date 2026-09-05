@@ -3,6 +3,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { Chat } from './chat';
+import { AuthService, AuthUser } from '../auth.service';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
 
@@ -11,6 +12,23 @@ class FakeActivatedRoute {
   constructor(params: Record<string, string> = {}) {
     this.paramMap = of(convertToParamMap(params));
   }
+}
+
+const USER: AuthUser = {
+  id: 'user-1',
+  name: 'Jane QA',
+  email: 'jane@example.com',
+  employeeId: 'EMP-042',
+  departmentShift: 'QA Day Shift',
+  role: 'qa',
+};
+
+/** Same reasoning as chat.service.spec.ts's fakeAuthService(). */
+function fakeAuthService(): AuthService {
+  return {
+    currentUser: () => USER,
+    fetchWithAuth: vi.fn().mockResolvedValue({ ok: false } as Response),
+  } as unknown as AuthService;
 }
 
 describe('Chat', () => {
@@ -26,6 +44,7 @@ describe('Chat', () => {
       providers: [
         provideRouter([]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: AuthService, useValue: fakeAuthService() },
         { provide: ActivatedRoute, useValue: route },
       ],
     }).compileComponents();
@@ -62,9 +81,16 @@ describe('Chat', () => {
   });
 
   it('renders existing messages and the mocked assistant reply', async () => {
-    const chatServiceProbe = new ChatService({ respond: () => of('mock reply') });
+    await TestBed.configureTestingModule({
+      providers: [
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: AuthService, useValue: fakeAuthService() },
+      ],
+    }).compileComponents();
+    const chatServiceProbe = TestBed.inject(ChatService);
     const id = chatServiceProbe.send(null, 'Hello', []);
 
+    TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [Chat],
       providers: [
