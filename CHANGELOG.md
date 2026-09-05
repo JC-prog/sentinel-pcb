@@ -19,3 +19,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - LLM provider selection in a new Settings panel: a local Ollama model, or OpenAI with a
   user-supplied, bring-your-own API key that stays in the browser and is sent with each request,
   never stored on the server.
+- Local development environment under `infra/development/`: a Docker Compose stack (Postgres and
+  Qdrant, both provisioned ahead of need for planned future work) plus per-OS setup scripts.
+- Production infrastructure under `infra/production/` (Terraform): ECS Fargate, RDS, ECR, and
+  S3 with CloudFront for the AWS deployment, once that work is picked up.
