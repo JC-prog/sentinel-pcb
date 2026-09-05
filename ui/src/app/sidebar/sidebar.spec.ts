@@ -1,10 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
+import { vi } from 'vitest';
 import { Sidebar } from './sidebar';
+import { AuthService, AuthUser } from '../auth.service';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
 import { SettingsService } from '../settings.service';
+
+const USER: AuthUser = {
+  id: 'user-1',
+  name: 'Jane QA',
+  email: 'jane@example.com',
+  employeeId: 'EMP-042',
+  departmentShift: 'QA Day Shift',
+  role: 'qa',
+};
 
 describe('Sidebar', () => {
   let component: Sidebar;
@@ -79,5 +90,26 @@ describe('Sidebar', () => {
     settingsButton.click();
 
     expect(settingsService.isOpen()).toBe(true);
+  });
+
+  it('does not show user info when not logged in', () => {
+    expect(fixture.nativeElement.textContent).not.toContain('Log out');
+  });
+
+  it('shows the logged-in user and logs out on click', () => {
+    const authService = TestBed.inject(AuthService);
+    authService.currentUser.set(USER);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Jane QA');
+    expect(fixture.nativeElement.textContent).toContain('qa');
+
+    const logoutSpy = vi.spyOn(authService, 'logout').mockResolvedValue(undefined);
+    const logoutButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (btn) => (btn as HTMLElement).textContent?.includes('Log out'),
+    ) as HTMLElement;
+    logoutButton.click();
+
+    expect(logoutSpy).toHaveBeenCalled();
   });
 });

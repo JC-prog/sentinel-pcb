@@ -1,0 +1,56 @@
+<div
+  class="flex h-screen w-screen items-center justify-center bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form
+    class="w-full max-w-sm rounded-2xl border border-slate-200 p-6 dark:border-slate-800"
+    (ngSubmit)="submit()"
+  >
+    <h1 class="mb-6 text-xl font-semibold">Log in</h1>
+
+    @if (error()) {
+      <p class="mb-4 rounded-lg bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+        {{ error() }}
+      </p>
+    }
+
+    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="email">
+      Email
+    </label>
+    <input
+      id="email"
+      type="email"
+      required
+      autocomplete="email"
+      class="mb-4 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700"
+      [ngModel]="email()"
+      (ngModelChange)="email.set($event)"
+      name="email"
+    />
+
+    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="password">
+      Password
+    </label>
+    <input
+      id="password"
+      type="password"
+      required
+      autocomplete="current-password"
+      class="mb-6 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700"
+      [ngModel]="password()"
+      (ngModelChange)="password.set($event)"
+      name="password"
+    />
+
+    <button
+      type="submit"
+      [disabled]="submitting()"
+      class="mb-4 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+    >
+      {{ submitting() ? 'Logging in…' : 'Log in' }}
+    </button>
+
+    <p class="text-center text-sm text-slate-500 dark:text-slate-400">
+      No account? <a routerLink="/register" class="underline">Register</a>
+    </p>
+  </form>
+</div>

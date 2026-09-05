@@ -22,15 +22,24 @@ class Settings(BaseSettings):
     # name is configured here.
     openai_model: str = "gpt-4o-mini"
 
-    # Provisioned (infra/development/docker-compose.yml's "db" service, infra/production/rds.tf)
-    # ahead of need - no code reads this yet. The app is stateless today; this is here for the
-    # multi-user/auth work planned for later, so that feature isn't blocked on standing up a
-    # database too.
+    # Postgres (infra/development/docker-compose.yml's "db" service, infra/production/rds.tf) -
+    # now used by app/db/ for authentication (app/auth/).
     database_url: str = ""
 
     # Vector store (infra/development/docker-compose.yml's "qdrant" service) for a future
-    # RAG/semantic-search feature - also provisioned ahead of need, no code reads this yet.
+    # RAG/semantic-search feature - still provisioned ahead of need, no code reads this yet.
     qdrant_url: str = "http://localhost:6333"
+
+    # Auth (app/auth/). Empty by default - the app refuses to issue tokens without a real secret;
+    # generate one with `python -c "import secrets; print(secrets.token_hex(32))"` and set it in
+    # .env. Never commit a real value.
+    jwt_secret_key: str = ""
+    jwt_access_token_expires_minutes: int = 15
+    jwt_refresh_token_expires_days: int = 7
+
+    # False in dev (plain HTTP over localhost); set True in production's .env, where the UI and
+    # API are served over HTTPS from one CloudFront domain (infra/production/static_site.tf).
+    cookie_secure: bool = False
 
 
 settings = Settings()

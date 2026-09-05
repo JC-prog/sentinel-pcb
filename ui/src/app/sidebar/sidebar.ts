@@ -1,5 +1,6 @@
 import { Component, Signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { AuthService } from '../auth.service';
 import { ChatService } from '../chat.service';
 import { Conversation } from '../models/chat.models';
 import { SettingsService } from '../settings.service';
@@ -19,8 +20,13 @@ export class Sidebar {
     private readonly router: Router,
     protected readonly themeService: ThemeService,
     protected readonly settingsService: SettingsService,
+    protected readonly authService: AuthService,
   ) {
     this.conversations = this.chatService.list();
+  }
+
+  logout(): void {
+    void this.authService.logout();
   }
 
   isActive(id: string): boolean {

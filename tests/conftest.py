@@ -1,0 +1,74 @@
+"""Shared fixtures. DB-backed tests target the real local Postgres (`docker compose -f
+infra/development/docker-compose.yml up -d db`) and skip cleanly if it's unreachable.
+"""
+
+from collections.abc import AsyncGenerator, Generator
+
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
+
+from app.db.base import Base
+from app.db.session import engine
+from app.settings import settings
+
+
+@pytest.fixture(autouse=True)
+def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real token issuance needs a real secret - every test gets a consistent one, whether or
+    not it touches auth directly (authenticated_client, used by chat/upload tests, needs this
+    too)."""
+
+    monkeypatch.setattr(settings, "jwt_secret_key", "test-secret-key-for-tests-only-32-bytes+")
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncGenerator[None, None]:
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except (OperationalError, OSError) as exc:
+        pytest.skip(
+            f"Postgres not reachable at settings.database_url ({exc!r}) - start it via "
+            "`docker compose -f infra/development/docker-compose.yml up -d db`"
+        )
+
+    yield
+
+    async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+
+
+@pytest.fixture
+def client(db_session: None) -> Generator[TestClient, None, None]:
+    """A TestClient against a Postgres schema that's guaranteed to exist (via db_session) and
+    gets truncated after the test. Tests that don't touch the DB/auth can still use this - it's
+    the default now that every route requires a session.
+    """
+
+    from app.main import app
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+_REGISTER_PAYLOAD = {
+    "name": "Test QA",
+    "email": "qa@example.com",
+    "password": "correct-horse-battery-staple",
+    "employee_id": "EMP-001",
+    "department_shift": "QA Day Shift",
+    "role": "qa",
+}
+
+
+@pytest.fixture
+def authenticated_client(client: TestClient) -> TestClient:
+    """Registers and logs in a QA user, returning the same client - its cookie jar now carries a
+    valid session, so subsequent requests hit protected routes as that user."""
+
+    response = client.post("/api/auth/register", json=_REGISTER_PAYLOAD)
+    assert response.status_code == 201, response.text
+    return client
