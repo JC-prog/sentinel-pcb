@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from pydantic import BaseModel
 
-from app.settings import settings
+from app.config.settings import settings
 
 
 class UploadRecord(BaseModel):

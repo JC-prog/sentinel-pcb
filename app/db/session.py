@@ -12,8 +12,8 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.config.settings import settings
 from app.db.base import Base
-from app.settings import settings
 
 # create_async_engine() only parses the URL - it doesn't connect - so an unreachable Postgres is
 # fine (tests/conftest.py's db_session fixture catches that at connection time and skips

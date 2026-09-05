@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.agents.explainability_review_agent.graph import PCBInspectionState
-from app.settings import settings
+from app.config.settings import settings
 
 _REQUEST_PAYLOAD = {
     "image_id": "",  # filled in per-test with a real uploaded id

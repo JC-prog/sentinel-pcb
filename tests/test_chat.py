@@ -5,7 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.settings import settings
+from app.config.settings import settings
 
 # Captured before any test patches httpx.AsyncClient, so the mock factory below can still
 # construct a real client (just wired to a MockTransport instead of the network).

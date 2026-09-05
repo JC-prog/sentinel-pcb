@@ -47,3 +47,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attached an image to the message). Works with both the local Ollama and OpenAI providers.
   Disable with `CHAT_TOOL_CALLING_ENABLED=False`; `CHAT_TOOL_MAX_ROUNDS` caps how many tool calls
   one message can trigger before the assistant answers with what it has.
+- Structured logging: `LOG_FORMAT=console` (default) gives a readable local terminal, or `json`
+  for one parseable object per line in production, where ECS Fargate's `awslogs` log driver ships
+  it straight to CloudWatch - no new infrastructure either way. A new per-request access log line
+  (method, path, status, duration, and the caller's user id when authenticated) replaces having
+  to piece that together from a raw traceback.

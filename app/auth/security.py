@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import bcrypt
 import jwt
 
-from app.settings import settings
+from app.config.settings import settings
 
 _JWT_ALGORITHM = "HS256"
 
