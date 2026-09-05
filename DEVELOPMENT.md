@@ -11,8 +11,10 @@ bash infra/development/scripts/unix/setup-dev.sh        # macOS/Linux
 powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
-See `README.md` for what this does and how to run the app afterward. Re-run it any time after
-pulling changes; it's idempotent.
+See `README.md` for what this does, how to run the app afterward, and the full external
+dependency list (Docker/Postgres/Qdrant auto-provisioned; Ollama models are not - see that
+table before assuming the Local LLM option or long-term memory "just work"). Re-run the setup
+script any time after pulling changes; it's idempotent.
 
 Sanity check before writing anything:
 
@@ -81,10 +83,12 @@ cd ui && npx ng test --watch=false && npx ng build
   routes both the UI and `/api/*` through one CloudFront distribution specifically so the ALB
   (which has no cert) is never called directly from the browser. Don't add a second, separate
   CloudFront distribution or point the UI at the ALB's own domain - see that file's comments.
-- **Long-term memory needs an embedding model actually pulled**: `OLLAMA_EMBEDDING_MODEL`
-  (default `nomic-embed-text`) isn't auto-pulled - run `ollama pull nomic-embed-text` (or set the
-  env var to a model you've already pulled, e.g. `mxbai-embed-large`) or extraction/retrieval
-  will silently no-op (logged, not raised - see `app/memory/service.py`).
+- **Ollama models aren't auto-pulled - for either purpose**: installing Ollama itself isn't
+  enough. `OLLAMA_MODEL` (default `llama3.2`) needs `ollama pull llama3.2` before the Local LLM
+  chat option works at all, and separately `OLLAMA_EMBEDDING_MODEL` (default `nomic-embed-text`)
+  needs `ollama pull nomic-embed-text` before long-term memory works - without it,
+  extraction/retrieval silently no-ops (logged, not raised - see `app/memory/service.py`) rather
+  than erroring, which can look like "memory just isn't doing anything" with no obvious cause.
 
 ## 5. Definition of Done (per PR)
 
