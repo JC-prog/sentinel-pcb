@@ -62,17 +62,29 @@ cd ui && npx ng test --watch=false && npx ng build
   extracts durable facts from a conversation and retrieves them for a new one; `MEMORY_ENABLED`
   is a kill switch, and `app/memory/qdrant_store.py` is the only file that knows it's Qdrant, so
   swapping the store later doesn't touch the rest of the app.
+- **Agent tool-calling in chat**: `app/agents/registry.py`'s `Tool`/`ToolRegistry` scaffold now
+  has a real, live caller - `POST /api/chat/stream`'s `_chat_sse` (`app/main.py`) sends
+  `tool_registry.specs()` as `tools` to whichever provider is selected, and loops (bounded by
+  `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
+  streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
+  `tools` field at all, identical to the pre-tool-calling request shape. Three tools are
+  registered: `current_time` (trivial), `get_weather` (`app/agents/weather_agent/`, Open-Meteo,
+  no key needed), and `explainability_review` (below) - only offered to the model when the chat
+  message has an attached image, since the model has no way to reference a real upload id itself.
+  `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
+  implement, translating a provider-agnostic `ChatMessage` list to/from each API's own
+  tool-calling wire format; the older `stream_reply()` is untouched and still used by
+  `app/memory/service.py`'s fact extraction, which never needs tools.
 - **Explainability & Review Agent** (`app/agents/explainability_review_agent/`): a LangGraph
   pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning) that
   diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
   into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`, `app/agents/registry.py`).
-  Called directly by `POST /api/agents/explainability-review` today rather than by an LLM
-  tool-calling loop - that scaffold has no live callers anywhere yet, so building the loop itself
-  is a separate, later capability. Takes an OpenAI key per-request (bring-your-own-key, like chat)
-  or falls back to `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; `EXPLAINABILITY_AGENT_ENABLED` is its
-  kill switch. The CLIP embedding model and embedded Qdrant collection it uses for historical-case
-  lookup are loaded lazily on first use, not at import time, to keep app startup and test runs
-  fast. See "Known gotchas" below for gaps carried over from the original prototype.
+  Callable directly via `POST /api/agents/explainability-review`, or through chat (above) when an
+  image is attached to the message. Takes an OpenAI key per-request (bring-your-own-key, like
+  chat) or falls back to `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; `EXPLAINABILITY_AGENT_ENABLED` is
+  its kill switch. The CLIP embedding model and embedded Qdrant collection it uses for
+  historical-case lookup are loaded lazily on first use, not at import time, to keep app startup
+  and test runs fast. See "Known gotchas" below for gaps carried over from the original prototype.
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
@@ -100,6 +112,15 @@ cd ui && npx ng test --watch=false && npx ng build
   needs `ollama pull nomic-embed-text` before long-term memory works - without it,
   extraction/retrieval silently no-ops (logged, not raised - see `app/memory/service.py`) rather
   than erroring, which can look like "memory just isn't doing anything" with no obvious cause.
+- **Chat tool-calling needs a tool-capable Ollama model**: `OLLAMA_MODEL`'s default (`llama3.2`)
+  supports tool-calling, but not every Ollama model does - check for a "tools" tag on
+  ollama.com's model library before swapping models, or chat will silently never call a tool
+  (Ollama just answers directly, no error). Ollama also doesn't deliver tool-call data
+  incrementally even with `stream: true` - the full `message.tool_calls` list only shows up on
+  the final chunk - `app/chat/providers/ollama.py`'s `stream_with_tools()` accounts for this
+  already, but it's worth knowing if you're debugging a hang-then-burst pattern. `CHAT_TOOL_MAX_ROUNDS`
+  (default 4) caps how many tool-call round trips one message can trigger before the loop gives
+  up and answers with what it has, in case a model keeps calling tools without ever finishing.
 - **Explainability & Review Agent has known stubs, faithfully ported rather than fixed**:
   `models.py`'s `BoundingBoxDetector` ("YOLO") always returns the same hardcoded bounding box, and
   `mcp_client.py`'s `get_standards()`/`get_measurements()` are hardcoded placeholders that don't

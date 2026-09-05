@@ -3,7 +3,9 @@
 A ChatGPT-style chat UI (Angular) backed by a FastAPI SSE streaming backend, with a choice of
 LLM provider per conversation (a local Ollama model, or OpenAI with your own API key),
 user accounts, and both short-term (per-conversation) and long-term (cross-conversation) chat
-memory.
+memory. The assistant can also call tools mid-conversation - the current time, live weather for
+a named location, and (when you attach an image) PCB defect diagnosis via the Explainability &
+Review Agent - deciding on its own when one is actually needed.
 
 ## Getting started
 
