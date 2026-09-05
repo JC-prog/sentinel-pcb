@@ -2,6 +2,7 @@ import { firstValueFrom } from 'rxjs';
 import { toArray } from 'rxjs/operators';
 import { vi } from 'vitest';
 import { HttpChatResponder } from './http-chat-responder';
+import { SettingsService } from './settings.service';
 
 function sseResponse(body: string, ok = true): Response {
   const encoder = new TextEncoder();
@@ -15,6 +16,13 @@ function sseResponse(body: string, ok = true): Response {
 }
 
 describe('HttpChatResponder', () => {
+  let settings: SettingsService;
+
+  beforeEach(() => {
+    localStorage.clear();
+    settings = new SettingsService();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -27,7 +35,7 @@ describe('HttpChatResponder', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
 
     const chunks = await firstValueFrom(
-      new HttpChatResponder().respond('c1', 'hi', []).pipe(toArray()),
+      new HttpChatResponder(settings).respond('c1', 'hi', []).pipe(toArray()),
     );
 
     expect(chunks).toEqual(['Hel', 'lo']);
@@ -38,7 +46,7 @@ describe('HttpChatResponder', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
 
     await expect(
-      firstValueFrom(new HttpChatResponder().respond('c1', 'hi', []).pipe(toArray())),
+      firstValueFrom(new HttpChatResponder(settings).respond('c1', 'hi', []).pipe(toArray())),
     ).rejects.toThrow('upstream failed');
   });
 
@@ -56,11 +64,35 @@ describe('HttpChatResponder', () => {
 
     const file = new File(['x'], 'board.png', { type: 'image/png' });
     await firstValueFrom(
-      new HttpChatResponder().respond('c1', 'see attached', [file]).pipe(toArray()),
+      new HttpChatResponder(settings).respond('c1', 'see attached', [file]).pipe(toArray()),
     );
 
     const chatCall = fetchMock.mock.calls.find(([url]) => url.endsWith('/api/chat/stream'));
     const requestBody = JSON.parse(chatCall![1].body);
     expect(requestBody.image_ids).toEqual(['img-1']);
+  });
+
+  it('defaults to the ollama provider with no key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(new HttpChatResponder(settings).respond('c1', 'hi', []).pipe(toArray()));
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.provider).toBe('ollama');
+    expect(requestBody.openai_api_key).toBeUndefined();
+  });
+
+  it('sends the openai provider and api key when selected in settings', async () => {
+    settings.setProvider('openai');
+    settings.setOpenaiApiKey('sk-test-key');
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(new HttpChatResponder(settings).respond('c1', 'hi', []).pipe(toArray()));
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.provider).toBe('openai');
+    expect(requestBody.openai_api_key).toBe('sk-test-key');
   });
 });

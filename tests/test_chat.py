@@ -1,10 +1,25 @@
 import json
+from collections.abc import Callable
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 client = TestClient(app)
+
+# Captured before any test patches httpx.AsyncClient, so the mock factory below can still
+# construct a real client (just wired to a MockTransport instead of the network).
+_RealAsyncClient = httpx.AsyncClient
+
+
+def _mock_async_client(monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return _RealAsyncClient(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "AsyncClient", factory)
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
@@ -29,11 +44,32 @@ def test_chat_stream_rejects_empty_message() -> None:
     assert response.status_code == 422
 
 
-def test_chat_stream_yields_deltas_then_done() -> None:
+def test_chat_stream_requires_key_for_openai_provider() -> None:
+    response = client.post(
+        "/api/chat/stream",
+        json={"conversation_id": "c1", "message": "hi", "image_ids": [], "provider": "openai"},
+    )
+    assert response.status_code == 422
+
+
+def test_chat_stream_uses_ollama_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        body = (
+            json.dumps({"message": {"content": "Hello "}, "done": False})
+            + "\n"
+            + json.dumps({"message": {"content": "from Ollama"}, "done": False})
+            + "\n"
+            + json.dumps({"message": {"content": ""}, "done": True})
+        )
+        return httpx.Response(200, text=body)
+
+    _mock_async_client(monkeypatch, handler)
+
     with client.stream(
         "POST",
         "/api/chat/stream",
-        json={"conversation_id": "c1", "message": "hello there", "image_ids": []},
+        json={"conversation_id": "c1", "message": "hi", "image_ids": []},
     ) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -41,18 +77,60 @@ def test_chat_stream_yields_deltas_then_done() -> None:
 
     frames = _parse_sse(body)
     assert frames[-1] == ("done", {})
-
     deltas = [str(data["text"]) for event, data in frames if event == "delta"]
-    assert "".join(deltas) == "This is a placeholder response. You said: hello there"
+    assert "".join(deltas) == "Hello from Ollama"
 
 
-def test_chat_stream_notes_attached_images() -> None:
+def test_chat_stream_uses_openai_when_selected(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer sk-test-key"
+        sse = (
+            'data: {"choices":[{"delta":{"content":"Hi "}}]}\n\n'
+            'data: {"choices":[{"delta":{"content":"there"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        return httpx.Response(200, text=sse)
+
+    _mock_async_client(monkeypatch, handler)
+
     with client.stream(
         "POST",
         "/api/chat/stream",
-        json={"conversation_id": "c1", "message": "see attached", "image_ids": ["abc123"]},
+        json={
+            "conversation_id": "c1",
+            "message": "hi",
+            "image_ids": [],
+            "provider": "openai",
+            "openai_api_key": "sk-test-key",
+        },
     ) as response:
         body = "".join(response.iter_text())
 
-    deltas = "".join(str(data["text"]) for event, data in _parse_sse(body) if event == "delta")
-    assert "(with 1 image(s) attached)" in deltas
+    deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
+    assert "".join(deltas) == "Hi there"
+
+
+def test_chat_stream_surfaces_upstream_error_without_leaking_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text='{"error": "invalid api key"}')
+
+    _mock_async_client(monkeypatch, handler)
+
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={
+            "conversation_id": "c1",
+            "message": "hi",
+            "image_ids": [],
+            "provider": "openai",
+            "openai_api_key": "sk-super-secret",
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    frames = _parse_sse(body)
+    assert frames[0][0] == "error"
+    assert "sk-super-secret" not in body

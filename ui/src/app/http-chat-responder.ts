@@ -1,6 +1,8 @@
+import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 import { ChatResponder } from './chat-responder';
+import { SettingsService } from './settings.service';
 
 interface SseFrame {
   event: string;
@@ -34,7 +36,10 @@ async function uploadImage(file: File): Promise<string> {
   return body.id;
 }
 
+@Injectable()
 export class HttpChatResponder implements ChatResponder {
+  constructor(private readonly settings: SettingsService) {}
+
   respond(conversationId: string, message: string, images: File[]): Observable<string> {
     return new Observable<string>((subscriber) => {
       const controller = new AbortController();
@@ -42,6 +47,7 @@ export class HttpChatResponder implements ChatResponder {
       (async () => {
         const imageIds = await Promise.all(images.map(uploadImage));
 
+        const provider = this.settings.provider();
         const response = await fetch(`${environment.apiBaseUrl}/api/chat/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -49,6 +55,8 @@ export class HttpChatResponder implements ChatResponder {
             conversation_id: conversationId,
             message,
             image_ids: imageIds,
+            provider,
+            openai_api_key: provider === 'openai' ? this.settings.openaiApiKey() : undefined,
           }),
           signal: controller.signal,
         });

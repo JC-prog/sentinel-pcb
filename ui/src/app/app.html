@@ -2,3 +2,7 @@
   <app-sidebar />
   <router-outlet />
 </div>
+
+@if (settingsService.isOpen()) {
+  <app-settings />
+}

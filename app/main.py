@@ -5,8 +5,10 @@ from typing import Annotated
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import SecretStr
 
 from app.chat import ChatStreamRequest, get_chat_service
+from app.chat.schemas import LlmProvider
 from app.settings import settings
 from app.uploads import UploadRecord, resolve_upload_path, save_upload
 
@@ -40,12 +42,14 @@ async def get_upload(filename: str) -> FileResponse:
     return FileResponse(path)
 
 
-async def _chat_sse(message: str, image_ids: list[str]) -> AsyncGenerator[str, None]:
+async def _chat_sse(
+    provider: LlmProvider, openai_api_key: SecretStr | None, message: str, image_ids: list[str]
+) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream: `event: delta` per chunk from the chat service,
     `event: error` if it raises, always ending in `event: done`. Same framing as the original
     app's `_trace_stream` (GET /workflows/{id}/trace)."""
 
-    service = get_chat_service()
+    service = get_chat_service(provider, openai_api_key)
     try:
         async for chunk in service.stream_reply(message, image_ids):
             yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
@@ -59,6 +63,9 @@ async def _chat_sse(message: str, image_ids: list[str]) -> AsyncGenerator[str, N
 async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
     if not request.message.strip() and not request.image_ids:
         raise HTTPException(status_code=422, detail="message must not be empty")
+    if request.provider == "openai" and request.openai_api_key is None:
+        raise HTTPException(status_code=422, detail="openai_api_key is required for provider=openai")
     return StreamingResponse(
-        _chat_sse(request.message, request.image_ids), media_type="text/event-stream"
+        _chat_sse(request.provider, request.openai_api_key, request.message, request.image_ids),
+        media_type="text/event-stream",
     )

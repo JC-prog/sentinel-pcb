@@ -2,6 +2,7 @@ import { Component, Signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ChatService } from '../chat.service';
 import { Conversation } from '../models/chat.models';
+import { SettingsService } from '../settings.service';
 import { ThemeService } from '../theme.service';
 
 @Component({
@@ -17,6 +18,7 @@ export class Sidebar {
     private readonly chatService: ChatService,
     private readonly router: Router,
     protected readonly themeService: ThemeService,
+    protected readonly settingsService: SettingsService,
   ) {
     this.conversations = this.chatService.list();
   }
