@@ -85,6 +85,15 @@ cd ui && npx ng test --watch=false && npx ng build
   its kill switch. The CLIP embedding model and embedded Qdrant collection it uses for
   historical-case lookup are loaded lazily on first use, not at import time, to keep app startup
   and test runs fast. See "Known gotchas" below for gaps carried over from the original prototype.
+- **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
+  (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
+  app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local
+  terminal, or `LOG_FORMAT=json` for one parseable object per line in production. Both write to
+  stdout; ECS Fargate's `awslogs` log driver ships that straight to CloudWatch with no extra
+  containers/infra. A request-logging middleware in `app/main.py` logs one `app.access` line per
+  request (method, path, status, duration, and the caller's user id when authenticated) via
+  `extra=`, which the JSON formatter surfaces as its own keys generically - any future
+  `logger.info(..., extra={...})` call gets the same treatment, not just this one.
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
