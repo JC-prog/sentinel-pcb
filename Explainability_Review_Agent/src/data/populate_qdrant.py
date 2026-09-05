@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 # ----------------------------------------------------
 # Configuration
 # ----------------------------------------------------
-INPUT_DIR = r"..\..\inputs"
+INPUT_DIR = r"..\inputs"
 COLLECTION_NAME = "pcb_defects"
 BATCH_SIZE = 32
 
