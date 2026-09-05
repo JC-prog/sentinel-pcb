@@ -41,3 +41,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   precedents, IPC-A-610 standards, and AOI/ICT telemetry into a grounded root-cause explanation.
   Accepts a bring-your-own OpenAI key per request, or falls back to
   `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; disable with `EXPLAINABILITY_AGENT_ENABLED=False`.
+- Chat can now call tools mid-conversation instead of only answering from what it already knows:
+  the current time, live weather for a named location (a new `get_weather` tool, via Open-Meteo -
+  no API key needed), and the Explainability & Review Agent above (only offered when you've
+  attached an image to the message). Works with both the local Ollama and OpenAI providers.
+  Disable with `CHAT_TOOL_CALLING_ENABLED=False`; `CHAT_TOOL_MAX_ROUNDS` caps how many tool calls
+  one message can trigger before the assistant answers with what it has.

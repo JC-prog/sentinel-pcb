@@ -1,7 +1,7 @@
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 from pydantic import SecretStr
 
-from app.agents import CurrentTimeTool, ToolRegistry, call_tool
+from app.agents import CurrentTimeTool, ToolRegistry, WeatherTool, call_tool
 from app.agents.explainability_review_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
@@ -31,8 +31,9 @@ from app.auth.service import (
 )
 from app.chat import ChatStreamRequest, get_chat_service, history
 from app.chat import repository as chat_repository
+from app.chat.messages import build_messages
 from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvider, MessageOut
-from app.core.chat import ConversationNotFound
+from app.core.chat import ChatMessage, ConversationNotFound, TextDelta, ToolCallRequest
 from app.db import Conversation, User, init_models
 from app.memory import build_memory_preamble, maybe_extract, remember_explicit
 from app.settings import settings
@@ -64,7 +65,7 @@ app.add_middleware(
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
 # app/agents/explainability_review_agent/graph.py's get_mcp_client()).
-tool_registry = ToolRegistry([CurrentTimeTool(), ExplainabilityReviewTool()])
+tool_registry = ToolRegistry([CurrentTimeTool(), ExplainabilityReviewTool(), WeatherTool()])
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -184,6 +185,65 @@ async def get_upload(
     return FileResponse(path)
 
 
+def _available_tool_specs(image_ids: list[str]) -> list[dict[str, Any]] | None:
+    """None means "send no `tools` field at all" - both the kill switch and the empty-registry
+    case fall back to this, so a disabled feature is byte-identical to the pre-tool-calling
+    request shape. explainability_review is only ever offered when an image is actually attached
+    to this message - the model has no way to reference a real upload id itself (see
+    _run_tool_call, which overrides whatever it supplies anyway)."""
+
+    if not settings.chat_tool_calling_enabled:
+        return None
+    specs = tool_registry.specs()
+    if not image_ids or not settings.explainability_agent_enabled:
+        specs = [s for s in specs if s["name"] != "explainability_review"]
+    return specs or None
+
+
+async def _run_tool_call(
+    call: ToolCallRequest,
+    *,
+    image_ids: list[str],
+    provider: LlmProvider,
+    openai_api_key: SecretStr | None,
+) -> str:
+    """Executes one model-requested tool call. Never raises - any failure becomes a
+    {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
+    instead of ending the whole SSE stream (mirrors app/agents/explainability_review_agent/
+    mcp_client.py's own graceful-degradation pattern).
+
+    explainability_review needs kwargs the model can't supply itself - a real PIL.Image and an
+    OpenAI key - injected here the same way POST /api/agents/explainability-review already does
+    it by hand, including the identical BYOK-or-settings-fallback key resolution."""
+
+    arguments = dict(call.arguments)
+    if call.name == "explainability_review":
+        image_id = image_ids[0]  # only offered when non-empty - see _available_tool_specs
+        image_path = resolve_upload_path(image_id)
+        if image_path is None:
+            return json.dumps({"error": "image not found"})
+        api_key = (
+            openai_api_key.get_secret_value()
+            if provider == "openai" and openai_api_key is not None
+            else settings.explainability_agent_openai_api_key
+        )
+        if not api_key:
+            return json.dumps({"error": "no OpenAI key available for this tool"})
+        arguments = {
+            "image": Image.open(image_path).convert("RGB"),
+            "image_name": image_id,
+            "board_id": arguments.get("board_id", ""),
+            "component_ref": arguments.get("component_ref", ""),
+            "issue_symptom": arguments.get("issue_symptom"),
+            "openai_api_key": api_key,
+        }
+
+    try:
+        return await call_tool(tool_registry, call.name, arguments)
+    except Exception as exc:  # noqa: BLE001 - degrade to a tool-result error, not an SSE error
+        return json.dumps({"error": str(exc)})
+
+
 async def _chat_sse(
     session: SessionDep,
     conversation: Conversation,
@@ -202,6 +262,10 @@ async def _chat_sse(
     `conversation` is already resolved/ownership-checked by the caller (chat_stream), since a
     StreamingResponse commits its 200 status before this generator's first item is even
     requested - anything that should be able to 404 instead has to happen before this is called.
+
+    The reply itself may take several tool-call round trips (app/agents/registry.py) before the
+    model produces a final answer - see the loop below. Only the final round's text is persisted
+    as the assistant's message; intermediate tool-call rounds' text (usually empty) is discarded.
     """
 
     # A pure memory-write command (app/memory/service.py) - never reaches the LLM, so it can't
@@ -234,18 +298,46 @@ async def _chat_sse(
     )
 
     service = get_chat_service(provider, openai_api_key)
-    reply_chunks: list[str] = []
+    messages = build_messages(system_prompt, turns, message)
+    available_tools = _available_tool_specs(image_ids)
+
+    final_text = ""
     try:
-        async for chunk in service.stream_reply(
-            turns, message, image_ids, system_prompt=system_prompt
-        ):
-            reply_chunks.append(chunk)
-            yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
+        for _round in range(settings.chat_tool_max_rounds):
+            text_parts: list[str] = []
+            pending_calls: list[ToolCallRequest] = []
+            async for event in service.stream_with_tools(messages, available_tools):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+                    yield f"event: delta\ndata: {json.dumps({'text': event.text})}\n\n"
+                else:
+                    pending_calls = event.calls
+            final_text = "".join(text_parts)
+            if not pending_calls:
+                break
+
+            messages.append(
+                ChatMessage(role="assistant", content=final_text or None, tool_calls=pending_calls)
+            )
+            for call in pending_calls:
+                result = await _run_tool_call(
+                    call, image_ids=image_ids, provider=provider, openai_api_key=openai_api_key
+                )
+                messages.append(
+                    ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=result)
+                )
+            final_text = ""
+        else:
+            final_text = (
+                "I wasn't able to finish that after several tool calls - could you rephrase or "
+                "simplify the request?"
+            )
+            yield f"event: delta\ndata: {json.dumps({'text': final_text})}\n\n"
     except Exception as exc:  # noqa: BLE001 - reported to the client as an SSE error event
         yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
         return
 
-    await history.append_message(session, conversation.id, "assistant", "".join(reply_chunks), [])
+    await history.append_message(session, conversation.id, "assistant", final_text, [])
     await history.maybe_set_title(session, conversation, message)
     await maybe_extract(session, conversation, provider, openai_api_key)
     yield "event: done\ndata: {}\n\n"
