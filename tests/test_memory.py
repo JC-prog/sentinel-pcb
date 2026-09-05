@@ -8,6 +8,7 @@ import json
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime
+from typing import cast
 
 import httpx
 import pytest
@@ -198,7 +199,8 @@ async def test_retrieval_injects_memory_preamble_into_a_new_conversation(
     _send(authenticated_client, "new-conversation", "hi there")
 
     chat_calls = [r for r in requests if "messages" in r]
-    system_messages = [m["content"] for m in chat_calls[0]["messages"] if m["role"] == "system"]
+    sent_messages = cast("list[dict[str, str]]", chat_calls[0]["messages"])
+    system_messages = [m["content"] for m in sent_messages if m["role"] == "system"]
     assert any("works the night shift on line 3" in text for text in system_messages)
 
 
