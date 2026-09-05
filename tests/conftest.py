@@ -72,3 +72,27 @@ def authenticated_client(client: TestClient) -> TestClient:
     response = client.post("/api/auth/register", json=_REGISTER_PAYLOAD)
     assert response.status_code == 201, response.text
     return client
+
+
+_OTHER_REGISTER_PAYLOAD = {
+    "name": "Other Operator",
+    "email": "operator@example.com",
+    "password": "correct-horse-battery-staple",
+    "employee_id": "EMP-002",
+    "department_shift": "Operator Day Shift",
+    "role": "operator",
+}
+
+
+@pytest.fixture
+def other_authenticated_client(db_session: None) -> Generator[TestClient, None, None]:
+    """A second authenticated user with its own TestClient/cookie jar, for cross-user isolation
+    tests (chat/conversation scoping) - a distinct instance from `client`/`authenticated_client`
+    so the two sessions don't share cookies."""
+
+    from app.main import app
+
+    with TestClient(app) as test_client:
+        response = test_client.post("/api/auth/register", json=_OTHER_REGISTER_PAYLOAD)
+        assert response.status_code == 201, response.text
+        yield test_client

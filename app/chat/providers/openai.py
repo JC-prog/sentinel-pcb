@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 import httpx
 from pydantic import SecretStr
 
+from app.core.chat import ChatTurn
 from app.settings import settings
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
@@ -18,17 +19,24 @@ class OpenAiChatService:
     def __init__(self, api_key: SecretStr) -> None:
         self._api_key = api_key
 
-    async def stream_reply(self, message: str, image_ids: list[str]) -> AsyncGenerator[str, None]:
+    async def stream_reply(
+        self, history: list[ChatTurn], message: str, image_ids: list[str]
+    ) -> AsyncGenerator[str, None]:
+        messages = [{"role": turn.role, "content": turn.content} for turn in history]
+        messages.append({"role": "user", "content": message})
         payload = {
             "model": settings.openai_model,
-            "messages": [{"role": "user", "content": message}],
+            "messages": messages,
             "stream": True,
         }
         headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
 
-        async with httpx.AsyncClient(timeout=60.0) as client, client.stream(
-            "POST", _OPENAI_CHAT_COMPLETIONS_URL, json=payload, headers=headers
-        ) as response:
+        async with (
+            httpx.AsyncClient(timeout=60.0) as client,
+            client.stream(
+                "POST", _OPENAI_CHAT_COMPLETIONS_URL, json=payload, headers=headers
+            ) as response,
+        ):
             if response.status_code != 200:
                 body = await response.aread()
                 raise RuntimeError(

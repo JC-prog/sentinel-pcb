@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # name is configured here.
     openai_model: str = "gpt-4o-mini"
 
+    # How many prior messages (app/chat/history.py) get sent to the LLM as context for a reply.
+    # A turn-count budget, not a token budget - simplest thing that works at this app's scale;
+    # revisit only if long pasted content makes that insufficient in practice. Persisted history
+    # itself is never trimmed, only what's replayed to the model.
+    chat_history_max_turns: int = 20
+
     # Postgres (infra/development/docker-compose.yml's "db" service, infra/production/rds.tf) -
     # now used by app/db/ for authentication (app/auth/).
     database_url: str = ""

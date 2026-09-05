@@ -22,9 +22,11 @@ from app.auth.service import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
-from app.chat import ChatStreamRequest, get_chat_service
-from app.chat.schemas import LlmProvider
-from app.db import User, init_models
+from app.chat import ChatStreamRequest, get_chat_service, history
+from app.chat import repository as chat_repository
+from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvider, MessageOut
+from app.core.chat import ConversationNotFound
+from app.db import Conversation, User, init_models
 from app.settings import settings
 from app.uploads import UploadRecord, resolve_upload_path, save_upload
 
@@ -168,32 +170,111 @@ async def get_upload(
 
 
 async def _chat_sse(
-    provider: LlmProvider, openai_api_key: SecretStr | None, message: str, image_ids: list[str]
+    session: SessionDep,
+    conversation: Conversation,
+    provider: LlmProvider,
+    openai_api_key: SecretStr | None,
+    message: str,
+    image_ids: list[str],
 ) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream: `event: delta` per chunk from the chat service,
     `event: error` if it raises, always ending in `event: done`. Same framing as the original
-    app's `_trace_stream` (GET /workflows/{id}/trace)."""
+    app's `_trace_stream` (GET /workflows/{id}/trace).
+
+    Persists the user's message before streaming starts (durable even if the LLM call fails
+    partway) and the assistant's full reply after streaming succeeds - see app/chat/history.py.
+    `conversation` is already resolved/ownership-checked by the caller (chat_stream), since a
+    StreamingResponse commits its 200 status before this generator's first item is even
+    requested - anything that should be able to 404 instead has to happen before this is called.
+    """
+
+    turns = await history.load_history(
+        session, conversation.id, max_turns=settings.chat_history_max_turns
+    )
+    await history.append_message(session, conversation.id, "user", message, image_ids)
 
     service = get_chat_service(provider, openai_api_key)
+    reply_chunks: list[str] = []
     try:
-        async for chunk in service.stream_reply(message, image_ids):
+        async for chunk in service.stream_reply(turns, message, image_ids):
+            reply_chunks.append(chunk)
             yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
     except Exception as exc:  # noqa: BLE001 - reported to the client as an SSE error event
         yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
         return
+
+    await history.append_message(session, conversation.id, "assistant", "".join(reply_chunks), [])
+    await history.maybe_set_title(session, conversation, message)
     yield "event: done\ndata: {}\n\n"
 
 
 @app.post("/api/chat/stream")
 async def chat_stream(
     request: ChatStreamRequest,
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
 ) -> StreamingResponse:
     if not request.message.strip() and not request.image_ids:
         raise HTTPException(status_code=422, detail="message must not be empty")
     if request.provider == "openai" and request.openai_api_key is None:
-        raise HTTPException(status_code=422, detail="openai_api_key is required for provider=openai")
+        raise HTTPException(
+            status_code=422, detail="openai_api_key is required for provider=openai"
+        )
+
+    try:
+        conversation = await history.get_or_create_conversation(
+            session, user.id, request.conversation_id
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(status_code=404, detail="conversation not found") from exc
+
     return StreamingResponse(
-        _chat_sse(request.provider, request.openai_api_key, request.message, request.image_ids),
+        _chat_sse(
+            session,
+            conversation,
+            request.provider,
+            request.openai_api_key,
+            request.message,
+            request.image_ids,
+        ),
         media_type="text/event-stream",
     )
+
+
+@app.get("/api/conversations")
+async def list_conversations(
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> list[ConversationSummary]:
+    conversations = await chat_repository.list_conversations_for_user(session, user.id)
+    return [ConversationSummary.model_validate(c) for c in conversations]
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(
+    conversation_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> ConversationDetail:
+    conversation = await chat_repository.get_conversation_with_messages(session, conversation_id)
+    if conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return ConversationDetail(
+        id=conversation.id,
+        title=conversation.title,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        messages=[MessageOut.model_validate(m) for m in conversation.messages],
+    )
+
+
+@app.delete("/api/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(
+    conversation_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> None:
+    conversation = await chat_repository.get_conversation(session, conversation_id)
+    if conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    await chat_repository.delete_conversation(session, conversation)

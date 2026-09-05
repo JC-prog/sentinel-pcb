@@ -1,6 +1,10 @@
-"""Async engine/session setup. No Alembic for this pass - a single table, no existing data to
-migrate, and no second environment yet, so `create_all` on startup is the right amount of
-ceremony until that stops being true.
+"""Async engine/session setup.
+
+Schema changes now go through Alembic (alembic/ - `uv run alembic revision --autogenerate` /
+`upgrade head`), not this module. `init_models()`'s `create_all` still runs at app startup and in
+tests for convenience (it's idempotent and a no-op once Alembic has created the tables), but a
+real deploy's schema is Alembic's migration history, not this function - wiring `alembic upgrade
+head` into an actual deploy step is a separate, later task.
 """
 
 from collections.abc import AsyncGenerator

@@ -6,5 +6,6 @@ have actually been imported somewhere.
 """
 
 from app.db.models.auth import RefreshToken, User, UserRole
+from app.db.models.chat import Conversation, Message
 
-__all__ = ["RefreshToken", "User", "UserRole"]
+__all__ = ["Conversation", "Message", "RefreshToken", "User", "UserRole"]

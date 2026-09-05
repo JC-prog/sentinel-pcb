@@ -38,6 +38,10 @@ describe('Sidebar', () => {
     fixture.detectChanges();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });
@@ -97,6 +101,10 @@ describe('Sidebar', () => {
   });
 
   it('shows the logged-in user and logs out on click', () => {
+    // Setting currentUser triggers ChatService's per-user hydration (see chat.service.ts) -
+    // stub fetch so that's a deterministic no-op instead of a real network call.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response));
+
     const authService = TestBed.inject(AuthService);
     authService.currentUser.set(USER);
     fixture.detectChanges();
