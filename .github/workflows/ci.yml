@@ -7,6 +7,25 @@ jobs:
   backend:
     name: Backend (ruff, mypy, pytest)
     runs-on: ubuntu-latest
+    # Without this, tests/conftest.py's db_session fixture would just skip every DB-backed test
+    # (auth, chat, uploads) - fine for local dev without Docker running, but CI should actually
+    # exercise them, not silently pass an empty suite forever.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sentinelchat
+          POSTGRES_PASSWORD: sentinelchat
+          POSTGRES_DB: sentinelchat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://sentinelchat:sentinelchat@localhost:5432/sentinelchat
     steps:
       - uses: actions/checkout@v4
 

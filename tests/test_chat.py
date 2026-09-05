@@ -5,10 +5,6 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-
-client = TestClient(app)
-
 # Captured before any test patches httpx.AsyncClient, so the mock factory below can still
 # construct a real client (just wired to a MockTransport instead of the network).
 _RealAsyncClient = httpx.AsyncClient
@@ -37,22 +33,31 @@ def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
     return parsed
 
 
-def test_chat_stream_rejects_empty_message() -> None:
+def test_chat_stream_requires_login(client: TestClient) -> None:
     response = client.post(
+        "/api/chat/stream", json={"conversation_id": "c1", "message": "hi", "image_ids": []}
+    )
+    assert response.status_code == 401
+
+
+def test_chat_stream_rejects_empty_message(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
         "/api/chat/stream", json={"conversation_id": "c1", "message": "", "image_ids": []}
     )
     assert response.status_code == 422
 
 
-def test_chat_stream_requires_key_for_openai_provider() -> None:
-    response = client.post(
+def test_chat_stream_requires_key_for_openai_provider(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
         "/api/chat/stream",
         json={"conversation_id": "c1", "message": "hi", "image_ids": [], "provider": "openai"},
     )
     assert response.status_code == 422
 
 
-def test_chat_stream_uses_ollama_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_stream_uses_ollama_by_default(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/chat"
         body = (
@@ -66,7 +71,7 @@ def test_chat_stream_uses_ollama_by_default(monkeypatch: pytest.MonkeyPatch) -> 
 
     _mock_async_client(monkeypatch, handler)
 
-    with client.stream(
+    with authenticated_client.stream(
         "POST",
         "/api/chat/stream",
         json={"conversation_id": "c1", "message": "hi", "image_ids": []},
@@ -81,7 +86,9 @@ def test_chat_stream_uses_ollama_by_default(monkeypatch: pytest.MonkeyPatch) -> 
     assert "".join(deltas) == "Hello from Ollama"
 
 
-def test_chat_stream_uses_openai_when_selected(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_stream_uses_openai_when_selected(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer sk-test-key"
         sse = (
@@ -93,7 +100,7 @@ def test_chat_stream_uses_openai_when_selected(monkeypatch: pytest.MonkeyPatch) 
 
     _mock_async_client(monkeypatch, handler)
 
-    with client.stream(
+    with authenticated_client.stream(
         "POST",
         "/api/chat/stream",
         json={
@@ -111,14 +118,14 @@ def test_chat_stream_uses_openai_when_selected(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_chat_stream_surfaces_upstream_error_without_leaking_the_key(
-    monkeypatch: pytest.MonkeyPatch,
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, text='{"error": "invalid api key"}')
 
     _mock_async_client(monkeypatch, handler)
 
-    with client.stream(
+    with authenticated_client.stream(
         "POST",
         "/api/chat/stream",
         json={

@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
+import { AuthService } from './auth.service';
 import { ChatResponder } from './chat-responder';
 import { SettingsService } from './settings.service';
 
@@ -22,44 +23,50 @@ function parseSseFrame(raw: string): SseFrame {
   return { event, data: JSON.parse(data) };
 }
 
-async function uploadImage(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const response = await fetch(`${environment.apiBaseUrl}/api/uploads`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!response.ok) {
-    throw new Error(`Image upload failed: ${response.status}`);
-  }
-  const body: { id: string } = await response.json();
-  return body.id;
-}
-
 @Injectable()
 export class HttpChatResponder implements ChatResponder {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly authService: AuthService,
+  ) {}
+
+  private async uploadImage(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}/api/uploads`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`Image upload failed: ${response.status}`);
+    }
+    const body: { id: string } = await response.json();
+    return body.id;
+  }
 
   respond(conversationId: string, message: string, images: File[]): Observable<string> {
     return new Observable<string>((subscriber) => {
       const controller = new AbortController();
 
       (async () => {
-        const imageIds = await Promise.all(images.map(uploadImage));
+        const imageIds = await Promise.all(images.map((file) => this.uploadImage(file)));
 
         const provider = this.settings.provider();
-        const response = await fetch(`${environment.apiBaseUrl}/api/chat/stream`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            message,
-            image_ids: imageIds,
-            provider,
-            openai_api_key: provider === 'openai' ? this.settings.openaiApiKey() : undefined,
-          }),
-          signal: controller.signal,
-        });
+        const response = await this.authService.fetchWithAuth(
+          `${environment.apiBaseUrl}/api/chat/stream`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message,
+              image_ids: imageIds,
+              provider,
+              openai_api_key: provider === 'openai' ? this.settings.openaiApiKey() : undefined,
+            }),
+            signal: controller.signal,
+          },
+        );
         if (!response.ok || !response.body) {
           throw new Error(`Chat stream failed: ${response.status}`);
         }

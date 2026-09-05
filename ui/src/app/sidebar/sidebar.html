@@ -60,5 +60,21 @@
       <span>⚙️</span>
       <span>Settings</span>
     </button>
+
+    @if (authService.currentUser(); as user) {
+      <div class="mt-1 flex items-center justify-between gap-2 border-t border-slate-200 pt-2 dark:border-slate-800">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium">{{ user.name }}</p>
+          <p class="truncate text-xs text-slate-500 uppercase dark:text-slate-400">{{ user.role }}</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          (click)="logout()"
+        >
+          Log out
+        </button>
+      </div>
+    }
   </div>
 </aside>
