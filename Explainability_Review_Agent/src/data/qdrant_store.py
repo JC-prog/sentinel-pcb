@@ -7,7 +7,7 @@ from qdrant_client.http import models
 logger = logging.getLogger(__name__)
 
 # Default local storage folder (must match the folder used in populate_qdrant.py)
-DEFAULT_STORAGE_PATH = os.path.join(os.path.dirname(__file__), "qdrant_local_db")
+DEFAULT_STORAGE_PATH = os.path.join(os.path.dirname(__file__), "qdrant_db")
 
 class DefectVectorStore:
     def __init__(
