@@ -2,8 +2,8 @@ import httpx
 from pydantic import SecretStr
 
 from app.chat.schemas import LlmProvider
+from app.config.settings import settings
 from app.core.memory import EmbeddingService
-from app.settings import settings
 
 _OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 

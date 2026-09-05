@@ -1,7 +1,7 @@
 from qdrant_client import AsyncQdrantClient, models
 
+from app.config.settings import settings
 from app.core.memory import MemoryMatch, MemoryRecord
-from app.settings import settings
 
 _PAYLOAD_USER_ID = "user_id"
 _PAYLOAD_TEXT = "text"

@@ -5,7 +5,7 @@ historical cases" evidence node.
 
 Ported from Kenny's Explainability_Review_Agent/src/data/populate_qdrant.py - same metadata
 parsing and batched-embedding approach, adapted to resolve paths via settings (matching
-graph.py's DATA_DIR and app.settings.chat_upload_dir's convention) instead of a hardcoded
+graph.py's DATA_DIR and app.config.settings.chat_upload_dir's convention) instead of a hardcoded
 Windows-relative path, and to use the project's own `qdrant-client`/`sentence-transformers`
 dependencies directly (no separate requirements.txt / tqdm dependency - progress is just logged
 every batch).
@@ -25,7 +25,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 
-from app.settings import settings
+from app.config.settings import settings
 
 DATA_DIR = Path(settings.explainability_agent_data_dir)
 INPUT_DIR = DATA_DIR / "inputs"

@@ -9,9 +9,9 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
+from app.config.settings import settings
 from app.db.base import Base
 from app.db.session import engine
-from app.settings import settings
 
 
 @pytest.fixture(autouse=True)

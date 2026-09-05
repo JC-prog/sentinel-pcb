@@ -16,9 +16,9 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from qdrant_client import AsyncQdrantClient
 
+from app.config.settings import settings
 from app.core.memory import MemoryRecord
 from app.memory import service as memory_service
-from app.settings import settings
 
 _TEST_COLLECTION_PREFIX = "test_chat_memories"
 

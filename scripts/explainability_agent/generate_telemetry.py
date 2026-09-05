@@ -5,7 +5,7 @@ instead of always falling back to mcp_client.get_measurements()'s fixed stub val
 
 Ported from Kenny's Explainability_Review_Agent/generate_telemetry.py - same synthetic-measurement
 logic and filename/folder parsing conventions, adapted to resolve paths via settings (matching
-app.settings.chat_upload_dir's convention) instead of the current working directory.
+app.config.settings.chat_upload_dir's convention) instead of the current working directory.
 
 Usage (run as a module, so `app`/`scripts` resolve on sys.path):
     uv run python -m scripts.explainability_agent.generate_telemetry
@@ -27,7 +27,7 @@ from typing import Any
 
 import numpy as np
 
-from app.settings import settings
+from app.config.settings import settings
 
 DATA_DIR = Path(settings.explainability_agent_data_dir)
 INPUT_DIR = DATA_DIR / "inputs"

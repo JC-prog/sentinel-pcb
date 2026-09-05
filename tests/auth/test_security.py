@@ -9,7 +9,7 @@ from app.auth.security import (
     new_refresh_token,
     verify_password,
 )
-from app.settings import settings
+from app.config.settings import settings
 
 
 def test_hash_password_round_trip() -> None:

@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.settings import settings
+from app.config.settings import settings
 
 _RealAsyncClient = httpx.AsyncClient
 

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,6 +8,11 @@ class Settings(BaseSettings):
 
     # ui/ (Angular) dev server origin. Add the deployed CloudFront origin here once one exists.
     cors_allow_origins: list[str] = ["http://localhost:4200"]
+
+    # app/config/logging_config.py - "console" is a human-readable local-terminal format; "json" emits
+    # one parseable object per line, for ECS Fargate's awslogs log driver to ship to CloudWatch.
+    # Same stdout destination either way - only the format changes.
+    log_format: Literal["console", "json"] = "console"
 
     # Where uploaded chat images are stored on disk (app.uploads.service). Swap for S3 before
     # running more than one instance - a later task, not needed for this scaffold.

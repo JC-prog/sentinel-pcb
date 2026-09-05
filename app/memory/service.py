@@ -15,11 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.chat import repository as chat_repository
 from app.chat.schemas import LlmProvider
 from app.chat.service import get_chat_service
+from app.config.settings import settings
 from app.core.memory import MemoryRecord, MemoryStore
 from app.db.models import Conversation
 from app.memory.embeddings import embedding_model_name, get_embedding_service
 from app.memory.qdrant_store import QdrantMemoryStore, get_qdrant_client
-from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

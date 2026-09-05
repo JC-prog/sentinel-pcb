@@ -5,8 +5,8 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from app.config.settings import settings
 from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, ToolCallsReady
-from app.settings import settings
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 

@@ -16,7 +16,7 @@ from PIL import Image
 
 from app.agents.explainability_review_agent.mcp_client import PCBMCPClient
 from app.agents.explainability_review_agent.models import ModelRegistry
-from app.settings import settings
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

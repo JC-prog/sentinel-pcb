@@ -4,8 +4,8 @@ from typing import Any
 
 import httpx
 
+from app.config.settings import settings
 from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, ToolCallsReady
-from app.settings import settings
 
 
 def _to_ollama_message(message: ChatMessage) -> dict[str, Any]:
