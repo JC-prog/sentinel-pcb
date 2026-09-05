@@ -23,6 +23,9 @@ cd ui && npm start                      # http://localhost:4200
 Install [Ollama](https://ollama.com) locally to use the Local LLM option in Settings; the OpenAI
 option needs no local setup, just an API key pasted into the same Settings panel.
 
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the branching/PR workflow, an architecture overview,
+and known gotchas before you start changing things.
+
 ## Repo layout
 
 ```
