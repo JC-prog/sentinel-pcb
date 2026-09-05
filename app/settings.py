@@ -22,5 +22,11 @@ class Settings(BaseSettings):
     # name is configured here.
     openai_model: str = "gpt-4o-mini"
 
+    # Provisioned (infra/development/docker-compose.yml's "db" service, infra/production/rds.tf)
+    # ahead of need - no code reads this yet. The app is stateless today; this is here for the
+    # multi-user/auth work planned for later, so that feature isn't blocked on standing up a
+    # database too.
+    database_url: str = ""
+
 
 settings = Settings()

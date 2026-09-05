@@ -1,0 +1,21 @@
+# Backend image build context - keep this small and free of secrets/dev-only bulk.
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+tests/
+data/
+
+# UI is a separate image (ui/Dockerfile) - never needed in the backend context.
+ui/
+
+# Docs/scaffolding not needed at runtime.
+openspec/
+.claude/
+infra/production/
