@@ -1,9 +1,21 @@
 import json
-from collections.abc import AsyncGenerator
+import logging
+import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
+import jwt
+from fastapi import (
+    Cookie,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
@@ -33,10 +45,11 @@ from app.chat import ChatStreamRequest, get_chat_service, history
 from app.chat import repository as chat_repository
 from app.chat.messages import build_messages
 from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvider, MessageOut
+from app.config.logging_config import configure_logging
+from app.config.settings import settings
 from app.core.chat import ChatMessage, ConversationNotFound, TextDelta, ToolCallRequest
 from app.db import Conversation, User, init_models
 from app.memory import build_memory_preamble, maybe_extract, remember_explicit
-from app.settings import settings
 from app.uploads import UploadRecord, resolve_upload_path, save_upload
 
 _REMEMBER_PREFIX = "/remember "
@@ -44,6 +57,13 @@ _REMEMBER_PREFIX = "/remember "
 _ACCESS_TOKEN_COOKIE = "access_token"
 _REFRESH_TOKEN_COOKIE = "refresh_token"
 _REFRESH_TOKEN_PATH = "/api/auth"
+
+_access_logger = logging.getLogger("app.access")
+
+# Configured at import time (like tool_registry below) rather than inside lifespan, so anything
+# logged before the app finishes starting up - or by a standalone script that imports app.main -
+# still gets the right format. See app/config/logging_config.py.
+configure_logging()
 
 
 @asynccontextmanager
@@ -61,6 +81,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _log_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """One structured log line per request (method, path, status, duration, and the caller's
+    user id when authenticated) - Uvicorn's own access log already prints a plain-text line per
+    request, but doesn't attach these as separate, queryable fields the way app/config/logging_config.py's
+    JSON formatter can. Decodes the access_token cookie directly (JWT only, no DB round trip) just
+    to attribute the log line - any failure (missing/expired/invalid token) just means an
+    unauthenticated-looking log line, not a 401; auth itself is still enforced by
+    get_current_user on whichever routes require it."""
+
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    user_id: str | None = None
+    access_token = request.cookies.get(_ACCESS_TOKEN_COOKIE)
+    if access_token:
+        try:
+            user_id = decode_access_token(access_token).user_id
+        except jwt.PyJWTError:
+            pass
+
+    _access_logger.info(
+        "%s %s -> %s (%.1fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 1),
+            "user_id": user_id,
+        },
+    )
+    return response
+
 
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
