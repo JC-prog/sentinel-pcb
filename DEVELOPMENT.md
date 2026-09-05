@@ -62,6 +62,17 @@ cd ui && npx ng test --watch=false && npx ng build
   extracts durable facts from a conversation and retrieves them for a new one; `MEMORY_ENABLED`
   is a kill switch, and `app/memory/qdrant_store.py` is the only file that knows it's Qdrant, so
   swapping the store later doesn't touch the rest of the app.
+- **Explainability & Review Agent** (`app/agents/explainability_review_agent/`): a LangGraph
+  pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning) that
+  diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
+  into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`, `app/agents/registry.py`).
+  Called directly by `POST /api/agents/explainability-review` today rather than by an LLM
+  tool-calling loop - that scaffold has no live callers anywhere yet, so building the loop itself
+  is a separate, later capability. Takes an OpenAI key per-request (bring-your-own-key, like chat)
+  or falls back to `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; `EXPLAINABILITY_AGENT_ENABLED` is its
+  kill switch. The CLIP embedding model and embedded Qdrant collection it uses for historical-case
+  lookup are loaded lazily on first use, not at import time, to keep app startup and test runs
+  fast. See "Known gotchas" below for gaps carried over from the original prototype.
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
@@ -89,6 +100,25 @@ cd ui && npx ng test --watch=false && npx ng build
   needs `ollama pull nomic-embed-text` before long-term memory works - without it,
   extraction/retrieval silently no-ops (logged, not raised - see `app/memory/service.py`) rather
   than erroring, which can look like "memory just isn't doing anything" with no obvious cause.
+- **Explainability & Review Agent has known stubs, faithfully ported rather than fixed**:
+  `models.py`'s `BoundingBoxDetector` ("YOLO") always returns the same hardcoded bounding box, and
+  `mcp_client.py`'s `get_standards()`/`get_measurements()` are hardcoded placeholders that don't
+  actually read `data/ipc_standards/ipc_a_610_chip_components.json` or the telemetry file the
+  scripts below generate. `search_historical()` does a Qdrant metadata filter, not an embedding
+  similarity search - the CLIP encoder it loads is real (and needed so
+  `scripts/explainability_agent/populate_qdrant.py` can embed images with the same model at seed
+  time) but isn't queried by that method yet. None of this blocks the pipeline from running end to
+  end; it just means the diagnosis quality is currently bounded by GPT-4o's reasoning over mocked
+  standards/telemetry rather than real ones.
+- **Explainability & Review Agent data prep is a manual, admin-triggered step**: the agent needs
+  PCB images under `data/images/inputs/` (`EXPLAINABILITY_AGENT_DATA_DIR`, gitignored - not
+  committed; `data/images/ipc_standards/` in the same directory *is* committed, since that's a
+  reference document rather than runtime data) before
+  `scripts/explainability_agent/generate_telemetry.py` (synthetic AOI/ICT measurements) and
+  `scripts/explainability_agent/populate_qdrant.py` (seeds the embedded Qdrant collection) have
+  anything to process. Run both as modules (`uv run python -m
+  scripts.explainability_agent.generate_telemetry`) after adding images - nothing in the app does
+  this automatically, by design, so an administrator can re-run it on demand.
 
 ## 5. Definition of Done (per PR)
 
