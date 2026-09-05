@@ -1,0 +1,109 @@
+<div class="flex h-full flex-1 flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+  @if (!conversation() || conversation()!.messages.length === 0) {
+    <div class="flex flex-1 flex-col items-center justify-center gap-6 px-4">
+      <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">What can I help with?</h1>
+      <div class="w-full max-w-2xl">
+        <ng-container [ngTemplateOutlet]="inputBar" />
+      </div>
+    </div>
+  } @else {
+    <div class="flex-1 overflow-y-auto">
+      <div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
+        @for (message of conversation()!.messages; track message.id) {
+          <div class="flex flex-col gap-2" [class.items-end]="message.role === 'user'">
+            <div
+              class="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
+              [class]="
+                message.role === 'user'
+                  ? 'bg-slate-200 dark:bg-slate-700'
+                  : 'bg-slate-100 dark:bg-slate-800'
+              "
+            >
+              @if (message.imageUrls?.length) {
+                <div class="mb-2 flex flex-wrap gap-2">
+                  @for (url of message.imageUrls; track url) {
+                    <img [src]="url" alt="Attached image" class="h-32 w-32 rounded-lg object-cover" />
+                  }
+                </div>
+              }
+              {{ message.content }}
+            </div>
+          </div>
+        }
+        @if (isLoading()) {
+          <div class="flex flex-col gap-2">
+            <div
+              class="max-w-[80%] rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            >
+              Thinking…
+            </div>
+          </div>
+        }
+        <div #scrollAnchor></div>
+      </div>
+    </div>
+
+    <div class="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
+      <div class="mx-auto max-w-3xl">
+        <ng-container [ngTemplateOutlet]="inputBar" />
+      </div>
+    </div>
+  }
+</div>
+
+<ng-template #inputBar>
+  @if (pendingImages().length > 0) {
+    <div class="mb-2 flex flex-wrap gap-2">
+      @for (image of pendingImages(); track image.previewUrl; let i = $index) {
+        <div class="relative">
+          <img [src]="image.previewUrl" alt="Pending upload" class="h-16 w-16 rounded-lg object-cover" />
+          <button
+            type="button"
+            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-300 text-xs text-slate-700 hover:bg-slate-400 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            aria-label="Remove image"
+            (click)="removePendingImage(i)"
+          >
+            ✕
+          </button>
+        </div>
+      }
+    </div>
+  }
+
+  <div
+    class="flex items-end gap-2 rounded-2xl border border-slate-300 bg-slate-100 p-2 dark:border-slate-700 dark:bg-slate-800"
+  >
+    <input
+      #fileInput
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+      (change)="onFilesSelected($event)"
+    />
+    <button
+      type="button"
+      class="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      aria-label="Attach image"
+      (click)="fileInput.click()"
+    >
+      📎
+    </button>
+    <textarea
+      class="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+      rows="1"
+      placeholder="Message…"
+      [ngModel]="draftText()"
+      (ngModelChange)="draftText.set($event)"
+      (keydown)="onTextareaKeydown($event)"
+    ></textarea>
+    <button
+      type="button"
+      class="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-600 dark:disabled:text-slate-400"
+      [disabled]="!draftText().trim() && pendingImages().length === 0"
+      (click)="send()"
+    >
+      Send
+    </button>
+  </div>
+</ng-template>
