@@ -15,20 +15,23 @@ _TITLE_MAX_LENGTH = 60
 
 async def get_or_create_conversation(
     session: AsyncSession, user_id: str, conversation_id: str
-) -> Conversation:
+) -> tuple[Conversation, bool]:
     """The frontend generates conversation_id client-side and sends it on every request, so the
     first message of a new chat both creates and uses the row in one call - see
     ui/src/app/chat.service.ts. Raises ConversationNotFound if the id is already used by a
     different user, rather than silently reusing (or 403ing on, which would confirm it exists)
-    someone else's conversation."""
+    someone else's conversation.
+
+    The returned bool is True only when this call created the row - app/memory/service.py uses
+    it to decide whether a brand-new conversation should get a long-term-memory preamble."""
 
     conversation = await repository.get_conversation(session, conversation_id)
     if conversation is None:
         conversation = Conversation(id=conversation_id, user_id=user_id)
-        return await repository.add_conversation(session, conversation)
+        return await repository.add_conversation(session, conversation), True
     if conversation.user_id != user_id:
         raise ConversationNotFound(conversation_id)
-    return conversation
+    return conversation, False
 
 
 async def load_history(

@@ -19,7 +19,11 @@ class ChatTurn(BaseModel):
 
 class ChatService(Protocol):
     def stream_reply(
-        self, history: list[ChatTurn], message: str, image_ids: list[str]
+        self,
+        history: list[ChatTurn],
+        message: str,
+        image_ids: list[str],
+        system_prompt: str | None = None,
     ) -> AsyncGenerator[str, None]: ...
 
 

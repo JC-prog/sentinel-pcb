@@ -14,9 +14,14 @@ class OllamaChatService:
     `"done": true`."""
 
     async def stream_reply(
-        self, history: list[ChatTurn], message: str, image_ids: list[str]
+        self,
+        history: list[ChatTurn],
+        message: str,
+        image_ids: list[str],
+        system_prompt: str | None = None,
     ) -> AsyncGenerator[str, None]:
-        messages = [{"role": turn.role, "content": turn.content} for turn in history]
+        messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+        messages += [{"role": turn.role, "content": turn.content} for turn in history]
         messages.append({"role": "user", "content": message})
         payload = {
             "model": settings.ollama_model,

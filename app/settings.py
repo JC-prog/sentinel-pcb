@@ -32,9 +32,28 @@ class Settings(BaseSettings):
     # now used by app/db/ for authentication (app/auth/).
     database_url: str = ""
 
-    # Vector store (infra/development/docker-compose.yml's "qdrant" service) for a future
-    # RAG/semantic-search feature - still provisioned ahead of need, no code reads this yet.
+    # Vector store (infra/development/docker-compose.yml's "qdrant" service) for long-term,
+    # cross-conversation memory (app/memory/) - the production vector-store choice is still open
+    # (Qdrant here is a dev-matching default, not a prod decision), so app/core/memory.py's
+    # MemoryStore interface is what the rest of the app depends on, not Qdrant directly.
     qdrant_url: str = "http://localhost:6333"
+    qdrant_collection_name: str = "chat_memories"
+
+    # Embedding models for app/memory/embeddings.py - reuses whichever chat provider
+    # (ollama/openai) the request already selected, so there's no separate user-facing choice.
+    ollama_embedding_model: str = "nomic-embed-text"
+    openai_embedding_model: str = "text-embedding-3-small"
+
+    # How often (in assistant turns per conversation) app/memory/service.py extracts durable
+    # facts worth remembering long-term. Deliberately not every turn - keeps the extra LLM call
+    # infrequent and avoids near-duplicate facts from consecutive turns.
+    memory_extraction_interval_turns: int = 4
+    # How many long-term memories get pulled into a brand-new conversation's system prompt.
+    memory_retrieval_top_k: int = 5
+    # Kill switch - lets long-term memory be turned off without a deploy if extraction/retrieval
+    # ever misbehaves (bad extractions, Qdrant unavailable, cost). Short-term/per-conversation
+    # memory is unaffected either way.
+    memory_enabled: bool = True
 
     # Auth (app/auth/). Empty by default - the app refuses to issue tokens without a real secret;
     # generate one with `python -c "import secrets; print(secrets.token_hex(32))"` and set it in

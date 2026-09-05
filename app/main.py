@@ -27,8 +27,11 @@ from app.chat import repository as chat_repository
 from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvider, MessageOut
 from app.core.chat import ConversationNotFound
 from app.db import Conversation, User, init_models
+from app.memory import build_memory_preamble, maybe_extract, remember_explicit
 from app.settings import settings
 from app.uploads import UploadRecord, resolve_upload_path, save_upload
+
+_REMEMBER_PREFIX = "/remember "
 
 _ACCESS_TOKEN_COOKIE = "access_token"
 _REFRESH_TOKEN_COOKIE = "refresh_token"
@@ -172,6 +175,7 @@ async def get_upload(
 async def _chat_sse(
     session: SessionDep,
     conversation: Conversation,
+    is_new_conversation: bool,
     provider: LlmProvider,
     openai_api_key: SecretStr | None,
     message: str,
@@ -188,15 +192,41 @@ async def _chat_sse(
     requested - anything that should be able to 404 instead has to happen before this is called.
     """
 
+    # A pure memory-write command (app/memory/service.py) - never reaches the LLM, so it can't
+    # be derailed by (or accidentally leak into) the actual conversation. Checked before touching
+    # history/persistence since it's a completely different code path from a normal chat turn.
+    if message.strip().startswith(_REMEMBER_PREFIX):
+        await history.append_message(session, conversation.id, "user", message, image_ids)
+        fact = message.strip().removeprefix(_REMEMBER_PREFIX).strip()
+        reply = (
+            await remember_explicit(
+                conversation.user_id, conversation.id, fact, provider, openai_api_key
+            )
+            if fact
+            else "Nothing to remember - add some text after /remember."
+        )
+        yield f"event: delta\ndata: {json.dumps({'text': reply})}\n\n"
+        await history.append_message(session, conversation.id, "assistant", reply, [])
+        await history.maybe_set_title(session, conversation, message)
+        yield "event: done\ndata: {}\n\n"
+        return
+
     turns = await history.load_history(
         session, conversation.id, max_turns=settings.chat_history_max_turns
     )
     await history.append_message(session, conversation.id, "user", message, image_ids)
+    system_prompt = (
+        await build_memory_preamble(conversation.user_id, message, provider, openai_api_key)
+        if is_new_conversation
+        else None
+    )
 
     service = get_chat_service(provider, openai_api_key)
     reply_chunks: list[str] = []
     try:
-        async for chunk in service.stream_reply(turns, message, image_ids):
+        async for chunk in service.stream_reply(
+            turns, message, image_ids, system_prompt=system_prompt
+        ):
             reply_chunks.append(chunk)
             yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
     except Exception as exc:  # noqa: BLE001 - reported to the client as an SSE error event
@@ -205,6 +235,7 @@ async def _chat_sse(
 
     await history.append_message(session, conversation.id, "assistant", "".join(reply_chunks), [])
     await history.maybe_set_title(session, conversation, message)
+    await maybe_extract(session, conversation, provider, openai_api_key)
     yield "event: done\ndata: {}\n\n"
 
 
@@ -222,7 +253,7 @@ async def chat_stream(
         )
 
     try:
-        conversation = await history.get_or_create_conversation(
+        conversation, is_new_conversation = await history.get_or_create_conversation(
             session, user.id, request.conversation_id
         )
     except ConversationNotFound as exc:
@@ -232,6 +263,7 @@ async def chat_stream(
         _chat_sse(
             session,
             conversation,
+            is_new_conversation,
             request.provider,
             request.openai_api_key,
             request.message,

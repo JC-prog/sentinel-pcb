@@ -23,6 +23,16 @@ def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "jwt_secret_key", "test-secret-key-for-tests-only-32-bytes+")
 
 
+@pytest.fixture(autouse=True)
+def _memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Long-term memory (app/memory/) makes its own embedding/LLM calls through the same
+    httpx.AsyncClient chat tests mock - left enabled, those calls would interleave with (and
+    break assertions on) the mocked chat-provider requests most tests actually care about.
+    Disabled here by default; tests/test_memory.py re-enables it explicitly."""
+
+    monkeypatch.setattr(settings, "memory_enabled", False)
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[None, None]:
     try:
