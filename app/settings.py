@@ -79,5 +79,14 @@ class Settings(BaseSettings):
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
 
+    # Lets the chat LLM itself decide to call a registered Tool (app/agents/registry.py) mid-
+    # conversation - e.g. current_time, get_weather, explainability_review. Kill switch, same
+    # pattern as memory_enabled; disabling sends no `tools` field at all, byte-identical to the
+    # pre-tool-calling request shape. chat_tool_max_rounds bounds how many tool-call round trips
+    # one message can trigger before the loop gives up and answers with what it has, in case a
+    # model keeps calling tools without ever producing a final answer.
+    chat_tool_calling_enabled: bool = True
+    chat_tool_max_rounds: int = 4
+
 
 settings = Settings()
