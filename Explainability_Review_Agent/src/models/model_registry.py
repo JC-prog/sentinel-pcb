@@ -1,85 +1,60 @@
 # src/models/model_registry.py
-import io
 import os
-import json
-import logging
-from dotenv import load_dotenv
-from PIL import Image
+import io
+import base64
 from openai import OpenAI
-import ollama
+from PIL import Image
 
-# Load .env variables into os.environ automatically
-load_dotenv()
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-logger = logging.getLogger(__name__)
-
-class OpenAIReasoningModel:
-    """Uses OpenAI GPT-4o for high-precision diagnostic reasoning and self-check."""
-    def __init__(self, model_name: str = "gpt-4o"):
-        self.model_name = model_name
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "OPENAI_API_KEY is not set. Please set it in your .env file or environment variables."
-            )
-        self.client = OpenAI(api_key=api_key)
-
+class OpenAIReferee:
+    """Reasoning engine using GPT-4o with guaranteed JSON format."""
     def query(self, prompt: str, require_json: bool = True) -> str:
-        logger.info(f"Querying OpenAI ({self.model_name}) for reasoning...")
-        kwargs = {"response_format": {"type": "json_object"}} if require_json else {}
-        response = self.client.chat.completions.create(
-            model=self.model_name,
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            response_format={"type": "json_object"} if require_json else None,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a master PCB Failure Analysis Engineer. You analyze evidence strictly and output valid JSON."
-                },
+                {"role": "system", "content": "You are a senior SMT Quality Engineer and IPC-A-610 certified specialist."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
-            **kwargs
+            temperature=0.0  # Deterministic reasoning
         )
-        return response.choices[0].message.content or "{}"
+        return response.choices[0].message.content
 
+class VisionInspector:
+    """VLM Vision node using GPT-4o Vision."""
+    def query(self, image: Image.Image, prompt: str) -> str:
+        # Encode image to base64
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        b64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-# ── Vision Model (Local LLaVA via Ollama) ───────────────────────────────────
-
-class LocalLLaVAModel:
-    """Vision-Language Model using local LLaVA via Ollama."""
-    def __init__(self, model_name: str = "llava"):
-        self.model_name = model_name
-
-    def query(self, image: Image.Image, prompt: str, max_new_tokens: int = 300) -> str:
-        buffered = io.BytesIO()
-        image.convert("RGB").save(buffered, format="JPEG")
-        image_bytes = buffered.getvalue()
-
-        logger.info(f"Querying Ollama ({self.model_name}) for visual description...")
-        response = ollama.generate(
-            model=self.model_name,
-            prompt=prompt,
-            images=[image_bytes],
-            options={"num_predict": max_new_tokens}
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}}
+                    ]
+                }
+            ],
+            temperature=0.0,   # <── FIX: Added temperature=0.0 to stop hallucinations & randomness!
+            max_tokens=500     # <── FIX: Increased from 300 to prevent truncating coordinates
         )
-        return response.get('response', '')
+        return response.choices[0].message.content
 
-
-class MockDetector:
-    def detect(self, image):
-        return {"defects": [{"box": [10, 10, 50, 50], "class": "anomaly"}]}
-
-class MockImageEncoder:
-    def encode(self, image):
-        return [0.0] * 512
-
-
-# ── Registry ─────────────────────────────────────────────────────────────────
+class BoundingBoxDetector:
+    """Simple detector stub (or your YOLO model)."""
+    def detect(self, image: Image.Image) -> dict:
+        # Provide realistic normalized coordinates [ymin, xmin, ymax, xmax] if this is a stub
+        return {"defects": [{"label": "component_roi", "box": [250, 250, 750, 750], "confidence": 0.98}]}
 
 class ModelRegistry:
     def __init__(self):
-        self.llava = LocalLLaVAModel(model_name="llava")
-        self.reasoning_llm = OpenAIReasoningModel(model_name="gpt-4o")
-        self.pcb_detector = MockDetector()
-        self.image_encoder = MockImageEncoder()
+        self.reasoning_llm = OpenAIReferee()
+        self.llava = VisionInspector()
+        self.pcb_detector = BoundingBoxDetector()
 
 registry = ModelRegistry()
