@@ -1,6 +1,6 @@
 [project]
 name = "sentinel-chat"
-version = "0.4.0"
+version = "0.5.0"
 description = "FastAPI backend for the SentinelChat UI - SSE chat streaming and image uploads."
 authors = [
     { name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }
@@ -14,11 +14,16 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
+    "langgraph>=1.2.11",
+    "numpy>=2.5.2",
+    "openai>=3.8.0",
+    "pillow>=12.3.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.11.0",
     "python-multipart>=0.0.20",
     "qdrant-client>=1.19.0",
+    "sentence-transformers>=6.0.1",
     "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn[standard]>=0.52.0",
 ]
@@ -26,7 +31,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy>=2.3.0",
-    "pillow>=11.0.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.1",

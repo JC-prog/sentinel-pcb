@@ -6,8 +6,15 @@ from typing import Annotated
 from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL import Image
 from pydantic import SecretStr
 
+from app.agents import CurrentTimeTool, ToolRegistry, call_tool
+from app.agents.explainability_review_agent import (
+    ExplainabilityReviewRequest,
+    ExplainabilityReviewResponse,
+    ExplainabilityReviewTool,
+)
 from app.auth import LoginRequest, RegisterRequest, UserOut, get_current_user
 from app.auth.dependencies import SessionDep
 from app.auth.security import decode_access_token
@@ -53,6 +60,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
+# the actual CLIP model load is deferred to first use of the agent (see
+# app/agents/explainability_review_agent/graph.py's get_mcp_client()).
+tool_registry = ToolRegistry([CurrentTimeTool(), ExplainabilityReviewTool()])
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -310,3 +322,46 @@ async def delete_conversation(
     if conversation is None or conversation.user_id != user.id:
         raise HTTPException(status_code=404, detail="conversation not found")
     await chat_repository.delete_conversation(session, conversation)
+
+
+@app.post("/api/agents/explainability-review")
+async def explainability_review(
+    request: ExplainabilityReviewRequest,
+    _user: Annotated[User, Depends(get_current_user)],
+) -> ExplainabilityReviewResponse:
+    """Direct invocation of ExplainabilityReviewTool through the same ToolRegistry/call_tool()
+    an LLM-driven tool-calling loop would use later (see DEVELOPMENT.md) - just called by this
+    route instead of by a model deciding to call it."""
+
+    if not settings.explainability_agent_enabled:
+        raise HTTPException(status_code=503, detail="explainability review agent is disabled")
+
+    api_key = (
+        request.openai_api_key.get_secret_value()
+        if request.openai_api_key is not None
+        else settings.explainability_agent_openai_api_key
+    )
+    if not api_key:
+        raise HTTPException(
+            status_code=422,
+            detail="openai_api_key is required (no server-side fallback is configured)",
+        )
+
+    image_path = resolve_upload_path(request.image_id)
+    if image_path is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    image = Image.open(image_path).convert("RGB")
+
+    result_json = await call_tool(
+        tool_registry,
+        "explainability_review",
+        {
+            "image": image,
+            "image_name": request.image_id,
+            "board_id": request.board_id,
+            "component_ref": request.component_ref,
+            "issue_symptom": request.issue_symptom,
+            "openai_api_key": api_key,
+        },
+    )
+    return ExplainabilityReviewResponse.model_validate_json(result_json)
