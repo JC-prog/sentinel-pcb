@@ -12,5 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Angular chat UI in the style of ChatGPT: a left history panel and a main chat panel, with text
   messages, image attachments, and a light/dark theme toggle that persists per browser.
 - Chat history and theme preference persisted to the browser's local storage.
-- A mocked chat responder standing in for a real backend, so the UI is fully usable on its own
-  ahead of that work.
+- FastAPI backend: chat replies stream to the UI over Server-Sent Events instead of arriving as
+  one blocking response, and a separate endpoint handles image uploads for chat attachments.
+- A mocked chat responder is kept as a fallback/test double; the UI talks to the real backend by
+  default.
