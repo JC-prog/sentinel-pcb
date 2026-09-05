@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { Sidebar } from './sidebar';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
+import { SettingsService } from '../settings.service';
 
 describe('Sidebar', () => {
   let component: Sidebar;
@@ -67,5 +68,16 @@ describe('Sidebar', () => {
     fixture.detectChanges();
 
     expect(themeButton.textContent).not.toBe(initialLabel);
+  });
+
+  it('opens settings when the settings button is clicked', () => {
+    const settingsService = TestBed.inject(SettingsService);
+    const settingsButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (btn) => (btn as HTMLElement).textContent?.includes('Settings'),
+    ) as HTMLElement;
+
+    settingsButton.click();
+
+    expect(settingsService.isOpen()).toBe(true);
   });
 });

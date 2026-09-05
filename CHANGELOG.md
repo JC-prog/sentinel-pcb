@@ -16,3 +16,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one blocking response, and a separate endpoint handles image uploads for chat attachments.
 - A mocked chat responder is kept as a fallback/test double; the UI talks to the real backend by
   default.
+- LLM provider selection in a new Settings panel: a local Ollama model, or OpenAI with a
+  user-supplied, bring-your-own API key that stays in the browser and is sent with each request,
+  never stored on the server.

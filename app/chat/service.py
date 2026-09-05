@@ -1,26 +1,20 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Protocol
 
-from app.settings import settings
+from pydantic import SecretStr
+
+from app.chat.providers.ollama import OllamaChatService
+from app.chat.providers.openai import OpenAiChatService
+from app.chat.schemas import LlmProvider
 
 
 class ChatService(Protocol):
     def stream_reply(self, message: str, image_ids: list[str]) -> AsyncGenerator[str, None]: ...
 
 
-class PlaceholderChatService:
-    """Echoes the message back, word by word. Swap point for a real LLM call - see
-    get_chat_service()."""
-
-    async def stream_reply(self, message: str, image_ids: list[str]) -> AsyncGenerator[str, None]:
-        image_note = f" (with {len(image_ids)} image(s) attached)" if image_ids else ""
-        reply = f"This is a placeholder response{image_note}. You said: {message}"
-        words = reply.split(" ")
-        for i, word in enumerate(words):
-            yield word + (" " if i < len(words) - 1 else "")
-            await asyncio.sleep(settings.chat_stream_delay_seconds)
-
-
-def get_chat_service() -> ChatService:
-    return PlaceholderChatService()
+def get_chat_service(provider: LlmProvider, openai_api_key: SecretStr | None) -> ChatService:
+    if provider == "openai":
+        if openai_api_key is None:
+            raise ValueError("openai_api_key is required when provider is 'openai'")
+        return OpenAiChatService(api_key=openai_api_key)
+    return OllamaChatService()
