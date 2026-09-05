@@ -15,10 +15,7 @@ __pycache__/
 # OS
 .DS_Store
 
-# Model weights - large binaries, not committed. See models/README.md to regenerate.
-models/*.onnx
-
-# Uploaded inspection images (app.settings.image_storage_dir) - runtime data, not source.
+# Uploaded chat images (app.settings.chat_upload_dir) and other runtime data - not source.
 /data/
 
 # Planning docs (proposals, reports, working design docs) - not part of the shipped repo.

@@ -1,0 +1,37 @@
+[project]
+name = "sentinel-chat"
+version = "0.1.0"
+description = "FastAPI backend for the SentinelChat UI - SSE chat streaming and image uploads."
+authors = [
+    { name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }
+]
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "python-multipart>=0.0.20",
+    "uvicorn[standard]>=0.52.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pillow>=11.0.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.1",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
