@@ -3,7 +3,6 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import httpx
-from pydantic import SecretStr
 
 from app.config.settings import settings
 from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, ToolCallsReady
@@ -46,13 +45,10 @@ def _to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class OpenAiChatService:
-    """Streams a reply from OpenAI's chat completions API using a caller-supplied,
-    bring-your-own key (never persisted, never logged - see ChatStreamRequest.openai_api_key).
+    """Streams a reply from OpenAI's chat completions API using the server-side
+    settings.openai_api_key (no per-request bring-your-own-key - see app/config/settings.py).
     The response body is OpenAI's own SSE framing (`data: {...}\\n\\n`, terminated by
     `data: [DONE]`)."""
-
-    def __init__(self, api_key: SecretStr) -> None:
-        self._api_key = api_key
 
     async def stream_reply(
         self,
@@ -69,7 +65,7 @@ class OpenAiChatService:
             "messages": messages,
             "stream": True,
         }
-        headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+        headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
 
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
@@ -116,7 +112,7 @@ class OpenAiChatService:
         }
         if tools:
             payload["tools"] = _to_openai_tools(tools)
-        headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+        headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
 
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 

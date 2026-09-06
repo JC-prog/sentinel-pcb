@@ -1,5 +1,4 @@
 import httpx
-from pydantic import SecretStr
 
 from app.chat.schemas import LlmProvider
 from app.config.settings import settings
@@ -27,15 +26,12 @@ class OllamaEmbeddingService:
 
 
 class OpenAiEmbeddingService:
-    """Embeds text via OpenAI's embeddings API using the same bring-your-own key already used
-    for chat (never persisted server-side - see ChatStreamRequest.openai_api_key)."""
-
-    def __init__(self, api_key: SecretStr) -> None:
-        self._api_key = api_key
+    """Embeds text via OpenAI's embeddings API using the server-side settings.openai_api_key -
+    see app/config/settings.py."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         payload = {"model": settings.openai_embedding_model, "input": texts}
-        headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+        headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(_OPENAI_EMBEDDINGS_URL, json=payload, headers=headers)
             if response.status_code != 200:
@@ -46,13 +42,9 @@ class OpenAiEmbeddingService:
             return [item["embedding"] for item in data["data"]]
 
 
-def get_embedding_service(
-    provider: LlmProvider, openai_api_key: SecretStr | None
-) -> EmbeddingService:
+def get_embedding_service(provider: LlmProvider) -> EmbeddingService:
     if provider == "openai":
-        if openai_api_key is None:
-            raise ValueError("openai_api_key is required when provider is 'openai'")
-        return OpenAiEmbeddingService(api_key=openai_api_key)
+        return OpenAiEmbeddingService()
     return OllamaEmbeddingService()
 
 

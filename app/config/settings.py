@@ -24,9 +24,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
 
-    # OpenAI provider (app.chat.providers.openai). No server-side API key setting - it's
-    # bring-your-own-key, entered in the Settings UI and sent with each request. Only the model
-    # name is configured here.
+    # OpenAI provider (app.chat.providers.openai). Single server-side key, used wherever OpenAI is
+    # needed: chat (LlmProvider == "openai"), memory's embeddings/fact-extraction when the
+    # conversation's provider is "openai", and the Explainability & Review Agent. No per-request
+    # bring-your-own-key - whoever runs this server configures this once. Empty by default -
+    # never commit a real value.
+    openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
     # How many prior messages (app/chat/history.py) get sent to the LLM as context for a reply.
@@ -74,13 +77,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
 
     # Explainability & Review Agent (app/agents/explainability_review_agent/) - POST
-    # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled.
+    # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled. Its OpenAI
+    # calls use the shared openai_api_key setting above, not a key of its own.
     explainability_agent_enabled: bool = True
-    # Server-side fallback OpenAI key for this agent only, used when a request doesn't supply
-    # its own bring-your-own-key (ExplainabilityReviewRequest.openai_api_key). Unlike chat, this
-    # agent doesn't have a UI to enter a key into yet, so a fallback is what makes it usable at
-    # all before that exists. Empty by default - never commit a real value.
-    explainability_agent_openai_api_key: str = ""
     # PCB images (inputs/, admin-provided), the IPC-A-610 reference JSON (ipc_standards/,
     # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
     # cwd-relative convention as chat_upload_dir.

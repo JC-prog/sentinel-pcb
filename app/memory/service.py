@@ -9,7 +9,6 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat import repository as chat_repository
@@ -48,7 +47,6 @@ async def maybe_extract(
     session: AsyncSession,
     conversation: Conversation,
     provider: LlmProvider,
-    openai_api_key: SecretStr | None,
 ) -> None:
     """Runs a small LLM pass over the conversation's recent turns to pull out durable facts,
     throttled to every settings.memory_extraction_interval_turns assistant replies so it isn't an
@@ -68,11 +66,11 @@ async def maybe_extract(
         recent = await chat_repository.get_recent_messages(session, conversation.id, limit=window)
         transcript = "\n".join(f"{m.role}: {m.content}" for m in recent)
 
-        facts = await _extract_facts(transcript, provider, openai_api_key)
+        facts = await _extract_facts(transcript, provider)
         if not facts:
             return
 
-        embedding_service = get_embedding_service(provider, openai_api_key)
+        embedding_service = get_embedding_service(provider)
         embeddings = await embedding_service.embed(facts)
         store = get_memory_store(embedding_model_name(provider))
         now = datetime.now(UTC)
@@ -90,10 +88,8 @@ async def maybe_extract(
         logger.exception("Long-term memory extraction failed for conversation %s", conversation.id)
 
 
-async def _extract_facts(
-    transcript: str, provider: LlmProvider, openai_api_key: SecretStr | None
-) -> list[str]:
-    service = get_chat_service(provider, openai_api_key)
+async def _extract_facts(transcript: str, provider: LlmProvider) -> list[str]:
+    service = get_chat_service(provider)
     chunks: list[str] = []
     async for chunk in service.stream_reply(
         [], transcript, [], system_prompt=_EXTRACTION_SYSTEM_PROMPT
@@ -113,7 +109,6 @@ async def remember_explicit(
     conversation_id: str,
     fact: str,
     provider: LlmProvider,
-    openai_api_key: SecretStr | None,
 ) -> str:
     """Backs the `/remember <text>` escape hatch (app/main.py) - stores fact verbatim, bypassing
     the LLM-extraction heuristic, for when a user wants a guaranteed memory rather than hoping
@@ -122,7 +117,7 @@ async def remember_explicit(
     if not settings.memory_enabled:
         return "Long-term memory is currently disabled."
     try:
-        embedding_service = get_embedding_service(provider, openai_api_key)
+        embedding_service = get_embedding_service(provider)
         [embedding] = await embedding_service.embed([fact])
         store = get_memory_store(embedding_model_name(provider))
         record = MemoryRecord(
@@ -140,9 +135,7 @@ async def remember_explicit(
     return f'Got it, I\'ll remember: "{fact}"'
 
 
-async def build_memory_preamble(
-    user_id: str, query_text: str, provider: LlmProvider, openai_api_key: SecretStr | None
-) -> str | None:
+async def build_memory_preamble(user_id: str, query_text: str, provider: LlmProvider) -> str | None:
     """Only called for a brand-new conversation (app/main.py) - retrieval is scoped solely by
     user_id, never by conversation, since surfacing facts from OTHER conversations is the entire
     point of long-term memory. Never raises - a broken retrieval should degrade to "no memory
@@ -151,7 +144,7 @@ async def build_memory_preamble(
     if not settings.memory_enabled:
         return None
     try:
-        embedding_service = get_embedding_service(provider, openai_api_key)
+        embedding_service = get_embedding_service(provider)
         [query_embedding] = await embedding_service.embed([query_text])
         store = get_memory_store(embedding_model_name(provider))
         matches = await store.search(
