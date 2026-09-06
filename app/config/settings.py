@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     # one parseable object per line, for ECS Fargate's awslogs log driver to ship to CloudWatch.
     # Same stdout destination either way - only the format changes.
     log_format: Literal["console", "json"] = "console"
+    # Gates all DEBUG-level logging - including verbose API request/response bodies (app/main.py's
+    # request-logging middleware and _chat_sse) and LLM request/response payloads
+    # (app/chat/providers/). Separate from log_format since this controls how much gets logged,
+    # not how it's rendered. Default INFO - flip to DEBUG locally when you need the detail; full
+    # bodies are noisy and can contain fields worth not logging by default.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # Where uploaded chat images are stored on disk (app.uploads.service). Swap for S3 before
     # running more than one instance - a later task, not needed for this scaffold.

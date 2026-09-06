@@ -98,7 +98,13 @@ cd ui && npx ng test --watch=false && npx ng build
   containers/infra. A request-logging middleware in `app/main.py` logs one `app.access` line per
   request (method, path, status, duration, and the caller's user id when authenticated) via
   `extra=`, which the JSON formatter surfaces as its own keys generically - any future
-  `logger.info(..., extra={...})` call gets the same treatment, not just this one.
+  `logger.info(..., extra={...})` call gets the same treatment, not just this one. `LOG_LEVEL=DEBUG`
+  additionally logs every API request/response body (`password` redacted) and every LLM
+  request/response payload (`app/chat/providers/`, including the `tools` array and tool-call
+  results) - gated behind an `isEnabledFor()` check so there's zero extra buffering when it's off
+  (default `INFO`). `/api/chat/stream`'s response is never buffered for this even at `DEBUG` -
+  logging it there would delay the live SSE stream - it's logged separately, at the point
+  `_chat_sse` already assembles the final reply.
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.

@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -6,6 +7,8 @@ import httpx
 
 from app.config.settings import settings
 from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, ToolCallsReady
+
+logger = logging.getLogger(__name__)
 
 
 def _to_ollama_message(message: ChatMessage) -> dict[str, Any]:
@@ -59,6 +62,8 @@ class OllamaChatService:
             "messages": messages,
             "stream": True,
         }
+        logger.debug("Ollama request: %s", payload, extra={"payload": payload})
+        text_parts: list[str] = []
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
             client.stream("POST", f"{settings.ollama_base_url}/api/chat", json=payload) as response,
@@ -74,8 +79,13 @@ class OllamaChatService:
                 data = json.loads(line)
                 content = data.get("message", {}).get("content", "")
                 if content:
+                    text_parts.append(content)
                     yield content
                 if data.get("done"):
+                    full_content = "".join(text_parts)
+                    logger.debug(
+                        "Ollama response: %r", full_content, extra={"content": full_content}
+                    )
                     return
 
     async def stream_with_tools(
@@ -98,6 +108,7 @@ class OllamaChatService:
         }
         if tools:
             payload["tools"] = _to_ollama_tools(tools)
+        logger.debug("Ollama request: %s", payload, extra={"payload": payload})
 
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
@@ -108,6 +119,7 @@ class OllamaChatService:
                 raise RuntimeError(
                     f"Ollama request failed ({response.status_code}): {body.decode(errors='replace')}"
                 )
+            text_parts: list[str] = []
             tool_calls: list[dict[str, Any]] = []
             async for line in response.aiter_lines():
                 if not line.strip():
@@ -115,11 +127,19 @@ class OllamaChatService:
                 data = json.loads(line)
                 content = data.get("message", {}).get("content", "")
                 if content:
+                    text_parts.append(content)
                     yield TextDelta(text=content)
                 line_tool_calls = data.get("message", {}).get("tool_calls")
                 if line_tool_calls:
                     tool_calls = line_tool_calls
                 if data.get("done"):
+                    full_content = "".join(text_parts)
+                    logger.debug(
+                        "Ollama response: content=%r tool_calls=%s",
+                        full_content,
+                        tool_calls,
+                        extra={"content": full_content, "tool_calls": tool_calls},
+                    )
                     if tool_calls:
                         yield ToolCallsReady(
                             calls=[
