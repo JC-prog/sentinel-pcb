@@ -55,7 +55,11 @@ cd ui && npx ng test --watch=false && npx ng build
   subjects). `ChatResponder` (`ui/src/app/chat-responder.ts`) is the frontend's equivalent swap
   point - `HttpChatResponder` talks to the real backend, `MockChatResponder` is a fallback/test
   double. Both stream multiple chunks rather than returning one value; `ChatService` accumulates
-  them into the assistant message as they arrive.
+  them into the assistant message as they arrive. Image attachments (`ui/src/app/chat/chat.ts`)
+  can be added via the paperclip button or by dragging a file onto the chat window - both funnel
+  through the same `addFiles()`/`pendingImages` signal, so nothing downstream (upload, preview,
+  send) needs to know which one was used. `app.html`'s root wrapper guards against a drop that
+  misses the chat window (e.g. lands on the sidebar) navigating the browser away from the SPA.
 - **Memory**: two tiers, both server-side and scoped per account. Short-term (per-conversation)
   memory is `Conversation`/`Message` rows in Postgres (`app/db/models/chat.py`), assembled back
   into context for each reply by `app/chat/history.py`. Long-term (cross-conversation) memory
