@@ -117,4 +117,78 @@ describe('Chat', () => {
 
     expect(chatService.list()().length).toBe(0);
   });
+
+  function fakeDropEvent(files: File[]): DragEvent {
+    return {
+      preventDefault: vi.fn(),
+      dataTransfer: { files },
+    } as unknown as DragEvent;
+  }
+
+  it('adds a dropped image file to the pending attachments', async () => {
+    await setup(new FakeActivatedRoute());
+    const file = new File(['x'], 'board.png', { type: 'image/png' });
+
+    fixture.componentInstance.onDrop(fakeDropEvent([file]));
+
+    expect(fixture.componentInstance['pendingImages']().map((image) => image.file)).toEqual([
+      file,
+    ]);
+  });
+
+  it('adds all dropped image files when multiple are dropped at once', async () => {
+    await setup(new FakeActivatedRoute());
+    const first = new File(['x'], 'a.png', { type: 'image/png' });
+    const second = new File(['y'], 'b.jpg', { type: 'image/jpeg' });
+
+    fixture.componentInstance.onDrop(fakeDropEvent([first, second]));
+
+    expect(fixture.componentInstance['pendingImages']().map((image) => image.file)).toEqual([
+      first,
+      second,
+    ]);
+  });
+
+  it('ignores a dropped non-image file', async () => {
+    await setup(new FakeActivatedRoute());
+    const file = new File(['x'], 'notes.txt', { type: 'text/plain' });
+
+    fixture.componentInstance.onDrop(fakeDropEvent([file]));
+
+    expect(fixture.componentInstance['pendingImages']()).toEqual([]);
+  });
+
+  it('shows the drop overlay on dragenter and hides it on the matching dragleave', async () => {
+    await setup(new FakeActivatedRoute());
+    const event = { preventDefault: vi.fn() } as unknown as DragEvent;
+
+    fixture.componentInstance.onDragEnter(event);
+    expect(fixture.componentInstance['isDraggingOver']()).toBe(true);
+
+    fixture.componentInstance.onDragLeave(event);
+    expect(fixture.componentInstance['isDraggingOver']()).toBe(false);
+  });
+
+  it('keeps the overlay visible while dragging over a nested child element', async () => {
+    await setup(new FakeActivatedRoute());
+    const event = { preventDefault: vi.fn() } as unknown as DragEvent;
+
+    fixture.componentInstance.onDragEnter(event); // enters the drop zone
+    fixture.componentInstance.onDragEnter(event); // enters a child element
+    fixture.componentInstance.onDragLeave(event); // leaves the child element
+    expect(fixture.componentInstance['isDraggingOver']()).toBe(true);
+
+    fixture.componentInstance.onDragLeave(event); // leaves the drop zone itself
+    expect(fixture.componentInstance['isDraggingOver']()).toBe(false);
+  });
+
+  it('hides the overlay after a drop', async () => {
+    await setup(new FakeActivatedRoute());
+    const enterEvent = { preventDefault: vi.fn() } as unknown as DragEvent;
+    fixture.componentInstance.onDragEnter(enterEvent);
+
+    fixture.componentInstance.onDrop(fakeDropEvent([]));
+
+    expect(fixture.componentInstance['isDraggingOver']()).toBe(false);
+  });
 });
