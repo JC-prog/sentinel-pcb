@@ -46,6 +46,18 @@ def test_configure_logging_is_idempotent() -> None:
     assert len(logging.getLogger().handlers) == 1
 
 
+def test_configure_logging_respects_log_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "log_level", "DEBUG")
+    configure_logging()
+    assert logging.getLogger().level == logging.DEBUG
+
+
+def test_configure_logging_defaults_to_info(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "log_level", "INFO")
+    configure_logging()
+    assert logging.getLogger().level == logging.INFO
+
+
 def test_console_format_is_human_readable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "log_format", "console")
     configure_logging()
