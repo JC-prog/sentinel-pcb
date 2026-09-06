@@ -52,3 +52,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it straight to CloudWatch - no new infrastructure either way. A new per-request access log line
   (method, path, status, duration, and the caller's user id when authenticated) replaces having
   to piece that together from a raw traceback.
+- Drag-and-drop image attachment: drop an image file anywhere on the chat window (not just via
+  the paperclip button) to add it to the message you're composing - a highlighted drop zone
+  appears while dragging. Dropping outside the chat window (e.g. on the sidebar) no longer
+  navigates the browser away from the app.
