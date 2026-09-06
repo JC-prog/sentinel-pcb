@@ -12,7 +12,9 @@ from app.config.settings import settings
 _RealAsyncClient = httpx.AsyncClient
 
 
-def _mock_async_client(monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+def _mock_async_client(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]
+) -> None:
     def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
         kwargs["transport"] = httpx.MockTransport(handler)
         return _RealAsyncClient(*args, **kwargs)  # type: ignore[arg-type]
@@ -49,12 +51,14 @@ def test_chat_stream_rejects_empty_message(authenticated_client: TestClient) -> 
     assert response.status_code == 422
 
 
-def test_chat_stream_requires_key_for_openai_provider(authenticated_client: TestClient) -> None:
+def test_chat_stream_returns_503_when_openai_not_configured(
+    authenticated_client: TestClient,
+) -> None:
     response = authenticated_client.post(
         "/api/chat/stream",
         json={"conversation_id": "c1", "message": "hi", "image_ids": [], "provider": "openai"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 503
 
 
 def test_chat_stream_uses_ollama_by_default(
@@ -91,8 +95,10 @@ def test_chat_stream_uses_ollama_by_default(
 def test_chat_stream_uses_openai_when_selected(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-server-key")
+
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["authorization"] == "Bearer sk-test-key"
+        assert request.headers["authorization"] == "Bearer sk-server-key"
         sse = (
             'data: {"choices":[{"delta":{"content":"Hi "}}]}\n\n'
             'data: {"choices":[{"delta":{"content":"there"}}]}\n\n'
@@ -110,7 +116,6 @@ def test_chat_stream_uses_openai_when_selected(
             "message": "hi",
             "image_ids": [],
             "provider": "openai",
-            "openai_api_key": "sk-test-key",
         },
     ) as response:
         body = "".join(response.iter_text())
@@ -122,6 +127,8 @@ def test_chat_stream_uses_openai_when_selected(
 def test_chat_stream_surfaces_upstream_error_without_leaking_the_key(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-super-secret")
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, text='{"error": "invalid api key"}')
 
@@ -135,7 +142,6 @@ def test_chat_stream_surfaces_upstream_error_without_leaking_the_key(
             "message": "hi",
             "image_ids": [],
             "provider": "openai",
-            "openai_api_key": "sk-super-secret",
         },
     ) as response:
         body = "".join(response.iter_text())
@@ -246,7 +252,9 @@ def test_chat_stream_error_persists_user_message_but_not_assistant_reply(
 
 
 def test_chat_stream_conversation_id_scoped_per_user(
-    authenticated_client: TestClient, other_authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    authenticated_client: TestClient,
+    other_authenticated_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return _ollama_reply("ack")
