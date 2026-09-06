@@ -6,6 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import RefreshToken, User
 
 
+async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
+    user = await session.scalar(select(User).where(User.username == username))
+    return user
+
+
 async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
     user = await session.scalar(select(User).where(User.email == email))
     return user
@@ -49,6 +54,8 @@ async def get_refresh_token_by_hash(session: AsyncSession, token_hash: str) -> R
     return token
 
 
-async def revoke_refresh_token(session: AsyncSession, token: RefreshToken, revoked_at: datetime) -> None:
+async def revoke_refresh_token(
+    session: AsyncSession, token: RefreshToken, revoked_at: datetime
+) -> None:
     token.revoked_at = revoked_at
     await session.commit()

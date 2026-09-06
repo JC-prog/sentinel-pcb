@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 _QA_PAYLOAD = {
-    "name": "First User",
+    "username": "first-user",
     "email": "first@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-001",
@@ -25,30 +25,46 @@ def test_first_user_becomes_admin_regardless_of_requested_role(client: TestClien
 
 
 def test_second_user_gets_the_role_they_requested(client: TestClient) -> None:
-    _register(client, email="admin-bootstrap@example.com", employee_id="EMP-000")
+    _register(
+        client,
+        username="admin-bootstrap",
+        email="admin-bootstrap@example.com",
+        employee_id="EMP-000",
+    )
 
     response = _register(
-        client, email="second@example.com", employee_id="EMP-002", role="operator"
+        client,
+        username="second-user",
+        email="second@example.com",
+        employee_id="EMP-002",
+        role="operator",
     )
     assert response.status_code == 201
     assert response.json()["role"] == "operator"
 
 
+def test_register_allows_admin_role(client: TestClient) -> None:
+    response = _register(client, role="admin")
+    assert response.status_code == 201
+    assert response.json()["role"] == "admin"
+
+
+def test_register_rejects_duplicate_username(client: TestClient) -> None:
+    _register(client)
+    response = _register(client, email="someone-else@example.com", employee_id="EMP-002")
+    assert response.status_code == 409
+
+
 def test_register_rejects_duplicate_email(client: TestClient) -> None:
     _register(client)
-    response = _register(client, employee_id="EMP-002")
+    response = _register(client, username="someone-else", employee_id="EMP-002")
     assert response.status_code == 409
 
 
 def test_register_rejects_duplicate_employee_id(client: TestClient) -> None:
     _register(client)
-    response = _register(client, email="someone-else@example.com")
+    response = _register(client, username="someone-else", email="someone-else@example.com")
     assert response.status_code == 409
-
-
-def test_register_rejects_admin_role(client: TestClient) -> None:
-    response = client.post("/api/auth/register", json={**_QA_PAYLOAD, "role": "admin"})
-    assert response.status_code == 422
 
 
 def test_register_sets_auth_cookies(client: TestClient) -> None:
@@ -61,24 +77,22 @@ def test_login_with_correct_credentials(client: TestClient) -> None:
     _register(client)
     response = client.post(
         "/api/auth/login",
-        json={"email": _QA_PAYLOAD["email"], "password": _QA_PAYLOAD["password"]},
+        json={"username": _QA_PAYLOAD["username"], "password": _QA_PAYLOAD["password"]},
     )
     assert response.status_code == 200
-    assert response.json()["email"] == _QA_PAYLOAD["email"]
+    assert response.json()["username"] == _QA_PAYLOAD["username"]
 
 
 def test_login_with_incorrect_password(client: TestClient) -> None:
     _register(client)
     response = client.post(
-        "/api/auth/login", json={"email": _QA_PAYLOAD["email"], "password": "wrong"}
+        "/api/auth/login", json={"username": _QA_PAYLOAD["username"], "password": "wrong"}
     )
     assert response.status_code == 401
 
 
-def test_login_with_unknown_email(client: TestClient) -> None:
-    response = client.post(
-        "/api/auth/login", json={"email": "nobody@example.com", "password": "whatever"}
-    )
+def test_login_with_unknown_username(client: TestClient) -> None:
+    response = client.post("/api/auth/login", json={"username": "nobody", "password": "whatever"})
     assert response.status_code == 401
 
 

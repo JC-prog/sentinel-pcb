@@ -13,7 +13,7 @@ function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400): Respon
 
 const USER_BODY = {
   id: 'user-1',
-  name: 'Jane QA',
+  username: 'jane-qa',
   email: 'jane@example.com',
   employee_id: 'EMP-042',
   department_shift: 'QA Day Shift',
@@ -56,15 +56,17 @@ describe('AuthService', () => {
 
   it('login sets the current user and throws with the server message on failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(USER_BODY)));
-    await service.login('jane@example.com', 'correct-horse-battery-staple');
-    expect(service.currentUser()?.name).toBe('Jane QA');
+    await service.login('jane-qa', 'correct-horse-battery-staple');
+    expect(service.currentUser()?.username).toBe('jane-qa');
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ detail: 'incorrect email or password' }, false, 401)),
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ detail: 'incorrect username or password' }, false, 401)),
     );
-    await expect(service.login('jane@example.com', 'wrong')).rejects.toThrow(
-      'incorrect email or password',
+    await expect(service.login('jane-qa', 'wrong')).rejects.toThrow(
+      'incorrect username or password',
     );
   });
 

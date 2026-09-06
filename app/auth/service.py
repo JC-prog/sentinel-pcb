@@ -16,6 +16,7 @@ from app.core.auth import (
     EmployeeIdAlreadyRegistered,
     InvalidCredentials,
     InvalidRefreshToken,
+    UsernameAlreadyRegistered,
 )
 from app.db.models import RefreshToken, User, UserRole
 
@@ -24,6 +25,7 @@ __all__ = [
     "EmployeeIdAlreadyRegistered",
     "InvalidCredentials",
     "InvalidRefreshToken",
+    "UsernameAlreadyRegistered",
     "authenticate_user",
     "issue_tokens",
     "register_user",
@@ -33,19 +35,21 @@ __all__ = [
 
 
 async def register_user(session: AsyncSession, data: RegisterRequest) -> User:
+    if await repository.get_user_by_username(session, data.username) is not None:
+        raise UsernameAlreadyRegistered
     if await repository.get_user_by_email(session, data.email) is not None:
         raise EmailAlreadyRegistered
     if await repository.get_user_by_employee_id(session, data.employee_id) is not None:
         raise EmployeeIdAlreadyRegistered
 
     # Bootstrap: the first user ever created becomes Admin regardless of what they requested -
-    # Admin is deliberately not a choice on the public register form (app/auth/schemas.py). Every
-    # user after that gets exactly the role they asked for (QA or Operator only).
+    # a safety net guaranteeing at least one Admin exists even if the first registrant doesn't
+    # think to pick it. Admin is otherwise a normal, selectable choice on the register form.
     user_count = await repository.count_users(session)
     role = UserRole.ADMIN if user_count == 0 else UserRole(data.role)
 
     user = User(
-        name=data.name,
+        username=data.username,
         email=data.email,
         password_hash=hash_password(data.password),
         employee_id=data.employee_id,
@@ -55,8 +59,8 @@ async def register_user(session: AsyncSession, data: RegisterRequest) -> User:
     return await repository.add_user(session, user)
 
 
-async def authenticate_user(session: AsyncSession, email: str, password: str) -> User:
-    user = await repository.get_user_by_email(session, email)
+async def authenticate_user(session: AsyncSession, username: str, password: str) -> User:
+    user = await repository.get_user_by_username(session, username)
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
         raise InvalidCredentials
     return user

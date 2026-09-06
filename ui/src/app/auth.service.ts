@@ -3,11 +3,10 @@ import { Router } from '@angular/router';
 import { environment } from '../environments/environment';
 
 export type UserRole = 'qa' | 'operator' | 'admin';
-export type RegistrableRole = 'qa' | 'operator';
 
 export interface AuthUser {
   id: string;
-  name: string;
+  username: string;
   email: string;
   employeeId: string;
   departmentShift: string;
@@ -15,17 +14,17 @@ export interface AuthUser {
 }
 
 export interface RegisterInput {
-  name: string;
+  username: string;
   email: string;
   password: string;
   employeeId: string;
   departmentShift: string;
-  role: RegistrableRole;
+  role: UserRole;
 }
 
 interface UserResponseBody {
   id: string;
-  name: string;
+  username: string;
   email: string;
   employee_id: string;
   department_shift: string;
@@ -35,7 +34,7 @@ interface UserResponseBody {
 function toAuthUser(body: UserResponseBody): AuthUser {
   return {
     id: body.id,
-    name: body.name,
+    username: body.username,
     email: body.email,
     employeeId: body.employee_id,
     departmentShift: body.department_shift,
@@ -74,7 +73,7 @@ export class AuthService {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
-        name: input.name,
+        username: input.username,
         email: input.email,
         password: input.password,
         employee_id: input.employeeId,
@@ -88,12 +87,12 @@ export class AuthService {
     this.currentUser.set(toAuthUser(await response.json()));
   }
 
-  async login(email: string, password: string): Promise<void> {
+  async login(username: string, password: string): Promise<void> {
     const response = await fetch(`${environment.apiBaseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     });
     if (!response.ok) {
       throw new Error(await extractErrorMessage(response));

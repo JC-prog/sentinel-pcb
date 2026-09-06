@@ -10,7 +10,7 @@ import { AuthService } from '../auth.service';
   templateUrl: './login.html',
 })
 export class Login {
-  protected readonly email = signal('');
+  protected readonly username = signal('');
   protected readonly password = signal('');
   protected readonly error = signal<string | null>(null);
   protected readonly submitting = signal(false);
@@ -27,7 +27,7 @@ export class Login {
     this.error.set(null);
     this.submitting.set(true);
     try {
-      await this.authService.login(this.email(), this.password());
+      await this.authService.login(this.username(), this.password());
       await this.router.navigateByUrl('/');
     } catch (err) {
       this.error.set(err instanceof Error ? err.message : 'Login failed');

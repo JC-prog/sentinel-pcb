@@ -8,6 +8,10 @@ class EmailAlreadyRegistered(Exception):
     pass
 
 
+class UsernameAlreadyRegistered(Exception):
+    pass
+
+
 class EmployeeIdAlreadyRegistered(Exception):
     pass
 

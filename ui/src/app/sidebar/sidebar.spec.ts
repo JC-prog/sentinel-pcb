@@ -10,7 +10,7 @@ import { SettingsService } from '../settings.service';
 
 const USER: AuthUser = {
   id: 'user-1',
-  name: 'Jane QA',
+  username: 'jane-qa',
   email: 'jane@example.com',
   employeeId: 'EMP-042',
   departmentShift: 'QA Day Shift',
@@ -109,7 +109,7 @@ describe('Sidebar', () => {
     authService.currentUser.set(USER);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Jane QA');
+    expect(fixture.nativeElement.textContent).toContain('jane-qa');
     expect(fixture.nativeElement.textContent).toContain('qa');
 
     const logoutSpy = vi.spyOn(authService, 'logout').mockResolvedValue(undefined);

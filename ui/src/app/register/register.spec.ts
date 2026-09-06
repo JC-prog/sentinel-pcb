@@ -29,12 +29,19 @@ describe('Register', () => {
     expect(fixture.componentInstance['role']()).toBe('qa');
   });
 
+  it('offers admin as a selectable role', () => {
+    const options = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('#role option'),
+    ) as HTMLOptionElement[];
+    expect(options.map((option) => option.value)).toEqual(['qa', 'operator', 'admin']);
+  });
+
   it('registers with the entered fields and navigates to the chat home on success', async () => {
     vi.spyOn(authService, 'register').mockResolvedValue(undefined);
     vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
     const component = fixture.componentInstance;
-    component['name'].set('Jane QA');
+    component['username'].set('jane-qa');
     component['email'].set('jane@example.com');
     component['password'].set('correct-horse-battery-staple');
     component['employeeId'].set('EMP-042');
@@ -43,7 +50,7 @@ describe('Register', () => {
     await component.submit();
 
     expect(authService.register).toHaveBeenCalledWith({
-      name: 'Jane QA',
+      username: 'jane-qa',
       email: 'jane@example.com',
       password: 'correct-horse-battery-staple',
       employeeId: 'EMP-042',

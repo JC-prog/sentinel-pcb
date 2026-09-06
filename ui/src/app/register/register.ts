@@ -1,7 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService, RegistrableRole } from '../auth.service';
+import { AuthService, UserRole } from '../auth.service';
 
 @Component({
   imports: [FormsModule, RouterLink],
@@ -10,12 +10,12 @@ import { AuthService, RegistrableRole } from '../auth.service';
   templateUrl: './register.html',
 })
 export class Register {
-  protected readonly name = signal('');
+  protected readonly username = signal('');
   protected readonly email = signal('');
   protected readonly password = signal('');
   protected readonly employeeId = signal('');
   protected readonly departmentShift = signal('');
-  protected readonly role = signal<RegistrableRole>('qa');
+  protected readonly role = signal<UserRole>('qa');
   protected readonly error = signal<string | null>(null);
   protected readonly submitting = signal(false);
 
@@ -32,7 +32,7 @@ export class Register {
     this.submitting.set(true);
     try {
       await this.authService.register({
-        name: this.name(),
+        username: this.username(),
         email: this.email(),
         password: this.password(),
         employeeId: this.employeeId(),
