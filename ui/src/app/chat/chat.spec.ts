@@ -16,7 +16,7 @@ class FakeActivatedRoute {
 
 const USER: AuthUser = {
   id: 'user-1',
-  name: 'Jane QA',
+  username: 'jane-qa',
   email: 'jane@example.com',
   employeeId: 'EMP-042',
   departmentShift: 'QA Day Shift',

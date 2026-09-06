@@ -29,25 +29,25 @@ describe('Login', () => {
     vi.spyOn(authService, 'login').mockResolvedValue(undefined);
     vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
-    fixture.componentInstance['email'].set('qa@example.com');
+    fixture.componentInstance['username'].set('test-qa');
     fixture.componentInstance['password'].set('correct-horse-battery-staple');
     await fixture.componentInstance.submit();
 
-    expect(authService.login).toHaveBeenCalledWith('qa@example.com', 'correct-horse-battery-staple');
+    expect(authService.login).toHaveBeenCalledWith('test-qa', 'correct-horse-battery-staple');
     expect(router.navigateByUrl).toHaveBeenCalledWith('/');
   });
 
   it('shows an error message and does not navigate on failure', async () => {
-    vi.spyOn(authService, 'login').mockRejectedValue(new Error('incorrect email or password'));
+    vi.spyOn(authService, 'login').mockRejectedValue(new Error('incorrect username or password'));
     const navigateSpy = vi.spyOn(router, 'navigateByUrl');
 
     await fixture.componentInstance.submit();
     fixture.detectChanges();
 
-    expect(fixture.componentInstance['error']()).toBe('incorrect email or password');
+    expect(fixture.componentInstance['error']()).toBe('incorrect username or password');
     expect(navigateSpy).not.toHaveBeenCalled();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'incorrect email or password',
+      'incorrect username or password',
     );
   });
 });
