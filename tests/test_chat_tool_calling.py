@@ -145,6 +145,7 @@ def test_ollama_tool_call_round_trip(
 def test_openai_tool_call_round_trip(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-key")
     calls: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -175,7 +176,6 @@ def test_openai_tool_call_round_trip(
             "message": "what time is it?",
             "image_ids": [],
             "provider": "openai",
-            "openai_api_key": "sk-test-key",
         },
     ) as response:
         body = "".join(response.iter_text())

@@ -1,11 +1,11 @@
 # SentinelChat
 
 A ChatGPT-style chat UI (Angular) backed by a FastAPI SSE streaming backend, with a choice of
-LLM provider per conversation (a local Ollama model, or OpenAI with your own API key),
-user accounts, and both short-term (per-conversation) and long-term (cross-conversation) chat
-memory. The assistant can also call tools mid-conversation - the current time, live weather for
-a named location, and (when you attach an image) PCB defect diagnosis via the Explainability &
-Review Agent - deciding on its own when one is actually needed.
+LLM provider per conversation (a local Ollama model, or OpenAI using a key the server operator
+configures), user accounts, and both short-term (per-conversation) and long-term
+(cross-conversation) chat memory. The assistant can also call tools mid-conversation - the
+current time, live weather for a named location, and (when you attach an image) PCB defect
+diagnosis via the Explainability & Review Agent - deciding on its own when one is actually needed.
 
 ## Getting started
 
@@ -32,7 +32,7 @@ cd ui && npm start                      # http://localhost:4200
 | Postgres | Auto (Docker) | User accounts, auth, and per-conversation chat history (Alembic-migrated - see `alembic/`). |
 | Qdrant | Auto (Docker) | Long-term, cross-conversation memory (`app/memory/`). Can be turned off entirely with `MEMORY_ENABLED=False` in `.env`. |
 | [Ollama](https://ollama.com) | Optional | Needed for the Local LLM option in Settings. **Not installed or pulled automatically** - install it, then pull the models you intend to use: `ollama pull llama3.2` (default chat model) and `ollama pull nomic-embed-text` (default long-term-memory embedding model). Without the embedding model pulled, long-term memory silently no-ops instead of erroring. |
-| OpenAI API key | Optional | Bring-your-own-key alternative to Ollama for chat, and also what the Explainability & Review Agent (`POST /api/agents/explainability-review`) uses for its GPT-4o reasoning/vision calls - paste a key into the Settings panel, or set `EXPLAINABILITY_AGENT_OPENAI_API_KEY` as a server-side fallback for that agent specifically. Never stored server-side either way. |
+| OpenAI API key | Optional | A single server-side key (`OPENAI_API_KEY` in `.env`) used whenever a user picks the OpenAI provider in Settings, and for the Explainability & Review Agent's (`POST /api/agents/explainability-review`) GPT-4o reasoning/vision calls. No per-request bring-your-own-key - never entered in the browser, never stored anywhere but your `.env`. |
 
 If you only plan to use the OpenAI option, Ollama can be skipped entirely.
 

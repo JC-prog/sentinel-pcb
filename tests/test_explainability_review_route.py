@@ -13,7 +13,6 @@ _REQUEST_PAYLOAD = {
     "image_id": "",  # filled in per-test with a real uploaded id
     "board_id": "B1",
     "component_ref": "R131",
-    "openai_api_key": "sk-test",
 }
 
 
@@ -30,11 +29,11 @@ def _clean_upload_dir() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def _clear_agent_fallback_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The route falls back to this setting when a request doesn't supply its own key - tests
-    that care about that fallback set it explicitly; everyone else gets a clean empty default."""
+def _no_openai_key_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The route needs settings.openai_api_key configured - tests that care about the happy
+    path set it explicitly; everyone else gets a clean empty default."""
 
-    monkeypatch.setattr(settings, "explainability_agent_openai_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", "")
 
 
 def _upload(client: TestClient) -> str:
@@ -69,7 +68,10 @@ def test_requires_login(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_unknown_image_id_is_404(authenticated_client: TestClient) -> None:
+def test_unknown_image_id_is_404(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     response = authenticated_client.post(
         "/api/agents/explainability-review",
         json={**_REQUEST_PAYLOAD, "image_id": "does-not-exist.png"},
@@ -77,13 +79,14 @@ def test_unknown_image_id_is_404(authenticated_client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_missing_key_with_no_fallback_is_422(authenticated_client: TestClient) -> None:
+def test_returns_503_when_openai_not_configured(authenticated_client: TestClient) -> None:
     image_id = _upload(authenticated_client)
-    payload = {**_REQUEST_PAYLOAD, "image_id": image_id}
-    del payload["openai_api_key"]
 
-    response = authenticated_client.post("/api/agents/explainability-review", json=payload)
-    assert response.status_code == 422
+    response = authenticated_client.post(
+        "/api/agents/explainability-review",
+        json={**_REQUEST_PAYLOAD, "image_id": image_id},
+    )
+    assert response.status_code == 503
 
 
 def test_disabled_agent_returns_503(
@@ -99,9 +102,8 @@ def test_disabled_agent_returns_503(
     assert response.status_code == 503
 
 
-def test_happy_path_with_byok_key(
-    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_happy_path(authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     _mock_pipeline_invoke(monkeypatch)
     image_id = _upload(authenticated_client)
 
@@ -120,17 +122,3 @@ def test_happy_path_with_byok_key(
         "self_check_passed": True,
         "errors": [],
     }
-
-
-def test_happy_path_falls_back_to_server_side_key(
-    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "explainability_agent_openai_api_key", "sk-server-fallback")
-    _mock_pipeline_invoke(monkeypatch)
-    image_id = _upload(authenticated_client)
-
-    payload = {**_REQUEST_PAYLOAD, "image_id": image_id}
-    del payload["openai_api_key"]
-
-    response = authenticated_client.post("/api/agents/explainability-review", json=payload)
-    assert response.status_code == 200

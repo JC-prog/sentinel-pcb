@@ -48,8 +48,9 @@ cd ui && npx ng test --watch=false && npx ng build
   matters once this runs as more than one ECS task.
 - **LLM providers** (`app/chat/providers/`): `OllamaChatService` and `OpenAiChatService`, both
   behind the `get_chat_service()` factory in `app/chat/service.py` - that factory is the swap
-  point for adding another provider later. OpenAI is bring-your-own-key (the UI's Settings panel
-  sends the key with each request; nothing is stored server-side).
+  point for adding another provider later. OpenAI uses a single server-side key
+  (`settings.openai_api_key`, set via `OPENAI_API_KEY`) - no per-request bring-your-own-key; the
+  UI's Settings panel only lets a user pick Ollama vs OpenAI, not supply a key.
 - **Frontend** (`ui/`): Angular, standalone components, signals for state (no NgRx/service
   subjects). `ChatResponder` (`ui/src/app/chat-responder.ts`) is the frontend's equivalent swap
   point - `HttpChatResponder` talks to the real backend, `MockChatResponder` is a fallback/test
@@ -80,10 +81,10 @@ cd ui && npx ng test --watch=false && npx ng build
   diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
   into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`, `app/agents/registry.py`).
   Callable directly via `POST /api/agents/explainability-review`, or through chat (above) when an
-  image is attached to the message. Takes an OpenAI key per-request (bring-your-own-key, like
-  chat) or falls back to `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; `EXPLAINABILITY_AGENT_ENABLED` is
-  its kill switch. The CLIP embedding model and embedded Qdrant collection it uses for
-  historical-case lookup are loaded lazily on first use, not at import time, to keep app startup
+  image is attached to the message. Uses the same server-side `settings.openai_api_key` as chat -
+  not a key of its own; `EXPLAINABILITY_AGENT_ENABLED` is its kill switch. The CLIP embedding
+  model and embedded Qdrant collection it uses for historical-case lookup are loaded lazily on
+  first use, not at import time, to keep app startup
   and test runs fast. See "Known gotchas" below for gaps carried over from the original prototype.
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call

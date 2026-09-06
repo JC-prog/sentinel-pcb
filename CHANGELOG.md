@@ -16,9 +16,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one blocking response, and a separate endpoint handles image uploads for chat attachments.
 - A mocked chat responder is kept as a fallback/test double; the UI talks to the real backend by
   default.
-- LLM provider selection in a new Settings panel: a local Ollama model, or OpenAI with a
-  user-supplied, bring-your-own API key that stays in the browser and is sent with each request,
-  never stored on the server.
+- LLM provider selection in a new Settings panel: a local Ollama model, or OpenAI using a single
+  server-side key (`OPENAI_API_KEY`) the server operator configures - no per-request key entered
+  in the browser.
 - Local development environment under `infra/development/`: a Docker Compose stack (Postgres and
   Qdrant, both provisioned ahead of need for planned future work) plus per-OS setup scripts.
 - Production infrastructure under `infra/production/` (Terraform): ECS Fargate, RDS, ECR, and
@@ -39,8 +39,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Explainability & Review Agent: `POST /api/agents/explainability-review` diagnoses a PCB
   component defect from an inspection image, combining GPT-4o visual evidence, historical defect
   precedents, IPC-A-610 standards, and AOI/ICT telemetry into a grounded root-cause explanation.
-  Accepts a bring-your-own OpenAI key per request, or falls back to
-  `EXPLAINABILITY_AGENT_OPENAI_API_KEY`; disable with `EXPLAINABILITY_AGENT_ENABLED=False`.
+  Uses the same server-side `OPENAI_API_KEY` as chat; disable with
+  `EXPLAINABILITY_AGENT_ENABLED=False`.
 - Chat can now call tools mid-conversation instead of only answering from what it already knows:
   the current time, live weather for a named location (a new `get_weather` tool, via Open-Meteo -
   no API key needed), and the Explainability & Review Agent above (only offered when you've

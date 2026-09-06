@@ -5,10 +5,9 @@ describe('SettingsService', () => {
     localStorage.clear();
   });
 
-  it('defaults to the ollama provider and an empty api key', () => {
+  it('defaults to the ollama provider', () => {
     const service = new SettingsService();
     expect(service.provider()).toBe('ollama');
-    expect(service.openaiApiKey()).toBe('');
     expect(service.isOpen()).toBe(false);
   });
 
@@ -26,13 +25,5 @@ describe('SettingsService', () => {
 
     const restored = new SettingsService();
     expect(restored.provider()).toBe('openai');
-  });
-
-  it('persists the openai api key across instances', () => {
-    const service = new SettingsService();
-    service.setOpenaiApiKey('sk-test-key');
-
-    const restored = new SettingsService();
-    expect(restored.openaiApiKey()).toBe('sk-test-key');
   });
 });

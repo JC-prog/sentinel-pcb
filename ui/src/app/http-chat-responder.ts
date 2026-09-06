@@ -62,7 +62,6 @@ export class HttpChatResponder implements ChatResponder {
               message,
               image_ids: imageIds,
               provider,
-              openai_api_key: provider === 'openai' ? this.settings.openaiApiKey() : undefined,
             }),
             signal: controller.signal,
           },

@@ -23,26 +23,20 @@ describe('Settings', () => {
     expect(component).toBeTruthy();
   });
 
-  it('does not show the api key field for the ollama provider', () => {
+  it('does not show the server-key note for the ollama provider', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('#openai-api-key')).toBeNull();
+    expect(compiled.textContent).not.toContain("Uses the server's configured API key");
   });
 
-  it('shows and updates the api key field once openai is selected', () => {
+  it('shows the server-key note once openai is selected', () => {
     const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLElement[];
     const openaiButton = buttons.find((btn) => btn.textContent?.includes('OpenAI'));
     openaiButton!.click();
     fixture.detectChanges();
 
     expect(settingsService.provider()).toBe('openai');
-    const input = fixture.nativeElement.querySelector('#openai-api-key') as HTMLInputElement;
-    expect(input).toBeTruthy();
-
-    input.value = 'sk-test-key';
-    input.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-
-    expect(settingsService.openaiApiKey()).toBe('sk-test-key');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain("Uses the server's configured API key");
   });
 
   it('closes when the close button is clicked', () => {

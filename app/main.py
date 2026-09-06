@@ -19,7 +19,6 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
-from pydantic import SecretStr
 
 from app.agents import CurrentTimeTool, ToolRegistry, WeatherTool, call_tool
 from app.agents.explainability_review_agent import (
@@ -262,21 +261,15 @@ def _available_tool_specs(image_ids: list[str]) -> list[dict[str, Any]] | None:
     return specs or None
 
 
-async def _run_tool_call(
-    call: ToolCallRequest,
-    *,
-    image_ids: list[str],
-    provider: LlmProvider,
-    openai_api_key: SecretStr | None,
-) -> str:
+async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str]) -> str:
     """Executes one model-requested tool call. Never raises - any failure becomes a
     {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
     instead of ending the whole SSE stream (mirrors app/agents/explainability_review_agent/
     mcp_client.py's own graceful-degradation pattern).
 
-    explainability_review needs kwargs the model can't supply itself - a real PIL.Image and an
-    OpenAI key - injected here the same way POST /api/agents/explainability-review already does
-    it by hand, including the identical BYOK-or-settings-fallback key resolution."""
+    explainability_review needs kwargs the model can't supply itself - a real PIL.Image and the
+    server's OpenAI key - injected here the same way POST /api/agents/explainability-review
+    already does it by hand."""
 
     arguments = dict(call.arguments)
     if call.name == "explainability_review":
@@ -284,20 +277,15 @@ async def _run_tool_call(
         image_path = resolve_upload_path(image_id)
         if image_path is None:
             return json.dumps({"error": "image not found"})
-        api_key = (
-            openai_api_key.get_secret_value()
-            if provider == "openai" and openai_api_key is not None
-            else settings.explainability_agent_openai_api_key
-        )
-        if not api_key:
-            return json.dumps({"error": "no OpenAI key available for this tool"})
+        if not settings.openai_api_key:
+            return json.dumps({"error": "no OpenAI key configured on this server"})
         arguments = {
             "image": Image.open(image_path).convert("RGB"),
             "image_name": image_id,
             "board_id": arguments.get("board_id", ""),
             "component_ref": arguments.get("component_ref", ""),
             "issue_symptom": arguments.get("issue_symptom"),
-            "openai_api_key": api_key,
+            "openai_api_key": settings.openai_api_key,
         }
 
     try:
@@ -311,7 +299,6 @@ async def _chat_sse(
     conversation: Conversation,
     is_new_conversation: bool,
     provider: LlmProvider,
-    openai_api_key: SecretStr | None,
     message: str,
     image_ids: list[str],
 ) -> AsyncGenerator[str, None]:
@@ -337,9 +324,7 @@ async def _chat_sse(
         await history.append_message(session, conversation.id, "user", message, image_ids)
         fact = message.strip().removeprefix(_REMEMBER_PREFIX).strip()
         reply = (
-            await remember_explicit(
-                conversation.user_id, conversation.id, fact, provider, openai_api_key
-            )
+            await remember_explicit(conversation.user_id, conversation.id, fact, provider)
             if fact
             else "Nothing to remember - add some text after /remember."
         )
@@ -354,12 +339,12 @@ async def _chat_sse(
     )
     await history.append_message(session, conversation.id, "user", message, image_ids)
     system_prompt = (
-        await build_memory_preamble(conversation.user_id, message, provider, openai_api_key)
+        await build_memory_preamble(conversation.user_id, message, provider)
         if is_new_conversation
         else None
     )
 
-    service = get_chat_service(provider, openai_api_key)
+    service = get_chat_service(provider)
     messages = build_messages(system_prompt, turns, message)
     available_tools = _available_tool_specs(image_ids)
 
@@ -382,9 +367,7 @@ async def _chat_sse(
                 ChatMessage(role="assistant", content=final_text or None, tool_calls=pending_calls)
             )
             for call in pending_calls:
-                result = await _run_tool_call(
-                    call, image_ids=image_ids, provider=provider, openai_api_key=openai_api_key
-                )
+                result = await _run_tool_call(call, image_ids=image_ids)
                 messages.append(
                     ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=result)
                 )
@@ -401,7 +384,7 @@ async def _chat_sse(
 
     await history.append_message(session, conversation.id, "assistant", final_text, [])
     await history.maybe_set_title(session, conversation, message)
-    await maybe_extract(session, conversation, provider, openai_api_key)
+    await maybe_extract(session, conversation, provider)
     yield "event: done\ndata: {}\n\n"
 
 
@@ -413,9 +396,9 @@ async def chat_stream(
 ) -> StreamingResponse:
     if not request.message.strip() and not request.image_ids:
         raise HTTPException(status_code=422, detail="message must not be empty")
-    if request.provider == "openai" and request.openai_api_key is None:
+    if request.provider == "openai" and not settings.openai_api_key:
         raise HTTPException(
-            status_code=422, detail="openai_api_key is required for provider=openai"
+            status_code=503, detail="OpenAI provider is not configured on this server"
         )
 
     try:
@@ -431,7 +414,6 @@ async def chat_stream(
             conversation,
             is_new_conversation,
             request.provider,
-            request.openai_api_key,
             request.message,
             request.image_ids,
         ),
@@ -489,16 +471,9 @@ async def explainability_review(
 
     if not settings.explainability_agent_enabled:
         raise HTTPException(status_code=503, detail="explainability review agent is disabled")
-
-    api_key = (
-        request.openai_api_key.get_secret_value()
-        if request.openai_api_key is not None
-        else settings.explainability_agent_openai_api_key
-    )
-    if not api_key:
+    if not settings.openai_api_key:
         raise HTTPException(
-            status_code=422,
-            detail="openai_api_key is required (no server-side fallback is configured)",
+            status_code=503, detail="OpenAI provider is not configured on this server"
         )
 
     image_path = resolve_upload_path(request.image_id)
@@ -515,7 +490,7 @@ async def explainability_review(
             "board_id": request.board_id,
             "component_ref": request.component_ref,
             "issue_symptom": request.issue_symptom,
-            "openai_api_key": api_key,
+            "openai_api_key": settings.openai_api_key,
         },
     )
     return ExplainabilityReviewResponse.model_validate_json(result_json)
