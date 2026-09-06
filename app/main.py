@@ -59,6 +59,7 @@ _REFRESH_TOKEN_COOKIE = "refresh_token"
 _REFRESH_TOKEN_PATH = "/api/auth"
 
 _access_logger = logging.getLogger("app.access")
+logger = logging.getLogger(__name__)
 
 # Configured at import time (like tool_registry below) rather than inside lifespan, so anything
 # logged before the app finishes starting up - or by a standalone script that imports app.main -
@@ -83,17 +84,52 @@ app.add_middleware(
 )
 
 
+def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
+    """Best-effort JSON parse for debug logging - returns None for non-JSON bodies (e.g. the
+    multipart image upload) rather than trying to describe arbitrary binary content. Redacts the
+    top-level "password" field (register/login) so it never ends up in a log line."""
+
+    if "application/json" not in content_type or not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if isinstance(data, dict) and "password" in data:
+        data = {**data, "password": "***"}
+    return data
+
+
+_STREAMING_RESPONSE_PATHS = frozenset({"/api/chat/stream"})
+
+
 @app.middleware("http")
 async def _log_requests(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """One structured log line per request (method, path, status, duration, and the caller's
+    """One structured INFO line per request (method, path, status, duration, and the caller's
     user id when authenticated) - Uvicorn's own access log already prints a plain-text line per
     request, but doesn't attach these as separate, queryable fields the way app/config/logging_config.py's
     JSON formatter can. Decodes the access_token cookie directly (JWT only, no DB round trip) just
     to attribute the log line - any failure (missing/expired/invalid token) just means an
     unauthenticated-looking log line, not a 401; auth itself is still enforced by
-    get_current_user on whichever routes require it."""
+    get_current_user on whichever routes require it.
+
+    Separately, at DEBUG (settings.log_level), also logs the request/response JSON bodies - gated
+    behind an isEnabledFor() check done *before* touching either body, so there's zero extra
+    buffering when the feature is off (this matters for e.g. large image uploads).
+
+    `call_next()`'s return value is always Starlette's internal `_StreamingResponse` wrapper
+    (confirmed against BaseHTTPMiddleware's source - it wraps every response this way, not just
+    ones that were "really" streaming), so there's no in-memory `.body` to read here for any
+    route - the body has to be drained from `response.body_iterator` and a fresh Response
+    reconstructed from the collected bytes so the client still receives it. That's fine for
+    ordinary quick JSON responses, but draining `/api/chat/stream`'s body_iterator here would
+    buffer the *entire* SSE stream before any of it reaches the browser - so that one route is
+    explicitly skipped and logs its own request/response content at the source (_chat_sse)."""
+
+    debug_enabled = _access_logger.isEnabledFor(logging.DEBUG)
+    request_body_bytes = await request.body() if debug_enabled else b""
 
     start = time.perf_counter()
     response = await call_next(request)
@@ -121,6 +157,36 @@ async def _log_requests(
             "user_id": user_id,
         },
     )
+
+    if debug_enabled:
+        request_body = _redact_and_parse_json_body(
+            request_body_bytes, request.headers.get("content-type", "")
+        )
+        response_body = None
+        if request.url.path not in _STREAMING_RESPONSE_PATHS:
+            # body_iterator exists at runtime (call_next() always returns Starlette's internal
+            # _StreamingResponse - see the docstring above) but isn't part of Response's public
+            # type, hence the ignore.
+            body_iterator = response.body_iterator  # type: ignore[attr-defined]
+            response_body_bytes = b"".join([chunk async for chunk in body_iterator])
+            response_body = _redact_and_parse_json_body(
+                response_body_bytes, response.headers.get("content-type", "")
+            )
+            # body_iterator is now exhausted - rebuild a Response over the same bytes so the
+            # client still receives it (this becomes what's actually returned, below).
+            response = Response(
+                content=response_body_bytes,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        _access_logger.debug(
+            "%s %s request body: %s response body: %s",
+            request.method,
+            request.url.path,
+            request_body,
+            response_body,
+            extra={"request_body": request_body, "response_body": response_body},
+        )
     return response
 
 
@@ -350,6 +416,13 @@ async def _chat_sse(
     service = get_chat_service(provider)
     messages = build_messages(system_prompt, turns, message)
     available_tools = _available_tool_specs(image_ids)
+    logger.debug(
+        "chat request: provider=%s message=%r image_ids=%s",
+        provider,
+        message,
+        image_ids,
+        extra={"provider": provider, "chat_message": message, "image_ids": image_ids},
+    )
 
     final_text = ""
     try:
@@ -382,9 +455,11 @@ async def _chat_sse(
             )
             yield f"event: delta\ndata: {json.dumps({'text': final_text})}\n\n"
     except Exception as exc:  # noqa: BLE001 - reported to the client as an SSE error event
+        logger.debug("chat response error: %s", exc, extra={"error": str(exc)})
         yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
         return
 
+    logger.debug("chat response: %r", final_text, extra={"final_text": final_text})
     await history.append_message(session, conversation.id, "assistant", final_text, [])
     await history.maybe_set_title(session, conversation, message)
     await maybe_extract(session, conversation, provider)
