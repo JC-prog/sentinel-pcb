@@ -41,14 +41,25 @@ def _ollama_reply(text: str) -> httpx.Response:
 
 
 def _ollama_tool_call_reply(name: str, arguments: dict[str, object]) -> httpx.Response:
-    body = {
-        "message": {
-            "content": "",
-            "tool_calls": [{"function": {"name": name, "arguments": arguments}}],
-        },
-        "done": True,
-    }
-    return httpx.Response(200, text=json.dumps(body))
+    """Matches real Ollama's actual two-line shape (confirmed against a live server, not
+    documentation) - tool_calls arrives on a line with done:false, and the true final
+    done:true line carries no tool_calls at all. A single combined done:true+tool_calls line
+    (what an earlier, incorrect version of this fixture used) never happens in practice and
+    would have masked the exact bug this shape exists to catch."""
+
+    lines = [
+        json.dumps(
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [{"function": {"name": name, "arguments": arguments}}],
+                },
+                "done": False,
+            }
+        ),
+        json.dumps({"message": {"content": ""}, "done": True}),
+    ]
+    return httpx.Response(200, text="\n".join(lines))
 
 
 def _tool_names(payload: dict[str, Any]) -> set[str]:

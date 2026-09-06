@@ -83,10 +83,13 @@ class OllamaChatService:
         messages: list[ChatMessage],
         tools: list[dict[str, Any]] | None,
     ) -> AsyncGenerator[TextDelta | ToolCallsReady, None]:
-        """Same NDJSON framing as stream_reply, but tool-aware. Ollama's tool-calls aren't
-        delivered incrementally even with stream:true - the full `message.tool_calls` list only
-        shows up on the final (`done:true`) line, already parsed (arguments is a dict, not a
-        JSON string like OpenAI's), and with no id field - one is synthesized per call below."""
+        """Same NDJSON framing as stream_reply, but tool-aware. Confirmed against a real Ollama
+        server: `message.tool_calls` arrives on a line with `done:false` (not incrementally -
+        the full list appears at once), and the true final `done:true` line carries no
+        tool_calls at all - the reverse of what you'd guess from stream_reply's plain-text
+        framing. So tool_calls has to be captured from whichever line carries it, not assumed to
+        be on the done:true line specifically. arguments is already a dict (not a JSON string
+        like OpenAI's), and there's no id field - one is synthesized per call below."""
 
         payload: dict[str, Any] = {
             "model": settings.ollama_model,
@@ -105,6 +108,7 @@ class OllamaChatService:
                 raise RuntimeError(
                     f"Ollama request failed ({response.status_code}): {body.decode(errors='replace')}"
                 )
+            tool_calls: list[dict[str, Any]] = []
             async for line in response.aiter_lines():
                 if not line.strip():
                     continue
@@ -112,8 +116,10 @@ class OllamaChatService:
                 content = data.get("message", {}).get("content", "")
                 if content:
                     yield TextDelta(text=content)
+                line_tool_calls = data.get("message", {}).get("tool_calls")
+                if line_tool_calls:
+                    tool_calls = line_tool_calls
                 if data.get("done"):
-                    tool_calls = data.get("message", {}).get("tool_calls") or []
                     if tool_calls:
                         yield ToolCallsReady(
                             calls=[
