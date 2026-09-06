@@ -1,4 +1,8 @@
-<div class="flex h-screen w-screen overflow-hidden">
+<div
+  class="flex h-screen w-screen overflow-hidden"
+  (dragover)="$event.preventDefault()"
+  (drop)="$event.preventDefault()"
+>
   <app-sidebar />
   <router-outlet />
 </div>

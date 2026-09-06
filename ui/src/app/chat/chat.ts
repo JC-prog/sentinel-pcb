@@ -24,6 +24,12 @@ export class Chat {
 
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);
+  protected readonly isDraggingOver = signal(false);
+  /** dragenter/dragleave fire once per element boundary crossed, including children of the
+   * drop zone - a single dragleave doesn't mean the pointer truly left it. Counting enter/leave
+   * pairs and only clearing state at zero avoids the overlay flickering off while dragging over
+   * a child element. */
+  private dragDepth = 0;
 
   private readonly conversationId: Signal<string | null>;
   protected readonly conversation: Signal<Conversation | undefined>;
@@ -65,12 +71,40 @@ export class Chat {
 
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
+    this.addFiles(Array.from(input.files ?? []));
+    input.value = '';
+  }
+
+  onDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    this.dragDepth++;
+    this.isDraggingOver.set(true);
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault(); // required for a drop event to fire at all
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.dragDepth = Math.max(0, this.dragDepth - 1);
+    if (this.dragDepth === 0) {
+      this.isDraggingOver.set(false);
+    }
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragDepth = 0;
+    this.isDraggingOver.set(false);
+    this.addFiles(Array.from(event.dataTransfer?.files ?? []));
+  }
+
+  private addFiles(files: File[]): void {
     const additions = files
       .filter((file) => file.type.startsWith('image/'))
       .map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
     this.pendingImages.update((images) => [...images, ...additions]);
-    input.value = '';
   }
 
   removePendingImage(index: number): void {

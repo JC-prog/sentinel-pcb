@@ -1,4 +1,17 @@
-<div class="flex h-full flex-1 flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+<div
+  class="relative flex h-full flex-1 flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+  (dragenter)="onDragEnter($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+>
+  @if (isDraggingOver()) {
+    <div
+      class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-400 bg-slate-900/5 dark:bg-slate-100/5"
+    >
+      <p class="text-sm font-medium text-slate-600 dark:text-slate-300">Drop images to attach</p>
+    </div>
+  }
   @if (!conversation() || conversation()!.messages.length === 0) {
     <div class="flex flex-1 flex-col items-center justify-center gap-6 px-4">
       <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">What can I help with?</h1>
