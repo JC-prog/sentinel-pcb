@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -6,6 +7,8 @@ import httpx
 
 from app.config.settings import settings
 from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, ToolCallsReady
+
+logger = logging.getLogger(__name__)
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 
@@ -66,7 +69,9 @@ class OpenAiChatService:
             "stream": True,
         }
         headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+        logger.debug("OpenAI request: %s", payload, extra={"payload": payload})
 
+        text_parts: list[str] = []
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
             client.stream(
@@ -89,10 +94,15 @@ class OpenAiChatService:
                             continue
                         data_str = line.removeprefix("data:").strip()
                         if data_str == "[DONE]":
+                            full_content = "".join(text_parts)
+                            logger.debug(
+                                "OpenAI response: %r", full_content, extra={"content": full_content}
+                            )
                             return
                         data = json.loads(data_str)
                         delta = data["choices"][0]["delta"].get("content")
                         if delta:
+                            text_parts.append(delta)
                             yield delta
 
     async def stream_with_tools(
@@ -113,7 +123,9 @@ class OpenAiChatService:
         if tools:
             payload["tools"] = _to_openai_tools(tools)
         headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+        logger.debug("OpenAI request: %s", payload, extra={"payload": payload})
 
+        text_parts: list[str] = []
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
         async with (
@@ -138,6 +150,10 @@ class OpenAiChatService:
                             continue
                         data_str = line.removeprefix("data:").strip()
                         if data_str == "[DONE]":
+                            full_content = "".join(text_parts)
+                            logger.debug(
+                                "OpenAI response: %r", full_content, extra={"content": full_content}
+                            )
                             return
                         data = json.loads(data_str)
                         choice = data["choices"][0]
@@ -145,6 +161,7 @@ class OpenAiChatService:
 
                         content = delta.get("content")
                         if content:
+                            text_parts.append(content)
                             yield TextDelta(text=content)
 
                         for tc_delta in delta.get("tool_calls") or []:
@@ -161,6 +178,16 @@ class OpenAiChatService:
                                 entry["arguments"] += function["arguments"]
 
                         if choice.get("finish_reason") == "tool_calls" and tool_calls_acc:
+                            full_content = "".join(text_parts)
+                            logger.debug(
+                                "OpenAI response: content=%r tool_calls=%s",
+                                full_content,
+                                list(tool_calls_acc.values()),
+                                extra={
+                                    "content": full_content,
+                                    "tool_calls": list(tool_calls_acc.values()),
+                                },
+                            )
                             yield ToolCallsReady(
                                 calls=[
                                     ToolCallRequest(
