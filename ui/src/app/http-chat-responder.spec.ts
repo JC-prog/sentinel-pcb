@@ -83,12 +83,14 @@ describe('HttpChatResponder', () => {
         .pipe(toArray()),
     );
 
-    const chatCall = fetchMock.mock.calls.find(([url]) => url.endsWith('/api/chat/stream'));
+    const chatCall = fetchMock.mock.calls.find((call: unknown[]) =>
+      (call[0] as string).endsWith('/api/chat/stream'),
+    );
     const requestBody = JSON.parse(chatCall![1].body);
     expect(requestBody.image_ids).toEqual(['img-1']);
   });
 
-  it('defaults to the ollama provider with no key', async () => {
+  it('defaults to the ollama provider', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -101,9 +103,8 @@ describe('HttpChatResponder', () => {
     expect(requestBody.openai_api_key).toBeUndefined();
   });
 
-  it('sends the openai provider and api key when selected in settings', async () => {
+  it('sends the openai provider with no key when selected in settings', async () => {
     settings.setProvider('openai');
-    settings.setOpenaiApiKey('sk-test-key');
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -113,6 +114,6 @@ describe('HttpChatResponder', () => {
 
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(requestBody.provider).toBe('openai');
-    expect(requestBody.openai_api_key).toBe('sk-test-key');
+    expect(requestBody.openai_api_key).toBeUndefined();
   });
 });
