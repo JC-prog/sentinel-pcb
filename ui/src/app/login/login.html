@@ -13,18 +13,18 @@
       </p>
     }
 
-    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="email">
-      Email
+    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="username">
+      Username
     </label>
     <input
-      id="email"
-      type="email"
+      id="username"
+      type="text"
       required
-      autocomplete="email"
+      autocomplete="username"
       class="mb-4 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700"
-      [ngModel]="email()"
-      (ngModelChange)="email.set($event)"
-      name="email"
+      [ngModel]="username()"
+      (ngModelChange)="username.set($event)"
+      name="username"
     />
 
     <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="password">
