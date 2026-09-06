@@ -14,9 +14,6 @@ class UserRole(StrEnum):
     """Stored as a plain string column, not a native Postgres enum, so adding a role later is a
     code change, not a schema migration. QA is the primary user of this app; Operator and Admin
     are the other two roles this manufacturing site's workflow needs - see DEVELOPMENT.md.
-
-    ADMIN is deliberately not selectable at registration (app/auth/schemas.py) - see
-    app/auth/service.py's bootstrap logic.
     """
 
     QA = "qa"
@@ -32,7 +29,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name: Mapped[str] = mapped_column(String, nullable=False)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     employee_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
