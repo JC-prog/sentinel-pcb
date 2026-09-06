@@ -57,3 +57,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the paperclip button) to add it to the message you're composing - a highlighted drop zone
   appears while dragging. Dropping outside the chat window (e.g. on the sidebar) no longer
   navigates the browser away from the app.
+- Verbose debug logging for troubleshooting, off by default: set `LOG_LEVEL=DEBUG` to log every
+  API request/response body (with `password` redacted) and every LLM request/response payload
+  sent to or received from Ollama/OpenAI, including the `tools` array and tool-call results. The
+  live chat stream itself is never buffered for this, so `DEBUG` adds no latency to `/api/chat/stream`.
