@@ -65,7 +65,7 @@ def client(db_session: None) -> Generator[TestClient, None, None]:
 
 
 _REGISTER_PAYLOAD = {
-    "name": "Test QA",
+    "username": "test-qa",
     "email": "qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-001",
@@ -85,7 +85,7 @@ def authenticated_client(client: TestClient) -> TestClient:
 
 
 _OTHER_REGISTER_PAYLOAD = {
-    "name": "Other Operator",
+    "username": "other-operator",
     "email": "operator@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-002",
