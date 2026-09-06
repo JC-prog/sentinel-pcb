@@ -1,14 +1,13 @@
-"""Create (or promote) an Admin user - the public /api/auth/register endpoint deliberately
-refuses to hand out the Admin role (app/auth/schemas.py), except automatically to the very first
-user ever registered. This script is the intended way to create any Admin after that point,
-without building a whole admin-management UI/endpoint for it.
+"""Create (or promote) an Admin user - a convenience for creating one from the CLI, or promoting
+an existing account, without going through the register form. Admin is a normal, selectable role
+on the public registration form; this script isn't the only way to get one.
 
 If the given email already exists, it's promoted to Admin in place (rather than erroring) - this
 doubles as the "make an existing user an Admin" tool.
 
 Usage (run as a module, not a script path - it needs the repo root on sys.path to import `app`):
     uv run python -m scripts.create_admin_user \\
-        --name "Jane Doe" --email jane@example.com --employee-id EMP-042 \\
+        --username jane.doe --email jane@example.com --employee-id EMP-042 \\
         --department-shift "QA Day Shift"
 
 Prompts for the password (not passed as a flag, so it never ends up in shell history).
@@ -26,7 +25,7 @@ from app.db.session import async_session_factory, engine
 
 
 async def create_or_promote_admin(
-    name: str, email: str, password: str, employee_id: str, department_shift: str
+    username: str, email: str, password: str, employee_id: str, department_shift: str
 ) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -40,7 +39,7 @@ async def create_or_promote_admin(
             return
 
         user = User(
-            name=name,
+            username=username,
             email=email,
             password_hash=hash_password(password),
             employee_id=employee_id,
@@ -52,8 +51,10 @@ async def create_or_promote_admin(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--name", required=True)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--username", required=True)
     parser.add_argument("--email", required=True)
     parser.add_argument("--employee-id", required=True)
     parser.add_argument("--department-shift", required=True)
@@ -65,7 +66,7 @@ def main() -> None:
 
     asyncio.run(
         create_or_promote_admin(
-            name=args.name,
+            username=args.username,
             email=args.email,
             password=password,
             employee_id=args.employee_id,

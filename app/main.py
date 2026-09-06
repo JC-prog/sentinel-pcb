@@ -34,6 +34,7 @@ from app.auth.service import (
     EmployeeIdAlreadyRegistered,
     InvalidCredentials,
     InvalidRefreshToken,
+    UsernameAlreadyRegistered,
     authenticate_user,
     issue_tokens,
     register_user,
@@ -166,6 +167,8 @@ def health() -> dict[str, str]:
 async def register(request: RegisterRequest, response: Response, session: SessionDep) -> UserOut:
     try:
         user = await register_user(session, request)
+    except UsernameAlreadyRegistered as exc:
+        raise HTTPException(status_code=409, detail="username already registered") from exc
     except EmailAlreadyRegistered as exc:
         raise HTTPException(status_code=409, detail="email already registered") from exc
     except EmployeeIdAlreadyRegistered as exc:
@@ -179,9 +182,9 @@ async def register(request: RegisterRequest, response: Response, session: Sessio
 @app.post("/api/auth/login")
 async def login(request: LoginRequest, response: Response, session: SessionDep) -> UserOut:
     try:
-        user = await authenticate_user(session, request.email, request.password)
+        user = await authenticate_user(session, request.username, request.password)
     except InvalidCredentials as exc:
-        raise HTTPException(status_code=401, detail="incorrect email or password") from exc
+        raise HTTPException(status_code=401, detail="incorrect username or password") from exc
 
     access_token, refresh_token = await issue_tokens(session, user)
     _set_auth_cookies(response, access_token, refresh_token)

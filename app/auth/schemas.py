@@ -1,31 +1,27 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
 from app.db.models import UserRole
 
-# Admin is deliberately excluded - see app/auth/service.py's bootstrap logic.
-RegistrableRole = Literal[UserRole.QA, UserRole.OPERATOR]
-
 
 class RegisterRequest(BaseModel):
-    name: str
+    username: str
     email: EmailStr
     password: str
     employee_id: str
     department_shift: str
-    role: RegistrableRole
+    role: UserRole
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
 class UserOut(BaseModel):
     id: str
-    name: str
+    username: str
     email: str
     employee_id: str
     department_shift: str
