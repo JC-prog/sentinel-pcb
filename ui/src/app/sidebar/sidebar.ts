@@ -4,7 +4,6 @@ import { AuthService } from '../auth.service';
 import { ChatService } from '../chat.service';
 import { Conversation } from '../models/chat.models';
 import { SettingsService } from '../settings.service';
-import { ThemeService } from '../theme.service';
 
 @Component({
   imports: [RouterLink],
@@ -18,7 +17,6 @@ export class Sidebar {
   constructor(
     private readonly chatService: ChatService,
     private readonly router: Router,
-    protected readonly themeService: ThemeService,
     protected readonly settingsService: SettingsService,
     protected readonly authService: AuthService,
   ) {
