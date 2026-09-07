@@ -1,12 +1,15 @@
-<div
-  class="flex h-screen w-screen overflow-hidden"
-  (dragover)="$event.preventDefault()"
-  (drop)="$event.preventDefault()"
->
-  @if (showSidebar()) {
-    <app-sidebar />
-  }
-  <router-outlet />
+<div class="flex h-screen w-screen flex-col overflow-hidden">
+  <app-backend-status-banner />
+  <div
+    class="flex min-h-0 flex-1"
+    (dragover)="$event.preventDefault()"
+    (drop)="$event.preventDefault()"
+  >
+    @if (showSidebar()) {
+      <app-sidebar />
+    }
+    <router-outlet />
+  </div>
 </div>
 
 @if (settingsService.isOpen()) {

@@ -1,9 +1,17 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
+import { signal } from '@angular/core';
 import { App } from './app';
+import { BackendStatusService } from './backend-status.service';
 import { CHAT_RESPONDER } from './chat-responder';
 import { of } from 'rxjs';
+
+const backendStatusStub = {
+  status: signal<'unknown' | 'online' | 'offline'>('online'),
+  checking: signal(false),
+  checkNow: () => Promise.resolve(),
+};
 
 @Component({ template: '', selector: 'app-test-stub' })
 class StubComponent {}
@@ -19,6 +27,7 @@ describe('App', () => {
           { path: 'register', component: StubComponent },
         ]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: BackendStatusService, useValue: backendStatusStub },
       ],
     }).compileComponents();
   });
