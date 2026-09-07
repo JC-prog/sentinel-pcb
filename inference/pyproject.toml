@@ -1,0 +1,46 @@
+[project]
+name = "sentinel-inference"
+version = "0.1.0"
+description = "Internal ONNX image-classification service for SentinelChat - one model per request, chosen by the caller."
+authors = [{ name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }]
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.0",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "pillow>=12.3.0",
+    "numpy>=2.5.2",
+    "onnxruntime>=1.24.0",
+    "huggingface-hub>=0.36.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "onnx>=1.20.0",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.1",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*", "onnx.*", "huggingface_hub.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]
