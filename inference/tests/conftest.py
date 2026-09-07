@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from tests._tiny_onnx import build_tiny_onnx
 
 from inference_service.classifier import OnnxClassifier
 from inference_service.main import app, get_registry
 from inference_service.manifest import Manifest, ModelSpec
 from inference_service.registry import ModelRegistry
+from tests._tiny_onnx import build_tiny_onnx
 
 TEST_LABELS = ["alpha", "beta", "gamma"]
 

@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import pytest
-from tests._tiny_onnx import build_tiny_onnx
 
 from inference_service.manifest import Manifest, ModelSpec
 from inference_service.registry import ModelRegistry
+from tests._tiny_onnx import build_tiny_onnx
 
 
 def _spec(name: str) -> ModelSpec:

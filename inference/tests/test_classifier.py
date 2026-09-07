@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-from tests._tiny_onnx import build_tiny_onnx
 
 from inference_service.classifier import OnnxClassifier
 from inference_service.manifest import ModelSpec
+from tests._tiny_onnx import build_tiny_onnx
 
 
 def test_prediction_scores_are_a_distribution_over_manifest_labels(tmp_path: Path) -> None:

@@ -31,6 +31,11 @@ dev = [
 line-length = 100
 src = ["src", "tests"]
 
+[tool.ruff.lint.isort]
+# Pin first-party detection so import grouping is identical everywhere (CI auto-detected `tests`
+# as first-party, local runs didn't, and the two disagreed on where `from tests...` imports go).
+known-first-party = ["inference_service", "tests"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
