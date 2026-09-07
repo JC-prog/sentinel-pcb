@@ -2,6 +2,7 @@ import { Component, Signal, computed } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { BackendStatusBanner } from './backend-status-banner/backend-status-banner';
 import { Settings } from './settings/settings';
 import { SettingsService } from './settings.service';
 import { Sidebar } from './sidebar/sidebar';
@@ -9,7 +10,7 @@ import { Sidebar } from './sidebar/sidebar';
 const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register']);
 
 @Component({
-  imports: [RouterOutlet, Sidebar, Settings],
+  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
