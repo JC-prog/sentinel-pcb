@@ -1,0 +1,63 @@
+# Deployable classification models. One [[models]] block per model the service loads.
+#
+# scripts/fetch_models.py reads this at image build time and downloads each `filename` from the
+# Hugging Face repo into <model_store_dir>/<name>.onnx. The running service reads the same file
+# for labels and preprocessing.
+#
+# Every REPLACE_ME below must be set to a real value before the image will build. `name` is what
+# callers send in the request's "model" field, so keep it short and stable. Pin `revision` to a
+# commit SHA (not "main") once a model is settled, so rebuilds are reproducible.
+#
+# Models are at https://huggingface.co/JcProg.
+
+[[models]]
+name = "classifier_1"
+repo_id = "JcProg/REPLACE_ME"
+revision = "main"
+filename = "model.onnx"
+labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
+input_size = [224, 224]        # [height, width]
+layout = "NCHW"                # or "NHWC"
+color = "RGB"                  # or "BGR"
+mean = [0.485, 0.456, 0.406]   # applied after scaling pixels to 0..1
+std = [0.229, 0.224, 0.225]
+apply_softmax = true           # false if the model already outputs probabilities
+
+[[models]]
+name = "classifier_2"
+repo_id = "JcProg/REPLACE_ME"
+revision = "main"
+filename = "model.onnx"
+labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
+input_size = [224, 224]
+layout = "NCHW"
+color = "RGB"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+apply_softmax = true
+
+[[models]]
+name = "classifier_3"
+repo_id = "JcProg/REPLACE_ME"
+revision = "main"
+filename = "model.onnx"
+labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
+input_size = [224, 224]
+layout = "NCHW"
+color = "RGB"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+apply_softmax = true
+
+[[models]]
+name = "classifier_4"
+repo_id = "JcProg/REPLACE_ME"
+revision = "main"
+filename = "model.onnx"
+labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
+input_size = [224, 224]
+layout = "NCHW"
+color = "RGB"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+apply_softmax = true

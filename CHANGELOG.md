@@ -70,6 +70,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   telling users the server is having problems and to check back in a few minutes, with a "Retry
   now" button. The banner clears on its own once the backend responds again, and a check is also
   triggered when the browser regains its connection or the tab is refocused.
+- ONNX inference service (`inference/`): a standalone FastAPI service that runs image
+  classification models, one per request, chosen by the caller (`POST /classify` with `model`,
+  `username`, and an image). Models and their preprocessing are declared in `inference/models.toml`
+  and their ONNX files are pulled from Hugging Face and baked into the image at build time. Runs
+  as its own ECS Fargate service (`infra/production/inference.tf`), reachable only from the
+  backend over Cloud Map private DNS - no public route. `app/inference/` is the backend client
+  (`INFERENCE_BASE_URL`); nothing calls it yet, wiring it into the Explainability & Review Agent
+  is the next step.
 
 ### Fixed
 

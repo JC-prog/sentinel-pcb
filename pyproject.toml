@@ -38,10 +38,14 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# inference/ is a separate service with its own pyproject, venv, and CI job - it must not be
+# linted or type-checked against this project's dependency set.
+extend-exclude = ["inference"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+exclude = ['^inference/']
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

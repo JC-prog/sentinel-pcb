@@ -18,6 +18,10 @@ __pycache__/
 # Uploaded chat images (app.settings.chat_upload_dir) - runtime data, not source.
 /data/uploads/
 
+# ONNX files the inference service downloads from Hugging Face (inference/scripts/fetch_models.py).
+# Fetched at image build time, never committed.
+/inference/model_store/
+
 # Explainability & Review Agent (app.settings.explainability_agent_data_dir) - PCB images,
 # generated telemetry, and the embedded Qdrant DB are runtime data, not source. ipc_standards/ is
 # a committed reference document, so it's excluded from this ignore.

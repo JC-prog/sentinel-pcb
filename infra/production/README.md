@@ -1,10 +1,11 @@
 # Production infrastructure (AWS, Terraform)
 
-Provisions: ECS Fargate running the backend behind an ALB, RDS Postgres (provisioned ahead of
-need - no app code reads it yet), an S3 bucket + CloudFront distribution serving the Angular UI,
-and an ECR repo for the backend image. Everything lives in the account's **default VPC** in its
-public subnets - no NAT Gateway, no custom domain. See the PR description / commit messages for
-the reasoning behind these calls.
+Provisions: ECS Fargate running the backend behind an ALB, a second Fargate service running the
+ONNX classification service (`inference/`, reachable only from the backend over Cloud Map private
+DNS), RDS Postgres, an S3 bucket + CloudFront distribution serving the Angular UI, and an ECR
+repo per image. Everything lives in the account's **default VPC** in its public subnets - no NAT
+Gateway, no custom domain. See the PR description / commit messages for the reasoning behind
+these calls.
 
 **One CloudFront distribution serves both the UI and the API** (`/api/*` routes to the ALB) so
 everything ends up on one HTTPS domain - no mixed content, no CORS in production.
@@ -39,6 +40,21 @@ docker push <ecr_repository_url>:<tag>
 aws ecs update-service --cluster sentinelchat-cluster --service sentinelchat-backend --force-new-deployment
 ```
 
+**Inference service:**
+
+```bash
+# Fill in inference/models.toml first - every REPLACE_ME must be a real Hugging Face repo/label.
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <inference_ecr_repository_url>
+docker build -t <inference_ecr_repository_url>:<tag> inference/
+# Private HF repos: docker build --secret id=hf_token,src=<token-file> ...
+docker push <inference_ecr_repository_url>:<tag>
+# If <tag> isn't "latest", set var.inference_image_tag and `terraform apply` again first.
+aws ecs update-service --cluster sentinelchat-cluster --service sentinelchat-inference --force-new-deployment
+```
+
+The ONNX files are baked into the image at build time (`inference/scripts/fetch_models.py`), so
+retraining a model means rebuilding and redeploying this image - the backend image is untouched.
+
 **UI:**
 
 ```bash
@@ -47,8 +63,8 @@ aws s3 sync dist/ui/browser s3://<ui_bucket_name> --delete
 aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id> --paths "/*"
 ```
 
-(`<ecr_repository_url>`, `<ui_bucket_name>`, `<cloudfront_distribution_id>` are all Terraform
-outputs - `terraform output`.)
+(`<ecr_repository_url>`, `<inference_ecr_repository_url>`, `<ui_bucket_name>`,
+`<cloudfront_distribution_id>` are all Terraform outputs - `terraform output`.)
 
 ## Known gaps (deliberate, not oversights)
 
@@ -61,5 +77,12 @@ outputs - `terraform output`.)
 - **No custom domain / ACM cert.** Everything's on CloudFront's and the ALB's default AWS
   domains. Add Route53 + ACM (cert must be in `us-east-1` for CloudFront) as a follow-up once a
   domain is chosen.
+- **Inference models are baked into the image, not pulled from S3.** Simple and self-contained,
+  but a model change is a full image rebuild + redeploy. Move to an S3 model bucket + task role
+  if that cadence becomes painful.
+- **Inference service has no autoscaling and `desired_count = 1`.** Add target-tracking on CPU,
+  or a queue in front, once classification traffic justifies it.
+- **Nothing in the backend calls the inference service yet.** `app/inference/` is the client;
+  wiring it into the Explainability & Review Agent is the next step.
 - **RDS is provisioned but unused.** No schema, no migrations, no app code touches it yet -
   that's the future multi-user/auth feature's job.

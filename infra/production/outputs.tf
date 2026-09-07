@@ -8,6 +8,16 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.backend.repository_url
 }
 
+output "inference_ecr_repository_url" {
+  description = "Push inference images here (see README's deploy workflow)."
+  value       = aws_ecr_repository.inference.repository_url
+}
+
+output "inference_service_url" {
+  description = "Internal only - the backend reaches the classifier here (INFERENCE_BASE_URL)."
+  value       = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}"
+}
+
 output "ui_bucket_name" {
   description = "Sync the Angular build here (see README's deploy workflow)."
   value       = aws_s3_bucket.ui.bucket

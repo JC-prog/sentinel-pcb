@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
 
+    # Internal ONNX classification service (inference/, infra/production/inference.tf). Empty
+    # means "not configured" - app.inference.client raises rather than guessing a URL, and
+    # nothing in the app calls it yet. In production this is the Cloud Map address
+    # (http://inference.sentinelchat.internal:8001), set by the backend task definition.
+    inference_base_url: str = ""
+    # How long to wait on a single /classify call before giving up.
+    inference_timeout_seconds: float = 10.0
+
     # Lets the chat LLM itself decide to call a registered Tool (app/agents/registry.py) mid-
     # conversation - e.g. current_time, get_weather, explainability_review. Kill switch, same
     # pattern as memory_enabled; disabling sends no `tools` field at all, byte-identical to the
