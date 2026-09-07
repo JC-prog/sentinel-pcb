@@ -6,11 +6,12 @@ import { BackendStatusBanner } from './backend-status-banner/backend-status-bann
 import { Settings } from './settings/settings';
 import { SettingsService } from './settings.service';
 import { Sidebar } from './sidebar/sidebar';
+import { ThemeToggle } from './theme-toggle/theme-toggle';
 
 const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register']);
 
 @Component({
-  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner],
+  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner, ThemeToggle],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

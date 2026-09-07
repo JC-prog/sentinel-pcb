@@ -59,19 +59,6 @@
     <button
       type="button"
       class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-      (click)="themeService.toggle()"
-    >
-      @if (themeService.theme() === 'dark') {
-        <span>☀️</span>
-        <span>Light mode</span>
-      } @else {
-        <span>🌙</span>
-        <span>Dark mode</span>
-      }
-    </button>
-    <button
-      type="button"
-      class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
       (click)="settingsService.open()"
     >
       <span>⚙️</span>

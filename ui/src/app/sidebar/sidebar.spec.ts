@@ -73,18 +73,6 @@ describe('Sidebar', () => {
     expect(chatService.get(id)()).toBeUndefined();
   });
 
-  it('toggles the theme and updates the button label', () => {
-    const themeButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLElement).textContent?.match(/(Light|Dark) mode/),
-    ) as HTMLElement;
-    const initialLabel = themeButton.textContent;
-
-    themeButton.click();
-    fixture.detectChanges();
-
-    expect(themeButton.textContent).not.toBe(initialLabel);
-  });
-
   it('opens settings when the settings button is clicked', () => {
     const settingsService = TestBed.inject(SettingsService);
     const settingsButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
