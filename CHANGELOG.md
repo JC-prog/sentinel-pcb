@@ -61,6 +61,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   API request/response body (with `password` redacted) and every LLM request/response payload
   sent to or received from Ollama/OpenAI, including the `tools` array and tool-call results. The
   live chat stream itself is never buffered for this, so `DEBUG` adds no latency to `/api/chat/stream`.
+- SentinelChat branding: a logo (a shield enclosing a PCB-trace chip motif) and the browser tab
+  title, replacing the Angular CLI's default scaffold title/favicon. Shown in the sidebar header
+  and above the login/register forms.
 
 ### Fixed
 
