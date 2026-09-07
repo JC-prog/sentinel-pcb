@@ -61,3 +61,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   API request/response body (with `password` redacted) and every LLM request/response payload
   sent to or received from Ollama/OpenAI, including the `tools` array and tool-call results. The
   live chat stream itself is never buffered for this, so `DEBUG` adds no latency to `/api/chat/stream`.
+
+### Fixed
+
+- The chat sidebar no longer appears on the login and register pages.
