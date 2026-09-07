@@ -64,3 +64,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - SentinelChat branding: a logo (a shield enclosing a PCB-trace chip motif) and the browser tab
   title, replacing the Angular CLI's default scaffold title/favicon. Shown in the sidebar header
   and above the login/register forms.
+
+### Fixed
+
+- The chat sidebar no longer appears on the login and register pages.

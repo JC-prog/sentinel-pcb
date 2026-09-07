@@ -3,7 +3,9 @@
   (dragover)="$event.preventDefault()"
   (drop)="$event.preventDefault()"
 >
-  <app-sidebar />
+  @if (showSidebar()) {
+    <app-sidebar />
+  }
   <router-outlet />
 </div>
 
