@@ -28,6 +28,8 @@ resource "aws_ecs_task_definition" "backend" {
         # no cert and is never called directly by the browser, but CORS is still checked against
         # whatever Origin header the browser sends, which will be the CloudFront domain.
         { name = "CORS_ALLOW_ORIGINS", value = jsonencode(["https://${aws_cloudfront_distribution.site.domain_name}"]) },
+        # Internal ONNX classification service (inference.tf), resolved over Cloud Map private DNS.
+        { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
         # No OLLAMA_BASE_URL override - there's no Ollama instance in this deployment. The Local
         # LLM option in Settings simply won't work in production until one is stood up
         # separately; the OpenAI (bring-your-own-key) option works as-is.
