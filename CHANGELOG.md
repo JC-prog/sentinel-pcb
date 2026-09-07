@@ -64,6 +64,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - SentinelChat branding: a logo (a shield enclosing a PCB-trace chip motif) and the browser tab
   title, replacing the Angular CLI's default scaffold title/favicon. Shown in the sidebar header
   and above the login/register forms.
+- Backend availability notice: the UI now polls the API's `/health` endpoint in the background
+  and, after two checks in a row fail to reach it, shows a banner across the top of the app
+  telling users the server is having problems and to check back in a few minutes, with a "Retry
+  now" button. The banner clears on its own once the backend responds again, and a check is also
+  triggered when the browser regains its connection or the tab is refocused.
 
 ### Fixed
 
