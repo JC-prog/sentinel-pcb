@@ -1,6 +1,7 @@
 # agent.py
 import logging
 import json
+import re
 from pathlib import Path
 from typing import TypedDict, Literal, Optional, Any, List, Dict, Union
 from PIL import Image
@@ -260,19 +261,123 @@ def tool4_reasoning_and_grounding_node(state: PCBInspectionState) -> PCBInspecti
     state["errors"] = errors
     return state
 
+# Domain terminology that a legitimate PCB inspection explanation MUST reference
+_PCB_DOMAIN_TERMS = {
+    "solder", "pad", "terminal", "lead", "pin", "component", "resistor", 
+    "capacitor", "ic", "trace", "land", "overhang", "fillet", "wetting", 
+    "tombstone", "short", "open", "shift", "resistance", "capacitance", 
+    "height", "ipc", "meniscus", "void", "coplanarity", "reflow", "flux"
+}
 
+# Forbidden conversational filler, prompt leaks, or meta-assistant language
+_FORBIDDEN_PHRASES = [
+    r"as an ai\b",
+    r"as a language model\b",
+    r"here is the (analysis|json|response)",
+    r"i hope this helps",
+    r"feel free to ask",
+    r"system prompt",
+    r"my instructions",
+    r"i apologize",
+    r"certainly!",
+    r"sure thing"
+]
+
+def tool5_guardrail_node(state: PCBInspectionState) -> PCBInspectionState:
+    """
+    Guardrail Node: Audits reasoning text and JSON payload.
+    Rejects or sanitizes irrelevant content, meta-dialogue, and hallucinated data.
+    """
+    logger.info("Tool 5 [Guardrail]: Running content relevance and schema verification")
+    
+    errors = state.get("errors", [])
+    flags: List[str] = []
+    
+    explanation = state.get("final_diagnosis_text", "")
+    category = state.get("final_defect_category", "unknown")
+    location = state.get("defect_location")
+    
+    clean_explanation = explanation.strip()
+
+    # ── Check 1: Disallowed Meta / Conversational Phrases ─────────────────
+    for pattern in _FORBIDDEN_PHRASES:
+        if re.search(pattern, clean_explanation, re.IGNORECASE):
+            flags.append(f"Forbidden conversational/meta phrase matched: '{pattern}'")
+            # Strip simple preambles if found at start
+            clean_explanation = re.sub(f"^.*{pattern}[:,]?\\s*", "", clean_explanation, flags=re.IGNORECASE).strip()
+
+    # ── Check 2: Domain Relevance Anchor ─────────────────────────────────
+    # If the text has no mention of any standard PCB hardware term, it's off-topic
+    explanation_words = set(re.findall(r"\b[a-z]+\b", clean_explanation.lower()))
+    domain_matches = explanation_words.intersection(_PCB_DOMAIN_TERMS)
+    
+    if len(domain_matches) < 2 and category != "no defect":
+        flags.append(
+            f"Irrelevant content: explanation lacks sufficient PCB terminology (found: {list(domain_matches)})"
+        )
+
+    # ── Check 3: Coordinate Bounds Audit [0, 1000] ───────────────────────
+    if location and isinstance(location, dict):
+        bbox = location.get("bounding_box")
+        if bbox:
+            if not (isinstance(bbox, list) and len(bbox) == 4):
+                flags.append("Malformed bounding_box: must be [ymin, xmin, ymax, xmax] of length 4")
+            else:
+                out_of_bounds = [v for v in bbox if not (isinstance(v, (int, float)) and 0 <= v <= 1000)]
+                if out_of_bounds:
+                    flags.append(f"Bounding box values out of normalized bounds [0-1000]: {out_of_bounds}")
+                    location["bounding_box"] = None
+
+    # ── Check 4: Enforce Valid Category ──────────────────────────────────
+    valid_categories = {
+        "missing part", "shifted", "foreign material", 
+        "tombstone", "solder insufficient", "wrong part", "no defect"
+    }
+    if category not in valid_categories:
+        flags.append(f"Invalid defect category provided: '{category}'")
+        category = "unknown"
+
+    # ── Decision & Action ────────────────────────────────────────────────
+    guardrail_passed = len(flags) == 0
+
+    if not guardrail_passed:
+        logger.warning("Guardrail violations detected: %s", flags)
+        errors.extend([f"GuardrailViolation: {f}" for f in flags])
+        
+        # If text is deemed irrelevant, replace with safe sanitized fallback
+        if any("Irrelevant content" in f for f in flags):
+            clean_explanation = (
+                f"Inspection rejected by guardrail: generated text contained unverified or off-topic narrative. "
+                f"Flagged terms: {flags}"
+            )
+            category = "unknown"
+            state["self_check_passed"] = False
+
+    state["final_diagnosis_text"] = clean_explanation
+    state["final_defect_category"] = category
+    state["guardrail_passed"] = guardrail_passed
+    state["guardrail_flags"] = flags
+    state["errors"] = errors
+
+    return state
+    
 # ── LangGraph Workflow ───────────────────────────────────────────────────────
 
 workflow = StateGraph(PCBInspectionState)
+
+# Add Nodes
 workflow.add_node("context_retrieval", tool1_context_retrieval_node)
 workflow.add_node("visual_evidence", tool2_visual_evidence_node)
 workflow.add_node("measurement_evidence", tool3_measurement_evidence_node)
 workflow.add_node("reasoning", tool4_reasoning_and_grounding_node)
+workflow.add_node("guardrail", tool5_guardrail_node)  # <-- Added Guardrail
 
+# Add Edges
 workflow.add_edge(START, "context_retrieval")
 workflow.add_edge("context_retrieval", "visual_evidence")
 workflow.add_edge("visual_evidence", "measurement_evidence")
 workflow.add_edge("measurement_evidence", "reasoning")
-workflow.add_edge("reasoning", END)
+workflow.add_edge("reasoning", "guardrail")           
+workflow.add_edge("guardrail", END)                   
 
 pcb_graph = workflow.compile()
