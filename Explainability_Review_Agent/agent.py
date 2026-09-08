@@ -370,7 +370,7 @@ workflow.add_node("context_retrieval", tool1_context_retrieval_node)
 workflow.add_node("visual_evidence", tool2_visual_evidence_node)
 workflow.add_node("measurement_evidence", tool3_measurement_evidence_node)
 workflow.add_node("reasoning", tool4_reasoning_and_grounding_node)
-workflow.add_node("guardrail", tool5_guardrail_node)  # <-- Added Guardrail
+workflow.add_node("guardrail", tool5_guardrail_node) 
 
 # Add Edges
 workflow.add_edge(START, "context_retrieval")
