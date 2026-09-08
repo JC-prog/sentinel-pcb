@@ -2,13 +2,13 @@
 
 An autonomous, multi-modal review agent built with **LangGraph** designed to inspect Printed Circuit Boards (PCBs) for assembly and component defects. 
 
-The agent merges **Visual Evidence** (Local Vision-Language Models & PCB Detectors) with **Physical Measurements** (3D AOI height profiles and In-Circuit Testing electrical telemetry), **IPC-A-610 Manufacturing Standards**, and **Historical Defect Precedents** (Vector RAG) to provide grounded, explainable root-cause diagnoses.
+The agent merges **Visual Evidence** (Local Vision-Language Models & PCB Detectors) with **Physical Measurements** (3D AOI height profiles and In-Circuit Testing electrical telemetry), **IPC-A-610 Manufacturing Standards**, and **Historical Defect Precedents** (Vector RAG) to provide grounded, explainable root-cause diagnoses—protected by an automated **Content Guardrail**.
 
 ---
 
 ## 🏗 System Architecture
 
-The pipeline routes each inspected component through a 4-stage **LangGraph** state graph:
+The pipeline routes each inspected component through a 5-stage **LangGraph** state graph:
 
 ```text
        [START]
@@ -45,13 +45,33 @@ The pipeline routes each inspected component through a 4-stage **LangGraph** sta
 └──────────────────┬──────────────────────┘
                    │
                    ▼
+┌─────────────────────────────────────────┐
+│ Tool 5: Guardrail & Schema Audit        │
+│ - Domain Relevance & Terminology Check  │
+│ - Conversational Filler / Leaks Filter  │
+│ - Bounding Box Coordinate Validation    │
+│ - Taxonomy Whitelist Enforcement        │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
                  [END]
 ```
 
-### Contradiction Detection & Physical Grounding
-A core strength of the system is its **self-check mechanism**:
-* If visual evidence reports a minor solder anomaly, but ICT telemetry reports an **infinite resistance ($>10\text{ M}\Omega$) / open circuit**, the agent flags the discrepancy, fails the self-check, and correctly diagnoses a **`missing part`** or **`tombstone`**.
-* If a component has excessive **side overhang ($>50\%$)**, the agent references **IPC-A-610 Class 2** criteria to classify it as **`shifted`**.
+---
+
+## 🛡️ Guardrails & Physical Grounding
+
+### 1. The Output Guardrail (Tool 5)
+To ensure the system produces reliable, factory-ready outputs without conversational fluff, prompt leaks, or hallucinations, every response passes through an automated guardrail:
+
+* **Domain Relevance Enforcement:** Verifies that explanations contain legitimate PCB manufacturing terms (`solder`, `pad`, `terminal`, `overhang`, `fillet`, `coplanarity`, `reflow`, etc.). If an output contains unrelated or generic narrative, it is rejected.
+* **Anti-Chatter & Leak Filter:** Strips conversational preambles and meta-assistant responses (e.g., *"As an AI..."*, *"Sure, here is your JSON..."*, *"I hope this helps"*).
+* **Coordinate Bounds Verification:** Validates that normalized bounding box coordinates fall strictly between `[0, 1000]`. Coordinates outside this range are safely nullified.
+* **Taxonomy Whitelisting & Fail-Safe:** Disallows unmapped categories (e.g., `"broken piece"`). Unverified categories are reset to `"unknown"` with a diagnostic audit flag.
+
+### 2. Physical Grounding & Self-Check
+* **Open Circuit Override:** If visual analysis suspects a superficial solder defect, but ICT telemetry reports **infinite resistance ($>10\text{ M}\Omega$) / open circuit**, the agent flags the contradiction, fails the self-check, and prioritizes a **`missing part`** or **`tombstone`** diagnosis.
+* **IPC-A-610 Class 2 Standards:** Components exhibiting side overhang $>50\%$ are strictly classified as **`shifted`** failures regardless of passing electrical resistance.
 
 ---
 
@@ -71,7 +91,7 @@ Explainability_Review_Agent/
 │   ├── telemetry_by_image.json            # O(1) instant lookup table keyed by filename
 │   └── inspection_results.json            # Final agent diagnostic reports
 ├── generate_telemetry.py                  # Generates physical 3D AOI & ICT telemetry
-├── agent.py                               # LangGraph inspection graph, State, & Prompts
+├── agent.py                               # LangGraph graph, Nodes, State, & Guardrail
 ├── main.py                                # Batch execution entrypoint
 └── src/
     ├── models/
@@ -114,7 +134,7 @@ ollama pull llava
 ```
 
 ### 4. Configure API Keys
-Set your OpenAI API key in your terminal or `.env` file:
+Set your OpenAI API key in your environment:
 ```bash
 # Windows Command Prompt (cmd)
 set OPENAI_API_KEY=your_actual_openai_key_here
@@ -131,14 +151,14 @@ export OPENAI_API_KEY="your_actual_openai_key_here"
 ## ⚡ Execution Workflow
 
 ### Step 1: Synthesize AOI & ICT Telemetry
-Before running the agent, parse all PCB images in `inputs/` and generate the physical 3D AOI (height/overhang) and ICT (resistance/capacitance) telemetry dataset:
+Before running the review agent, parse the images in `inputs/` and generate physical 3D AOI (height/overhang) and ICT (resistance/capacitance) telemetry:
 
 ```bash
 python generate_telemetry.py
 ```
 *Outputs generated:*
 * `outputs/synthetic_telemetry.json` (Array of all telemetry records)
-* `outputs/telemetry_by_image.json` (Key-value map indexed by image filename for fast lookup)
+* `outputs/telemetry_by_image.json` (Key-value map indexed by image filename for fast $O(1)$ lookup)
 
 ### Step 2: Run the Inspection Agent
 Execute the review agent across your PCB images:
@@ -188,6 +208,8 @@ python main.py
     "contradictions_found": "None. Visual presence matches normal resistance profile.",
     "confidence_score": 0.98,
     "self_check_passed": true,
+    "guardrail_passed": true,
+    "guardrail_flags": [],
     "errors": []
   }
 ]
@@ -197,5 +219,6 @@ python main.py
 
 ## 🛠 Advanced Configuration
 
+* **Customizing Guardrail Rules:** Modify `_PCB_DOMAIN_TERMS` and `_FORBIDDEN_PHRASES` in `agent.py` to adapt the filter to specific factory terminology or customer requirements.
 * **Tuning IPC Tolerances:** Modify tolerances and component packages in `generate_telemetry.py` under `self.default_specs` to represent custom SMD sizes (e.g., 0402, 0603, 0805, QFP).
-* **Direct MCP Telemetry:** If connecting to live physical testers, set `outputs/telemetry_by_image.json` aside or configure `tool3_measurement_evidence_node` in `agent.py` to stream directly from your live factory Model Context Protocol (MCP) server.
+* **Direct MCP Telemetry:** If connecting to live physical testers, set `outputs/telemetry_by_image.json` aside or configure `tool3_measurement_evidence_node` in `agent.py` to stream directly from your factory's Model Context Protocol (MCP) server.
