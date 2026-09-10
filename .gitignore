@@ -21,6 +21,16 @@ __pycache__/
 # ONNX files the inference service downloads from Hugging Face (inference/scripts/fetch_models.py).
 # Fetched at image build time, never committed.
 /inference/model_store/
+# Large model binaries under models/ (e.g. pcb_feature_detector.onnx) are fetched from Hugging
+# Face, never committed. Small labels/config JSON alongside them stays tracked.
+/models/*.onnx
+
+# Local ML datasets and runtime capture images - not source. Model training lives in the
+# separate PCB-Object-Detection-App repo; these are downloaded or generated, never committed.
+/data/ADC_Final/
+/data/images/*.png
+/data/images/*.jpg
+/data/images/*.jpeg
 
 # Explainability & Review Agent (app.settings.explainability_agent_data_dir) - PCB images,
 # generated telemetry, and the embedded Qdrant DB are runtime data, not source. ipc_standards/ is
