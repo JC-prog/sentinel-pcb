@@ -42,6 +42,9 @@ planning/
 crash.log
 override.tf
 override.tf.json
+# tfvars can carry real secrets (e.g. var.openai_api_key) - never commit them.
+*.tfvars
+*.auto.tfvars
 *_override.tf
 *_override.tf.json
 

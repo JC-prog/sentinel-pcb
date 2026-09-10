@@ -18,6 +18,11 @@ output "inference_service_url" {
   value       = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}"
 }
 
+output "litellm_service_url" {
+  description = "Internal only - the backend reaches the LLM gateway here (OPENAI_BASE_URL)."
+  value       = "http://${aws_service_discovery_service.litellm.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.litellm_container_port}/v1"
+}
+
 output "ui_bucket_name" {
   description = "Sync the Angular build here (see README's deploy workflow)."
   value       = aws_s3_bucket.ui.bucket
