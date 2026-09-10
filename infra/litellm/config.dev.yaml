@@ -1,0 +1,40 @@
+# LiteLLM proxy config for local development.
+#
+# Mounted into the `litellm` service in infra/development/docker-compose.yml, which is part of
+# the default dev stack (setup-dev.sh starts it). The proxy is the only thing that holds a real
+# provider key locally - each developer's own, passed in as OPENAI_API_KEY from .env's
+# LITELLM_OPENAI_API_KEY. The app talks to it over an OpenAI-compatible API and authenticates
+# with LITELLM_MASTER_KEY below.
+#
+# Production runs the same image with config.prod.yaml - see infra/litellm/README.md.
+
+model_list:
+  # Alias names match exactly what the app already sends (settings.openai_model,
+  # settings.openai_embedding_model, and the explainability agent's hardcoded "gpt-4o"), so no
+  # model-name changes are needed in app code.
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Dev deliberately routes gpt-4o at the cheaper mini model - the explainability agent asks for
+  # gpt-4o by name and we don't want every local run billing full 4o. config.prod.yaml maps this
+  # to the real model.
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  # Silently drop provider-specific params the upstream model doesn't accept rather than 400.
+  drop_params: true
+
+general_settings:
+  # Single shared key for local dev - no key database (see infra/litellm/README.md for why prod
+  # is also master-key-only for now). Overridable via the LITELLM_MASTER_KEY env var.
+  master_key: os.environ/LITELLM_MASTER_KEY
