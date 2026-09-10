@@ -65,7 +65,8 @@ app/
 tests/                             # mirrors app/ - DB-backed tests need `docker compose up db`
 models/                            # pcb_feature_detector.onnx (gitignored) + labels.json
 simulation/                        # simulate_line.py - stands in for the AOI camera/PLC edge
-scripts/                           # setup-dev.sh, build-prod.sh, seed_remediation_docs.py
+scripts/                           # seed_remediation_docs.py
+                                    # macos/, linux/, windows/ - per-OS setup-dev + build-prod
 ui/                                # Angular review UI - see ui/README.md
 infra/Dockerfile                   # backend image
 docs/                              # AGENT-DESIGN.md (as-built), MODEL-TRAINING.md
@@ -75,12 +76,16 @@ openspec/                          # spec-driven change tracking - see DEVELOPME
 ## Quickstart
 
 ```bash
-bash scripts/setup-dev.sh
+bash scripts/macos/setup-dev.sh              # macOS
+bash scripts/linux/setup-dev.sh              # Linux
+powershell -File scripts\windows\setup-dev.ps1  # Windows
 ```
 
-Installs backend + UI dependencies, creates `.env` from `.env.example`, checks whether the
-ADC model is present, and runs the backend test suite (DB-backed tests skip cleanly unless
-Postgres is up — `docker compose up db`). Then, in two terminals:
+Installs backend + UI dependencies, creates `.env` from `.env.example`, starts a local
+Postgres/pgvector container (`docker compose up -d --wait db`), checks whether the ADC model and
+Ollama are present, and runs the full backend test suite against that database. First time in the
+repo? See [`docs/DEV-ENVIRONMENT-SETUP.md`](docs/DEV-ENVIRONMENT-SETUP.md) for prerequisites and a
+step-by-step walkthrough. Then, in two terminals:
 
 ```bash
 uv run uvicorn app.main:app --reload   # http://localhost:8000
@@ -107,7 +112,9 @@ docker-compose up --build   # backend (:8000) + ui (:4200) + db (:5433) + ollama
 ### Production build
 
 ```bash
-bash scripts/build-prod.sh [tag]
+bash scripts/macos/build-prod.sh [tag]              # macOS
+bash scripts/linux/build-prod.sh [tag]              # Linux
+powershell -File scripts\windows\build-prod.ps1 [tag]  # Windows
 ```
 
 Runs backend + UI checks, then builds `sentinel-pcb-backend:<tag>` and

@@ -75,6 +75,11 @@ export interface WorkflowDetail extends WorkflowSummary {
   explanation: Explanation | null;
 }
 
+export interface CaseContextResult {
+  precedents: Precedent[];
+  guidance: Guidance[];
+}
+
 export interface BoardInfo {
   boardId?: string;
   componentId?: string;
@@ -116,6 +121,13 @@ export class WorkflowsService {
 
   get(workflowId: string): Observable<WorkflowDetail> {
     return this.http.get<WorkflowDetail>(`${this.apiUrl}/workflows/${workflowId}`);
+  }
+
+  queryCaseContext(workflowId: string, question: string): Observable<CaseContextResult> {
+    return this.http.post<CaseContextResult>(
+      `${this.apiUrl}/workflows/${workflowId}/case-context`,
+      { question },
+    );
   }
 
   imageUrl(workflowId: string): string {

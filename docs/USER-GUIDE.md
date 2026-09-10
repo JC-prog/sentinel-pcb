@@ -9,7 +9,9 @@ see `DEVELOPMENT.md`.*
 ## 1. Getting it running
 
 ```bash
-bash scripts/setup-dev.sh
+bash scripts/macos/setup-dev.sh              # macOS
+bash scripts/linux/setup-dev.sh              # Linux
+powershell -File scripts\windows\setup-dev.ps1  # Windows
 ```
 
 creates `.env`, installs dependencies, and checks whether the ADC model is present. Then, in two

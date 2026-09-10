@@ -7,15 +7,16 @@ short, practical version for someone about to write code.
 
 ## 1. One-time setup
 
-1. `uv sync` — installs everything in `pyproject.toml` (main + dev groups).
-2. `cp .env.example .env` and fill in `ANTHROPIC_API_KEY` at minimum. `DATABASE_URL` points at
-   the shared Supabase project (ask a teammate for the connection string, don't provision a second
-   one).
-3. Install [Ollama](https://ollama.com) locally if you'll be iterating on a reasoning agent —
-   lets you exercise the propose→validate plumbing and the "LLM unavailable → escalate to human"
-   fallback path without spending API credits.
-4. `docker-compose up` at least once to confirm the container build works before you need it for
-   the demo.
+Run the setup script for your OS (`scripts/macos/setup-dev.sh`, `scripts/linux/setup-dev.sh`, or
+`scripts\windows\setup-dev.ps1`), then fill in `ANTHROPIC_API_KEY` in the `.env` it creates. Full
+walkthrough and prerequisites: [`docs/DEV-ENVIRONMENT-SETUP.md`](docs/DEV-ENVIRONMENT-SETUP.md).
+
+`DATABASE_URL` defaults to the Dockerized Postgres/pgvector the setup script starts for you
+(`localhost:5433`), no need to request credentials to get started. Point it at the team's shared
+Supabase project instead only if you specifically need shared/seeded data.
+
+Also run `docker-compose up` at least once to confirm the full container build works, before you
+need it for the demo.
 
 Sanity check before writing anything:
 

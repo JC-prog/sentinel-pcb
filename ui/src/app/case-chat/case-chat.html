@@ -1,0 +1,65 @@
+<section>
+  <h3 class="text-sm font-semibold text-slate-300 mb-2">Ask about this case</h3>
+
+  <div class="space-y-4 text-sm mb-4">
+    @for (message of messages(); track $index) {
+      <div>
+        <p class="text-slate-200 font-medium">{{ message.question }}</p>
+
+        @if (message.error; as error) {
+          <p class="text-rose-400 mt-1">{{ error }}</p>
+        } @else if (message.result; as result) {
+          @if (result.precedents.length || result.guidance.length) {
+            @if (result.precedents.length) {
+              <ul class="space-y-1 mt-1">
+                @for (p of result.precedents; track p.workflow_id) {
+                  <li>
+                    <a
+                      [routerLink]="['/board', p.workflow_id]"
+                      class="text-indigo-400 hover:text-indigo-300"
+                      >{{ p.board_id ?? '—' }} / {{ p.component_id ?? '—' }}</a
+                    >
+                    <span class="text-slate-500"> — {{ p.defect_label ?? '—' }} ({{ p.decision ?? '—' }})</span>
+                  </li>
+                }
+              </ul>
+            }
+            @if (result.guidance.length) {
+              <div class="space-y-2 mt-2">
+                @for (g of result.guidance; track g.title) {
+                  <div>
+                    <p class="font-medium">{{ g.title }}</p>
+                    <p class="text-slate-400">{{ g.content }}</p>
+                  </div>
+                }
+              </div>
+            }
+          } @else {
+            <p class="text-slate-500 mt-1">No matches.</p>
+          }
+        } @else {
+          <p class="text-slate-500 mt-1">Searching…</p>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="flex gap-2">
+    <input
+      type="text"
+      [ngModel]="question()"
+      (ngModelChange)="question.set($event)"
+      (keydown.enter)="ask()"
+      placeholder="e.g. any precedents for this component with a Void defect?"
+      class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+    />
+    <button
+      type="button"
+      (click)="ask()"
+      [disabled]="loading()"
+      class="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      Ask
+    </button>
+  </div>
+</section>

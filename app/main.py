@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agents.continuous_monitoring_drift import ObservabilityReport, compute_metrics
+from app.agents.explainability_review.case_context import CaseContext, retrieve_context
 from app.agents.orchestrator.runner import continue_workflow, create_workflow
 from app.db import AuditEvent, Explanation, Workflow, WorkflowStatus, get_session, init_models
 from app.db.session import async_session_factory
@@ -186,6 +187,26 @@ async def get_workflow(workflow_id: str, session: SessionDep) -> WorkflowDetail:
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     return _to_detail(workflow)
+
+
+class CaseContextQuery(BaseModel):
+    question: str
+
+
+@app.post("/workflows/{workflow_id}/case-context")
+async def query_case_context(
+    workflow_id: str, query: CaseContextQuery, session: SessionDep
+) -> CaseContext:
+    """Report view's case-scoped Q&A widget: re-runs Explainability & Review's Case Context
+    retrieval on demand against a reviewer's own question, instead of only the fixed snapshot
+    captured in the stored Explanation."""
+
+    workflow = await session.get(Workflow, workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    if not query.question.strip():
+        raise HTTPException(status_code=422, detail="question must not be empty")
+    return await retrieve_context(session, query.question, workflow_id)
 
 
 @app.get("/workflows/{workflow_id}/image")
