@@ -23,6 +23,20 @@ if (-not (Test-Path ".env")) {
     Write-Host "==> .env already exists, leaving it alone"
 }
 
+# Fill in a JWT_SECRET_KEY if it's still blank - the app refuses to issue usable tokens without
+# one, and there's no reason to make every developer do this by hand.
+if (Select-String -Path ".env" -Pattern '^JWT_SECRET_KEY=$' -Quiet) {
+    Write-Host "==> Generating JWT_SECRET_KEY in .env"
+    $secret = (uv run python -c "import secrets; print(secrets.token_hex(32))").Trim()
+    (Get-Content ".env") -replace '^JWT_SECRET_KEY=$', "JWT_SECRET_KEY=$secret" | Set-Content ".env"
+}
+
+if (Select-String -Path ".env" -Pattern '^LITELLM_OPENAI_API_KEY=$' -Quiet) {
+    Write-Host "    Note: put your own OpenAI key in LITELLM_OPENAI_API_KEY in .env for the OpenAI"
+    Write-Host "    features - only your local LiteLLM proxy container sees it. Ollama-only? Leave"
+    Write-Host "    it blank. Using a shared team proxy instead? See infra/litellm/README.md."
+}
+
 Write-Host "==> Checking Docker (needed for the local Postgres container)"
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: docker not found. Install Docker Desktop for Windows: https://docs.docker.com/desktop/install/windows-install/"
@@ -35,17 +49,17 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "==> Starting local Postgres + Qdrant (docker compose up -d --wait db qdrant)"
-docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant
+Write-Host "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose up -d --wait)"
+docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant litellm
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "==> Checking for Ollama (http://localhost:11434)"
+Write-Host "==> Checking for Ollama (http://localhost:11434) - optional"
 try {
     Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:11434" -TimeoutSec 2 | Out-Null
     Write-Host "    Found - the Local LLM option in Settings will work."
 } catch {
-    Write-Host "    Not found. Install it to use the Local LLM option: https://ollama.com"
-    Write-Host "    (not required if you'll only use the OpenAI option)"
+    Write-Host "    Not found. Only needed for the Local LLM option: https://ollama.com"
+    Write-Host "    The OpenAI path (via the LiteLLM proxy) does not need it."
 }
 
 Write-Host "==> UI: installing Node dependencies (npm install)"
@@ -83,3 +97,8 @@ Write-Host "Setup complete. Postgres + Qdrant are running in Docker (docker comp
 Write-Host "To run the app:"
 Write-Host "  terminal 1: uv run uvicorn app.main:app --reload   # http://localhost:8000"
 Write-Host "  terminal 2: cd ui && npm start                     # http://localhost:4200"
+Write-Host ""
+Write-Host "Optional docker-compose profiles (only run your slice):"
+Write-Host "  --profile ui         the containerized UI"
+Write-Host "  --profile inference  the ONNX inference service (needs inference/models.toml filled)"
+Write-Host "  --profile full       everything"
