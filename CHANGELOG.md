@@ -78,6 +78,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend over Cloud Map private DNS - no public route. `app/inference/` is the backend client
   (`INFERENCE_BASE_URL`); nothing calls it yet, wiring it into the Explainability & Review Agent
   is the next step.
+- LiteLLM proxy (`infra/litellm/`): every OpenAI-compatible call (chat, memory embeddings, the
+  Explainability & Review Agent) now goes through an OpenAI-compatible gateway
+  (`OPENAI_BASE_URL`), so real provider keys stay off developer laptops and out of the backend
+  task. Runs as a third ECS Fargate service (`infra/production/litellm.tf`), reachable only from
+  the backend over Cloud Map private DNS; its config (`infra/litellm/config.prod.yaml`) is passed into
+  the task definition, so a model or routing change is a `terraform apply` with no image build.
+  Auth is master-key-only for now. Locally the proxy runs in Docker as part of the default dev
+  stack; each developer supplies their own upstream OpenAI key via `LITELLM_OPENAI_API_KEY`
+  (seen only by their local proxy container), while production uses one shared key in Secrets
+  Manager.
+
+### Changed
+
+- `ONBOARDING.md`: a step-by-step dev environment setup guide (prerequisites, the setup script,
+  the one `.env` value to set, verification, per-section extras, troubleshooting, ports).
+  `README.md` and `DEVELOPMENT.md` point at it.
+- The backend no longer calls `api.openai.com` directly - it calls `settings.openai_base_url`
+  (`OPENAI_BASE_URL`, default unchanged at OpenAI direct for a bare checkout). `OPENAI_API_KEY`
+  is a LiteLLM key wherever a proxy is configured.
+- `infra/development/docker-compose.yml` runs `db` + `qdrant` + `app` by default; `ui`,
+  `offline-llm`, and `inference` moved behind `--profile` flags so a developer only builds and
+  runs their slice.
+- `setup-dev.sh` / `setup-dev.ps1` now generate `JWT_SECRET_KEY` when it's blank and no longer
+  push Ollama as a default dependency.
 
 ### Fixed
 
