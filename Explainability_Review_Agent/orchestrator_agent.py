@@ -49,7 +49,7 @@ class A2AInterAgentClient:
 a2a_agent2 = A2AInterAgentClient(AGENT_2_DISCOVERY)
 
 
-def orchestrator_handle_event(board_id: str, component_ref: str, image_path: str):
+def orchestrator_handle_event(board_id: str, component_ref: str, image_path: str) -> dict:
     logger.info(f"\n=== [AOI Inspection Event] Board: {board_id}, Component: {component_ref} ===")
 
     # Step 1: Core ADC Service (simulated 1st-stage baseline classifier)
@@ -76,14 +76,25 @@ def orchestrator_handle_event(board_id: str, component_ref: str, image_path: str
         )
 
         logger.info("[Agent 1] Received A2A completed audit from Agent 2:")
-        logger.info(f"  • Category: {agent2_result['defect_category']}")
-        logger.info(f"  • Grounding Conf: {agent2_result['confidence_score']}")
-        logger.info(f"  • Self-Check Passed: {agent2_result['self_check_passed']}")
-        logger.info(f"  • Diagnosis: {agent2_result['diagnosis_text']}")
+        logger.info(f"  • Category: {agent2_result.get('defect_category')}")
+        logger.info(f"  • Grounding Conf: {agent2_result.get('confidence_score')}")
+        logger.info(f"  • Self-Check Passed: {agent2_result.get('self_check_passed')}")
+        logger.info(f"  • Diagnosis: {agent2_result.get('diagnosis_text')}")
 
         # Log escalation to audit tool via MCP
         audit_logging_tool("A2A_ESCALATION_COMPLETE", {"result": agent2_result})
         logger.info("--> Routing packet to [Human Reviewer] for final signoff.")
+
+        # Return Agent 2's audit result
+        return agent2_result
     else:
         logger.info("[Agent 1] High confidence. Auto-accepted.")
         audit_logging_tool("AUTO_ACCEPT_CLASSIFICATION", {"prediction": adc_prediction})
+
+        return {
+            "defect_category": adc_prediction,
+            "confidence_score": adc_confidence,
+            "self_check_passed": True,
+            "diagnosis_text": "High confidence prediction auto-accepted by Agent 1 baseline ADC.",
+            "escalated": False
+        }
