@@ -7,8 +7,8 @@ from orchestrator_agent import orchestrator_handle_event
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-INPUT_DIR = r"C:\Users\kenny\Desktop\Semicon Agents\Explainability_Review_Agent\inputs"
-OUTPUT_FILE = r"outputs\batch_inspection_results.json"
+INPUT_DIR = r"\inputs"
+OUTPUT_FILE = r"\outputs\batch_inspection_results.json"
 
 
 def parse_filename_metadata(filename: str):
@@ -23,8 +23,8 @@ def parse_filename_metadata(filename: str):
     }
 
     if len(tokens) >= 7:
-        meta["component_ref"] = tokens[1]  # e.g., C636, C978
-        meta["board_id"] = tokens[3]       # e.g., 06-200036-02
+        meta["component_ref"] = tokens[1]
+        meta["board_id"] = tokens[3]
         
         raw_gt = tokens[6].lower()
         if "missing" in raw_gt:
@@ -56,45 +56,20 @@ def find_all_images(base_dir: str):
     return image_paths
 
 
-def extract_reasoning(res) -> str:
-    """
-    Extracts the reasoning / explanation text from the orchestrator output,
-    handling dictionaries, nested response structures, and Pydantic/dataclass models.
-    """
-    if res is None:
-        return "No response returned by orchestrator."
-
-    # If it's a Pydantic model or dataclass object
-    if hasattr(res, "model_dump"):
-        res = res.model_dump()
-    elif hasattr(res, "dict") and callable(res.dict):
-        res = res.dict()
-    elif hasattr(res, "__dict__"):
-        res = vars(res)
-
-    if isinstance(res, dict):
-        # 1. Check direct common keys
-        for key in ["reasoning", "explanation", "rationale", "review_reasoning", "agent_reasoning", "justification", "notes"]:
-            if key in res and res[key]:
-                return str(res[key])
-
-        # 2. Check nested sub-dictionaries (e.g., res["review"]["reasoning"])
-        for sub_key in ["explainability_review", "review_agent", "review", "analysis", "audit", "decision_summary"]:
-            sub_dict = res.get(sub_key)
-            if isinstance(sub_dict, dict):
-                for key in ["reasoning", "explanation", "rationale", "justification"]:
-                    if sub_dict.get(key):
-                        return str(sub_dict[key])
-
-        # 3. Fallback: Check if there is an explicit defect message or summary
-        for key in ["summary", "message", "conclusion"]:
-            if key in res and res[key]:
-                return str(res[key])
-
-    elif isinstance(res, str):
-        return res
-
-    return "Reasoning not found in orchestrator output."
+def extract_agent2_reasoning(agent2_res: dict) -> str:
+    """Extracts the reasoning / diagnosis produced by Agent 2."""
+    if not isinstance(agent2_res, dict):
+        return "No reasoning returned by Agent 2."
+    
+    # Priority order for Agent 2 explanation fields:
+    # 1. diagnosis_text (Agent 2 standard field)
+    # 2. reasoning / explanation
+    for key in ["diagnosis_text", "reasoning", "explanation", "rationale"]:
+        val = agent2_res.get(key)
+        if val:
+            return str(val)
+            
+    return "No diagnosis text found."
 
 
 def main():
@@ -105,8 +80,8 @@ def main():
         logger.error("No images found! Check your inputs directory.")
         return
 
-    # TIP: Start with [:5] or [:10] to test before running all 100+
-    batch_images = all_images[:5]  # Change to all_images to run every file
+    # Run on first 5 images for test
+    batch_images = all_images[:5]
     logger.info(f"Running batch pipeline on {len(batch_images)} images...\n")
 
     results = []
@@ -118,32 +93,31 @@ def main():
         logger.info(f"   Ground Truth: '{meta['ground_truth']}'")
 
         try:
-            res = orchestrator_handle_event(
+            agent2_output = orchestrator_handle_event(
                 board_id=meta["board_id"],
                 component_ref=meta["component_ref"],
                 image_path=img_path
             )
 
-            reasoning = extract_reasoning(res)
-            logger.info(f"   Reasoning: {reasoning[:120]}..." if len(reasoning) > 120 else f"   Reasoning: {reasoning}")
+            reasoning = extract_agent2_reasoning(agent2_output)
+            logger.info(f"   Agent 2 Reasoning: {reasoning[:120]}...\n")
 
             results.append({
                 "filename": filename,
                 "metadata": meta,
-                "reasoning": reasoning,
-                "orchestrator_output": res
+                "agent_2_reasoning": reasoning,
+                "agent_2_output": agent2_output
             })
         except Exception as e:
-            logger.error(f"Failed processing {filename}: {e}")
+            logger.error(f"Failed processing {filename}: {e}", exc_info=True)
 
-    # Ensure outputs directory exists
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4, default=str)
 
-    logger.info(f"\n==========================================")
+    logger.info(f"==========================================")
     logger.info(f"Batch completed! Processed {len(results)} images.")
-    logger.info(f"Saved full audit results to: {OUTPUT_FILE}")
+    logger.info(f"Saved results to: {OUTPUT_FILE}")
     logger.info(f"==========================================")
 
 
