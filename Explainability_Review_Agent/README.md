@@ -1,77 +1,69 @@
-# 🔍 Explainability Review Agent for PCB Defect Inspection
+# 🔍 Multi-Agent PCB Defect Inspection & Explainability System
 
-An autonomous, multi-modal review agent built with **LangGraph** designed to inspect Printed Circuit Boards (PCBs) for assembly and component defects. 
+An industrial-grade, multi-agent inspection system for Printed Circuit Boards (PCBs) built using **LangGraph**, the **Agent2Agent (A2A) Protocol**, and the **Model Context Protocol (MCP)**. 
 
-The agent merges **Visual Evidence** (Local Vision-Language Models & PCB Detectors) with **Physical Measurements** (3D AOI height profiles and In-Circuit Testing electrical telemetry), **IPC-A-610 Manufacturing Standards**, and **Historical Defect Precedents** (Vector RAG) to provide grounded, explainable root-cause diagnoses—protected by an automated **Content Guardrail**.
+The system couples **Visual Evidence** (Local LLaVA Vision-Language Model), **Physical Telemetry** (3D AOI laser height profiles and In-Circuit Testing electrical measurements), **IPC-A-610 Class 2/3 Standards**, and **Historical Defect Precedents** (Qdrant Vector RAG) to deliver grounded, explainable root-cause diagnoses with contradiction detection.
 
 ---
 
-## 🏗 System Architecture
+## 🏛️ System Architecture
 
-The pipeline routes each inspected component through a 5-stage **LangGraph** state graph:
+The system decouples agent collaboration from tool execution:
+* **Inter-Agent Communication (Horizontal):** Governed strictly by the **A2A Protocol** (HTTP / JSON-RPC 2.0 with Agent Card discovery and task lifecycle management).
+* **Intra-Agent Tooling (Vertical):** Governed by **MCP (Model Context Protocol)** servers to isolate databases, telemetry lookups, and AI models.
 
 ```text
-       [START]
-          │
-          ▼
-┌─────────────────────────────────────────┐
-│ Tool 1: Context Retrieval (MCP Client)   │
-│ - Qdrant Vector Search (Historical RAG) │
-│ - IPC-A-610 Reference Standards         │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ Tool 2: Visual Evidence Extraction      │
-│ - PCB Object & Feature Detector         │
-│ - LLaVA Vision-Language Inspection (VLM)│
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ Tool 3: Physical & Electrical Telemetry │
-│ - Fast lookup from pre-computed metrics │
-│ - 3D AOI Laser Profile (Height & Tilt)  │
-│ - ICT In-Circuit Testing (R / C / Bias) │
-│ - Fallback to MCP Telemetry Server      │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ Tool 4: Grounding & Reasoning (OpenAI)  │
-│ - Multi-modal Cross-Verification        │
-│ - Contradiction Detection & Self-Check  │
-│ - Standardized JSON Root-Cause Output   │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ Tool 5: Guardrail & Schema Audit        │
-│ - Domain Relevance & Terminology Check  │
-│ - Conversational Filler / Leaks Filter  │
-│ - Bounding Box Coordinate Validation    │
-│ - Taxonomy Whitelist Enforcement        │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-                 [END]
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                        AGENT 1: ORCHESTRATOR                          │
+ │                                                                        │
+ │   1. Ingest AOI Inspection Event                                       │
+ │   2. Run Core ADC Services (Fast Baseline Inference)                   │
+ │   3. Query Agent 1 MCP Tools (Audit Log, Confidence Decision Gate)     │
+ └───────────────────┬────────────────────────────────┬───────────────────┘
+                     │ MCP (Agent 1 ➔ Tools)          │
+       ┌─────────────▼──────────────┐                 │
+       │     Agent 1 MCP Server     │                 │
+       │ • Audit Logging Tool       │                 │
+       │ • Confidence Decision Tool │                 │
+       └────────────────────────────┘                 │
+                                                      │ A2A Protocol
+                                                      │ (Task Delegation over HTTP)
+                                                      │ • Discover: /.well-known/agent.json
+                                                      │ • Task: pcb.explainability.audit
+                                                      │
+ ┌────────────────────────────────────────────────────▼───────────────────┐
+ │                   AGENT 2: EXPLAINABILITY & REVIEW                     │
+ │                   (A2A Server on Port 8001)                            │
+ │                                                                        │
+ │   Receives A2A Task ➔ Executes LangGraph Pipeline ➔ Returns A2A Artifact│
+ └───────────────────┬────────────────────────────────────────────────────┘
+                     │ MCP (Agent 2 ➔ Tools)
+       ┌─────────────▼──────────────────────────────────────┐
+       │                Agent 2 MCP Server                  │
+       │  1. Case Context Retrieval Tool (Qdrant Vector DB) │
+       │  2. Visual Evidence Tool (Local LLaVA VLM)         │
+       │  3. Measurement Evidence Tool (ICT / 3D Laser)     │
+       │  4. Grounding and Self-Check Tool (OpenAI GPT-4o)  │
+       └────────────────────────────────────────────────────┘
 ```
+
+### Contradiction Detection & Physical Grounding
+A core strength of the system is its **grounding self-check mechanism**:
+* **Missing Part vs. Solder Starvation:** If visual inspection detects minor solder pad discoloration, but ICT telemetry reports an **infinite resistance ($>10\text{ M}\Omega$) / open circuit** and laser height is $\approx 0\,\mu\text{m}$, the agent catches the contradiction and classifies it as **`missing part`**.
+* **Shifted:** If a component has excessive **side overhang ($>50\%$)**, the agent applies **IPC-A-610 Class 2** tolerance limits to confirm **`shifted`**.
 
 ---
 
-## 🛡️ Guardrails & Physical Grounding
+## 🏷️ Supported Defect Taxonomy
 
-### 1. The Output Guardrail (Tool 5)
-To ensure the system produces reliable, factory-ready outputs without conversational fluff, prompt leaks, or hallucinations, every response passes through an automated guardrail:
-
-* **Domain Relevance Enforcement:** Verifies that explanations contain legitimate PCB manufacturing terms (`solder`, `pad`, `terminal`, `overhang`, `fillet`, `coplanarity`, `reflow`, etc.). If an output contains unrelated or generic narrative, it is rejected.
-* **Anti-Chatter & Leak Filter:** Strips conversational preambles and meta-assistant responses (e.g., *"As an AI..."*, *"Sure, here is your JSON..."*, *"I hope this helps"*).
-* **Coordinate Bounds Verification:** Validates that normalized bounding box coordinates fall strictly between `[0, 1000]`. Coordinates outside this range are safely nullified.
-* **Taxonomy Whitelisting & Fail-Safe:** Disallows unmapped categories (e.g., `"broken piece"`). Unverified categories are reset to `"unknown"` with a diagnostic audit flag.
-
-### 2. Physical Grounding & Self-Check
-* **Open Circuit Override:** If visual analysis suspects a superficial solder defect, but ICT telemetry reports **infinite resistance ($>10\text{ M}\Omega$) / open circuit**, the agent flags the contradiction, fails the self-check, and prioritizes a **`missing part`** or **`tombstone`** diagnosis.
-* **IPC-A-610 Class 2 Standards:** Components exhibiting side overhang $>50\%$ are strictly classified as **`shifted`** failures regardless of passing electrical resistance.
+The system classifies anomalies into 7 IPC-aligned categories:
+1. **`missing part`**: Pad empty; open ICT circuit ($R > 10\text{ M}\Omega$); laser height profile $\approx 0\,\mu\text{m}$.
+2. **`shifted`**: Component misaligned; IPC Class 2 violation (side overhang $>50\%$).
+3. **`foreign material`**: Unintended solder splatters, loose balls, flux residue, or debris.
+4. **`tombstone`**: Component partially detached, standing on one end; open circuit with elevated height profile.
+5. **`solder insufficient`**: Solder wetting fillet below minimum IPC volume/height.
+6. **`wrong part`**: Incorrect component size/package or measured electrical value out of tolerance band.
+7. **`no defect`**: Component and solder joint satisfy all visual and electrical criteria.
 
 ---
 
@@ -79,115 +71,128 @@ To ensure the system produces reliable, factory-ready outputs without conversati
 
 ```text
 Explainability_Review_Agent/
+├── .env                                   # Environment variables (OPENAI_API_KEY)
+├── requirements.txt                       # Project dependencies
 ├── inputs/                                # Hierarchical raw PCB inspection dataset
-│   └── 18-010309-AAA-RV3/                 # Board Part ID
-│       ├── Body/
-│       │   ├── Passed/                    # Passed reference crops
-│       │   │   └── Board1_R131_Body_...jpg
-│       │   └── Failed/                    # Defect crops (Tombstone, Shift, etc.)
-│       └── Text/
-├── outputs/                               # Generated telemetry & analysis results
-│   ├── synthetic_telemetry.json           # Batch list of all component measurements
-│   ├── telemetry_by_image.json            # O(1) instant lookup table keyed by filename
-│   └── inspection_results.json            # Final agent diagnostic reports
+│   └── 06-200036-02/                      # Board Assembly ID
+│       └── Body/
+│           ├── Passed/                    # Defect image instances (MissingPart, Shift, etc.)
+│           └── Golden/                    # Paired defect-free reference images
+├── outputs/                               # Telemetry & diagnostic reports
+│   ├── synthetic_telemetry.json           # Array of all physical & electrical metrics
+│   ├── telemetry_by_image.json            # O(1) key-value lookup map keyed by filename
+│   └── inspection_results.json            # Final diagnostic output logs
+├── qdrant_db/                             # Persistent local Qdrant vector database files
 ├── generate_telemetry.py                  # Generates physical 3D AOI & ICT telemetry
-├── agent.py                               # LangGraph graph, Nodes, State, & Guardrail
-├── main.py                                # Batch execution entrypoint
+├── agent.py                               # Agent 2 LangGraph state machine & MCP tool caller
+├── orchestrator_agent.py                  # Agent 1 logic (Core ADC, Decision Gate, A2A Client)
+├── run_pipeline.py                        # Single-case trigger for the end-to-end pipeline
+├── main.py                                # Batch execution & ground truth evaluation script
 └── src/
+    ├── a2a/
+    │   ├── protocol.py                    # A2A data schemas (AgentCard, A2ATaskRequest/Response)
+    │   └── agent2_a2a_server.py           # Agent 2 FastAPI-based A2A server endpoint
+    ├── mcp/
+    │   ├── agent1_mcp_server.py           # Agent 1 MCP tools (Audit log, Confidence decision)
+    │   └── agent2_mcp_server.py           # Agent 2 MCP tools (Qdrant, LLaVA, ICT, OpenAI)
     ├── models/
-    │   └── model_registry.py              # LLaVA (Ollama), Detectors & OpenAI models
-    └── mcp/
-        └── pcb_mcp_server.py              # Model Context Protocol (MCP) server & client
+    │   └── model_registry.py              # Model wrappers (Local LLaVA, OpenAI GPT-4o)
+    └── data/
+        └── qdrant_store.py                # Qdrant client & historical defect indexer
 ```
-
----
-
-## 🏷 Supported Defect Taxonomy
-
-The agent standardizes all findings into 7 IPC-aligned categories:
-1. `missing part` (Bare pads, open ICT circuit, $\approx 0\,\mu\text{m}$ height profile)
-2. `shifted` (IPC Class 2 violation: side overhang $>50\%$)
-3. `foreign material` (Solder splatters, flux residues, or non-board debris)
-4. `tombstone` (One terminal detached, elevated laser profile, open circuit)
-5. `solder insufficient` (Wetting fillet below minimum standard)
-6. `wrong part` (Component value out-of-tolerance via ICT)
-7. `no defect` (Component passes both visual and electrical tolerance bands)
 
 ---
 
 ## 🚀 Setup & Installation
 
 ### 1. Prerequisites
-* **Python 3.10+**
-* [Ollama](https://ollama.com/) (for local visual feature extraction)
-* An **OpenAI API Key** (for Stage 4 multimodal reasoning)
+* **Python 3.10+** (in an Anaconda or virtual environment)
+* [Ollama](https://ollama.com/) (running on local machine)
+* An **OpenAI API Key**
 
-### 2. Install Python Dependencies
-```bash
-pip install langgraph qdrant-client ollama pillow openai numpy
-```
-
-### 3. Setup Local Vision Model
-Ensure Ollama is running and pull the LLaVA vision model:
+### 2. Pull the Local Vision Model
+Ensure Ollama is running, then pull LLaVA:
 ```bash
 ollama pull llava
 ```
 
-### 4. Configure API Keys
-Set your OpenAI API key in your environment:
+### 3. Install Python Dependencies
 ```bash
-# Windows Command Prompt (cmd)
-set OPENAI_API_KEY=your_actual_openai_key_here
+pip install -r requirements.txt
+```
 
-# Windows PowerShell
-$env:OPENAI_API_KEY="your_actual_openai_key_here"
-
-# Linux / macOS
-export OPENAI_API_KEY="your_actual_openai_key_here"
+### 4. Configure Environment Variables
+Create or edit your `.env` file in the project root:
+```env
+OPENAI_API_KEY=sk-proj-yourActualOpenAIKeyHere
 ```
 
 ---
 
 ## ⚡ Execution Workflow
 
-### Step 1: Synthesize AOI & ICT Telemetry
-Before running the review agent, parse the images in `inputs/` and generate physical 3D AOI (height/overhang) and ICT (resistance/capacitance) telemetry:
+### Step 1: Synthesize Physical & Electrical Telemetry
+Before running inspections, compute the physical 3D AOI (height/overhang) and ICT (resistance/capacitance) telemetry dataset from the raw images:
 
 ```bash
 python generate_telemetry.py
 ```
 *Outputs generated:*
-* `outputs/synthetic_telemetry.json` (Array of all telemetry records)
-* `outputs/telemetry_by_image.json` (Key-value map indexed by image filename for fast $O(1)$ lookup)
+* `outputs/synthetic_telemetry.json` (Full telemetry dataset)
+* `outputs/telemetry_by_image.json` (Indexed dictionary for $O(1)$ fast lookup during inspection)
 
-### Step 2: Run the Inspection Agent
-Execute the review agent across your PCB images:
+---
 
+### Step 2: Run the Multi-Agent Inspection System (Two-Terminal Workflow)
+
+Because this is a true **Agent-to-Agent (A2A)** architecture, Agent 1 and Agent 2 run as independent processes communicating over HTTP.
+
+#### Terminal 1: Start Agent 2 (The Explainability Server)
+Open your first terminal, navigate to the directory, and start Agent 2:
+```bash
+python -m src.a2a.agent2_a2a_server
+```
+Wait until you see:
+```text
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+```
+*(Leave this terminal running in the background).*
+
+---
+
+#### Terminal 2: Trigger Agent 1 (The Orchestrator)
+Open a **second terminal** and trigger a test inspection:
+```bash
+python run_pipeline.py
+```
+
+Or run the **full batch evaluation** over your dataset:
 ```bash
 python main.py
 ```
 
 ---
 
-## 📊 Telemetry Data & Inspection Output
+## 📊 Sample Output Data
 
 ### 1. Telemetry Lookup Sample (`outputs/telemetry_by_image.json`)
 ```json
 {
-  "Board1_R131_Body_18-010309-AAA-RV3_20260822_082401620_Shift_4.jpg": {
-    "board_id": "18-010309-AAA-RV3",
-    "component_ref": "R131",
-    "condition_label": "NORMAL",
-    "nominal_value": 100.0,
-    "measured_value": 99.824,
-    "unit": "Ohms",
-    "ict_status": "PASS",
-    "laser_profile_height_um": 44.78,
-    "side_overhang_percent": 18.2,
-    "coplanarity_um": 1.12,
-    "aoi_status": "PASS",
-    "overall_status": "PASS",
-    "filename": "Board1_R131_Body_18-010309-AAA-RV3_20260822_082401620_Shift_4.jpg"
+  "Board1_C636_Body_06-200036-02_20260824_193317036_MissingPart_3.jpg": {
+    "board_id": "06-200036-02",
+    "component_ref": "C636",
+    "condition_label": "MISSING",
+    "nominal_value": 0.1,
+    "measured_value": 0.0,
+    "unit": "uF",
+    "ict_status": "FAIL",
+    "laser_profile_height_um": 0.8,
+    "side_overhang_percent": 0.0,
+    "coplanarity_um": 0.0,
+    "aoi_status": "FAIL",
+    "overall_status": "FAIL",
+    "filename": "Board1_C636_Body_06-200036-02_20260824_193317036_MissingPart_3.jpg"
   }
 }
 ```
@@ -196,20 +201,15 @@ python main.py
 ```json
 [
   {
-    "board_id": "18-010309-AAA-RV3",
-    "component_ref": "R131",
-    "image_name": "Board1_R131_Body_18-010309-AAA-RV3_20260822_082401620_Shift_4.jpg",
-    "defect_category": "no defect",
-    "defect_location": {
-      "landmark": "center land pattern",
-      "bounding_box": [320, 410, 680, 590]
-    },
-    "explanation": "Component body is centered on pads with 18.2% overhang, safely compliant with IPC-A-610 Class 2 limits (<50%). Electrical resistance measured 99.82 Ohms against a 100.0 Ohm nominal value. Visual and measurement evidence align with zero contradictions.",
-    "contradictions_found": "None. Visual presence matches normal resistance profile.",
-    "confidence_score": 0.98,
+    "file_name": "Board1_C636_Body_06-200036-02_20260824_193317036_MissingPart_3.jpg",
+    "board_id": "06-200036-02",
+    "component_ref": "C636",
+    "ground_truth": "missing part",
+    "predicted_defect": "missing part",
+    "is_correct": true,
+    "confidence": 0.97,
+    "diagnosis": "Component C636 is entirely absent from its target land pattern. Physical telemetry reveals an open circuit with zero capacitance (0.0 uF) and near-zero laser profile height (0.8 um vs expected 45 um). Visual absence aligns with electrical measurements, passing the self-check.",
     "self_check_passed": true,
-    "guardrail_passed": true,
-    "guardrail_flags": [],
     "errors": []
   }
 ]
@@ -217,8 +217,8 @@ python main.py
 
 ---
 
-## 🛠 Advanced Configuration
+## 🛠️ Production Extensibility
 
-* **Customizing Guardrail Rules:** Modify `_PCB_DOMAIN_TERMS` and `_FORBIDDEN_PHRASES` in `agent.py` to adapt the filter to specific factory terminology or customer requirements.
-* **Tuning IPC Tolerances:** Modify tolerances and component packages in `generate_telemetry.py` under `self.default_specs` to represent custom SMD sizes (e.g., 0402, 0603, 0805, QFP).
-* **Direct MCP Telemetry:** If connecting to live physical testers, set `outputs/telemetry_by_image.json` aside or configure `tool3_measurement_evidence_node` in `agent.py` to stream directly from your factory's Model Context Protocol (MCP) server.
+* **Human-in-the-Loop (HITL):** In `orchestrator_agent.py`, any diagnosis where `self_check_passed == False` or confidence falls below the acceptance threshold is automatically flagged and routed to the QA engineer's dashboard for verification.
+* **Continuous Learning:** When an engineer validates an escalated mismatch, the verified embedding and diagnosis can be seeded back into `qdrant_db`, improving future retrieval accuracy.
+* **Connecting Live Equipment:** In `src/mcp/agent2_mcp_server.py`, replace `measurement_evidence_tool` mock handlers with standard industrial SECS/GEM or REST endpoints to stream telemetry directly from your SMT line's physical AOI and ICT machines.
