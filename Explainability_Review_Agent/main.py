@@ -20,7 +20,7 @@ from agent import pcb_graph, PCBInspectionState
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-DEFAULT_INPUT_DIR = r"C:\Users\kenny\Desktop\Semicon Agents\Prototype Code\inputs"
+DEFAULT_INPUT_DIR = r"\inputs"
 DEFAULT_OUTPUT_FILE = "inspection_results.json"
 
 
