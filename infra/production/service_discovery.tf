@@ -26,3 +26,21 @@ resource "aws_service_discovery_service" "inference" {
     failure_threshold = 1
   }
 }
+
+resource "aws_service_discovery_service" "litellm" {
+  name = "litellm"
+
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.internal.id
+    routing_policy = "MULTIVALUE"
+
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+}

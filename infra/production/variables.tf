@@ -66,6 +66,41 @@ variable "inference_desired_count" {
   default     = 1
 }
 
+variable "litellm_container_port" {
+  type    = number
+  default = 4000
+}
+
+variable "litellm_image" {
+  description = "LiteLLM proxy image. Pulled straight from ghcr.io (no ECR mirror) - pin a versioned -stable tag rather than main-stable for a real deploy."
+  type        = string
+  default     = "ghcr.io/berriai/litellm:main-stable"
+}
+
+variable "litellm_task_cpu" {
+  description = "Fargate task vCPU units for the LiteLLM proxy (256 = 0.25 vCPU). The proxy is I/O-bound glue - it doesn't need much."
+  type        = number
+  default     = 256
+}
+
+variable "litellm_task_memory" {
+  description = "Fargate task memory for the LiteLLM proxy, in MiB."
+  type        = number
+  default     = 512
+}
+
+variable "litellm_desired_count" {
+  description = "Number of LiteLLM proxy tasks."
+  type        = number
+  default     = 1
+}
+
+variable "openai_api_key" {
+  description = "Real OpenAI API key the LiteLLM proxy uses upstream. Required - supply via a non-committed *.tfvars or TF_VAR_openai_api_key. Never appears in an output or a plain task-def env var; stored only in the sentinelchat/litellm secret."
+  type        = string
+  sensitive   = true
+}
+
 variable "db_instance_class" {
   type    = string
   default = "db.t4g.micro"

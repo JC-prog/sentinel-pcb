@@ -24,6 +24,9 @@ services:
       # the container's route back to the host.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
+      # The LiteLLM proxy runs on the compose network as "litellm" - override .env's
+      # localhost:4000 form for this container. Bare `uv run uvicorn` uses .env's value directly.
+      OPENAI_BASE_URL: http://litellm:4000/v1
     extra_hosts:
       # host.docker.internal is built into Docker Desktop (Mac/Windows); on Linux it needs this
       # explicit mapping to the host gateway.
@@ -33,6 +36,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      litellm:
+        condition: service_healthy
 
   # Local Postgres for dev. Not used by any application code yet (the chat app is stateless
   # today - see app/settings.py's database_url) - provisioned ahead of the multi-user/auth work
@@ -68,9 +73,39 @@ services:
     volumes:
       - sentinelchat-qdrant-data:/qdrant/storage
 
+  # LiteLLM proxy - the OpenAI-compatible endpoint the app calls instead of api.openai.com (see
+  # infra/litellm/README.md). Part of the default dev stack so local topology matches prod. Put a
+  # real provider key in .env as LITELLM_OPENAI_API_KEY for OpenAI calls to actually go through -
+  # only this container sees it. Leave it blank to work Ollama-only (calls just 401).
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable # pin a versioned -stable tag for real use
+    labels:
+      project: sentinelchat
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    environment:
+      OPENAI_API_KEY: ${LITELLM_OPENAI_API_KEY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-dev}
+    volumes:
+      - ../litellm/config.dev.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Services below are opt-in via profiles, so you only build/run your slice:
+  #   docker compose ... up -d                      # db + qdrant + litellm + app (backend default)
+  #   docker compose ... --profile ui up -d         # + the containerized UI
+  #   docker compose ... --profile inference up -d  # + the ONNX inference service
+  #   docker compose ... --profile full up -d       # everything
+
   # Full containerized UI for a quick end-to-end smoke test. The primary dev loop is still
   # `npm start` (hot reload) - see README.md.
   ui:
+    profiles: ["ui", "full"]
     build:
       context: ../../ui
       dockerfile: Dockerfile
@@ -80,6 +115,23 @@ services:
       - "4200:80"
     depends_on:
       - app
+
+  # ONNX classification service (inference/). Its image bakes models from Hugging Face at build
+  # time, so `inference/models.toml` must have real repos before `--profile inference build`
+  # works (see infra/production/README.md). REQUIRE_MODELS_ON_STARTUP=false lets the API boot
+  # without every model present.
+  inference:
+    profiles: ["inference", "full"]
+    build:
+      context: ../../inference
+      dockerfile: Dockerfile
+    labels:
+      project: sentinelchat
+    ports:
+      - "8001:8001"
+    environment:
+      LOG_FORMAT: json
+      REQUIRE_MODELS_ON_STARTUP: "false"
 
 volumes:
   sentinelchat-db-data:

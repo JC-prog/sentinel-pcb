@@ -4,8 +4,6 @@ from app.chat.schemas import LlmProvider
 from app.config.settings import settings
 from app.core.memory import EmbeddingService
 
-_OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
-
 
 class OllamaEmbeddingService:
     """Embeds text via a local Ollama server (settings.ollama_base_url) - see
@@ -26,14 +24,15 @@ class OllamaEmbeddingService:
 
 
 class OpenAiEmbeddingService:
-    """Embeds text via OpenAI's embeddings API using the server-side settings.openai_api_key -
-    see app/config/settings.py."""
+    """Embeds text via OpenAI's embeddings API using the server-side settings.openai_api_key and
+    settings.openai_base_url (OpenAI direct, or a LiteLLM proxy) - see app/config/settings.py."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         payload = {"model": settings.openai_embedding_model, "input": texts}
         headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+        url = f"{settings.openai_base_url.rstrip('/')}/embeddings"
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(_OPENAI_EMBEDDINGS_URL, json=payload, headers=headers)
+            response = await client.post(url, json=payload, headers=headers)
             if response.status_code != 200:
                 raise RuntimeError(
                     f"OpenAI embeddings request failed ({response.status_code}): {response.text}"

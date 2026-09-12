@@ -22,15 +22,18 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 }
 
 resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "${var.project_name}-read-db-secret"
+  name = "${var.project_name}-read-secrets"
   role = aws_iam_role.ecs_execution.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [aws_secretsmanager_secret.db_password.arn]
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue"]
+      Resource = [
+        aws_secretsmanager_secret.db_password.arn, # backend: DATABASE_URL
+        aws_secretsmanager_secret.litellm.arn,     # backend: OPENAI_API_KEY; litellm: both keys
+      ]
     }]
   })
 }
