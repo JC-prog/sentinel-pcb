@@ -1,7 +1,7 @@
 """Client for the internal ONNX classification service (inference/, infra/production/inference.tf).
 
-Nothing calls this yet - it's the interface the Explainability & Review Agent will use to get a
-fast defect pre-classification before its LLM steps. Configured via settings.inference_base_url.
+Used by app/agents/adc_inspection_agent/graph.py for the two-stage PCB defect classifier.
+Configured via settings.inference_base_url.
 """
 
 from app.inference.client import (

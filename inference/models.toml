@@ -4,60 +4,62 @@
 # Hugging Face repo into <model_store_dir>/<name>.onnx. The running service reads the same file
 # for labels and preprocessing.
 #
-# Every REPLACE_ME below must be set to a real value before the image will build. `name` is what
-# callers send in the request's "model" field, so keep it short and stable. Pin `revision` to a
-# commit SHA (not "main") once a model is settled, so rebuilds are reproducible.
+# `name` is what callers send in the request's "model" field, so keep it short and stable. Pin
+# `revision` to a commit SHA (not "main") once a model is settled, so rebuilds are reproducible.
 #
-# Models are at https://huggingface.co/JcProg.
+# Models are at https://huggingface.co/JcProg - this is the two-stage PCB ADC (Automated Defect
+# Classification) pipeline: pcb_region picks the component region (Body/Lead/Text), then the
+# matching pcb_*_defect model classifies the actual defect. See
+# app/agents/adc_inspection_agent/graph.py for the caller that chains them.
 
 [[models]]
-name = "classifier_1"
-repo_id = "JcProg/REPLACE_ME"
+name = "pcb_region"
+repo_id = "JcProg/PCBInspect-Region"
 revision = "main"
 filename = "model.onnx"
-labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
+labels = ["Body", "Lead", "Text"]
 input_size = [224, 224]        # [height, width]
-layout = "NCHW"                # or "NHWC"
-color = "RGB"                  # or "BGR"
-mean = [0.485, 0.456, 0.406]   # applied after scaling pixels to 0..1
-std = [0.229, 0.224, 0.225]
-apply_softmax = true           # false if the model already outputs probabilities
-
-[[models]]
-name = "classifier_2"
-repo_id = "JcProg/REPLACE_ME"
-revision = "main"
-filename = "model.onnx"
-labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
-input_size = [224, 224]
 layout = "NCHW"
 color = "RGB"
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
+mean = [0.0, 0.0, 0.0]          # model normalizes by /255 only, no channel mean/std subtraction
+std = [1.0, 1.0, 1.0]
+apply_softmax = true            # model outputs raw logits
+
+[[models]]
+name = "pcb_body_defect"
+repo_id = "JcProg/PCBInspect-BodyDefect"
+revision = "main"
+filename = "model.onnx"
+labels = ["ForeignMaterial", "Golden", "MissingPart", "Shift", "Tombstone", "WrongPart"]
+input_size = [640, 640]
+layout = "NCHW"
+color = "RGB"
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]
 apply_softmax = true
 
 [[models]]
-name = "classifier_3"
-repo_id = "JcProg/REPLACE_ME"
+name = "pcb_lead_defect"
+repo_id = "JcProg/PCBInspect-LeadDefect"
 revision = "main"
 filename = "model.onnx"
-labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
-input_size = [224, 224]
+labels = ["Golden", "SolderInsufficient"]
+input_size = [640, 640]
 layout = "NCHW"
 color = "RGB"
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]
 apply_softmax = true
 
 [[models]]
-name = "classifier_4"
-repo_id = "JcProg/REPLACE_ME"
+name = "pcb_text_defect"
+repo_id = "JcProg/PCBInspect-TextDefect"
 revision = "main"
 filename = "model.onnx"
-labels = ["REPLACE_ME_class_0", "REPLACE_ME_class_1"]
-input_size = [224, 224]
+labels = ["Golden", "WrongPart"]
+input_size = [480, 480]
 layout = "NCHW"
 color = "RGB"
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]
 apply_softmax = true
