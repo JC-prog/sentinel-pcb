@@ -20,12 +20,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 
-from app.agents import CurrentTimeAgentTool, ToolRegistry, WeatherAgentTool, call_tool
+from app.agents import (
+    AdcInspectionTool,
+    CurrentTimeAgentTool,
+    ToolRegistry,
+    WeatherAgentTool,
+    call_tool,
+)
 from app.agents.explainability_review_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
     ExplainabilityReviewTool,
 )
+from app.agents.router_agent import classify_intent
 from app.auth import LoginRequest, RegisterRequest, UserOut, get_current_user
 from app.auth.dependencies import SessionDep
 from app.auth.security import decode_access_token
@@ -194,7 +201,7 @@ async def _log_requests(
 # the actual CLIP model load is deferred to first use of the agent (see
 # app/agents/explainability_review_agent/graph.py's get_mcp_client()).
 tool_registry = ToolRegistry(
-    [CurrentTimeAgentTool(), ExplainabilityReviewTool(), WeatherAgentTool()]
+    [AdcInspectionTool(), CurrentTimeAgentTool(), ExplainabilityReviewTool(), WeatherAgentTool()]
 )
 
 
@@ -320,27 +327,29 @@ async def get_upload(
 def _available_tool_specs(image_ids: list[str]) -> list[dict[str, Any]] | None:
     """None means "send no `tools` field at all" - both the kill switch and the empty-registry
     case fall back to this, so a disabled feature is byte-identical to the pre-tool-calling
-    request shape. explainability_review is only ever offered when an image is actually attached
-    to this message - the model has no way to reference a real upload id itself (see
-    _run_tool_call, which overrides whatever it supplies anyway)."""
+    request shape. explainability_review and adc_inspection are only ever offered when an image
+    is actually attached to this message - the model has no way to reference a real upload id
+    itself (see _run_tool_call, which overrides whatever it supplies anyway)."""
 
     if not settings.chat_tool_calling_enabled:
         return None
     specs = tool_registry.specs()
     if not image_ids or not settings.explainability_agent_enabled:
         specs = [s for s in specs if s["name"] != "explainability_review"]
+    if not image_ids or not settings.adc_inspection_agent_enabled:
+        specs = [s for s in specs if s["name"] != "adc_inspection"]
     return specs or None
 
 
-async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str]) -> str:
+async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str], username: str) -> str:
     """Executes one model-requested tool call. Never raises - any failure becomes a
     {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
     instead of ending the whole SSE stream (mirrors app/agents/explainability_review_agent/
     mcp_client.py's own graceful-degradation pattern).
 
-    explainability_review needs kwargs the model can't supply itself - a real PIL.Image and the
-    server's OpenAI key - injected here the same way POST /api/agents/explainability-review
-    already does it by hand."""
+    explainability_review and adc_inspection need kwargs the model can't supply itself - a real
+    image and (for explainability_review) the server's OpenAI key - injected here the same way
+    POST /api/agents/explainability-review already does it by hand."""
 
     arguments = dict(call.arguments)
     if call.name == "explainability_review":
@@ -358,6 +367,16 @@ async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str]) -> str:
             "issue_symptom": arguments.get("issue_symptom"),
             "openai_api_key": settings.openai_api_key,
         }
+    elif call.name == "adc_inspection":
+        image_id = image_ids[0]  # only offered when non-empty - see _available_tool_specs
+        image_path = resolve_upload_path(image_id)
+        if image_path is None:
+            return json.dumps({"error": "image not found"})
+        arguments = {
+            "image_bytes": image_path.read_bytes(),
+            "image_name": image_id,
+            "username": username,
+        }
 
     try:
         return await call_tool(tool_registry, call.name, arguments)
@@ -372,6 +391,7 @@ async def _chat_sse(
     provider: LlmProvider,
     message: str,
     image_ids: list[str],
+    username: str,
 ) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream: `event: delta` per chunk from the chat service,
     `event: error` if it raises, always ending in `event: done`. Same framing as the original
@@ -426,6 +446,31 @@ async def _chat_sse(
         extra={"provider": provider, "chat_message": message, "image_ids": image_ids},
     )
 
+    if settings.intent_router_enabled and available_tools:
+        decision = await classify_intent(
+            message, has_image=bool(image_ids), candidate_tools=available_tools
+        )
+        if decision.confidence < settings.intent_router_confidence_threshold:
+            clarifying_question = (
+                decision.clarifying_question
+                or "Could you share a bit more detail about what you'd like help with?"
+            )
+            yield f"event: delta\ndata: {json.dumps({'text': clarifying_question})}\n\n"
+            await history.append_message(
+                session, conversation.id, "assistant", clarifying_question, []
+            )
+            await history.maybe_set_title(session, conversation, message)
+            yield "event: done\ndata: {}\n\n"
+            return
+        # High-confidence match - narrow the tools on offer to just that one (or none, if the
+        # router decided this message needs no tool at all) rather than leaving every tool open
+        # to the model's own judgement.
+        available_tools = (
+            [t for t in available_tools if t["name"] == decision.target_tool]
+            if decision.target_tool is not None
+            else None
+        )
+
     final_text = ""
     try:
         for _round in range(settings.chat_tool_max_rounds):
@@ -445,7 +490,7 @@ async def _chat_sse(
                 ChatMessage(role="assistant", content=final_text or None, tool_calls=pending_calls)
             )
             for call in pending_calls:
-                result = await _run_tool_call(call, image_ids=image_ids)
+                result = await _run_tool_call(call, image_ids=image_ids, username=username)
                 messages.append(
                     ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=result)
                 )
@@ -496,6 +541,7 @@ async def chat_stream(
             request.provider,
             request.message,
             request.image_ids,
+            user.username,
         ),
         media_type="text/event-stream",
     )

@@ -136,6 +136,12 @@ class Settings(BaseSettings):
     chat_tool_calling_enabled: bool = True
     chat_tool_max_rounds: int = 4
 
+    # ADC inspection agent (app/agents/adc_inspection_agent/) - a two-stage PCB defect classifier
+    # (region -> matching defect model) served through the inference/ microservice. Kill switch,
+    # same pattern as explainability_agent_enabled; only offered as a tool when an image is
+    # attached, same gating as explainability_review.
+    adc_inspection_agent_enabled: bool = True
+
     # Intent router (app/agents/router_agent/) - a classification step run before the tool-calling
     # loop that either picks the single best-matching tool or, below
     # intent_router_confidence_threshold, asks the user a clarifying question instead of guessing.
