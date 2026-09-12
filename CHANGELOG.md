@@ -78,6 +78,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend over Cloud Map private DNS - no public route. `app/inference/` is the backend client
   (`INFERENCE_BASE_URL`); nothing calls it yet, wiring it into the Explainability & Review Agent
   is the next step.
+- Weather Agent (`app/agents/weather_agent/`): the `get_weather` chat tool is now a small
+  LangGraph pipeline instead of a single deterministic lookup - geocode, fetch current
+  conditions plus a short forecast (still Open-Meteo, still no key), then an LLM-synthesized
+  advisory that branches into a more cautious tone on a deterministic severe-weather signal
+  (thunderstorm/heavy-precipitation WMO codes, or high wind). The advisory step is best-effort:
+  it degrades to a templated summary, never an error, when `WEATHER_ADVISORY_ENABLED` is off or
+  no OpenAI key is configured. Same tool name/shape as before, so nothing calling it changed.
 
 ### Fixed
 
