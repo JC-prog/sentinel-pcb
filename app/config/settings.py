@@ -136,5 +136,13 @@ class Settings(BaseSettings):
     chat_tool_calling_enabled: bool = True
     chat_tool_max_rounds: int = 4
 
+    # Intent router (app/agents/router_agent/) - a classification step run before the tool-calling
+    # loop that either picks the single best-matching tool or, below
+    # intent_router_confidence_threshold, asks the user a clarifying question instead of guessing.
+    # Kill switch, same pattern as chat_tool_calling_enabled; disabling it reproduces today's
+    # behavior exactly - every tool offered, no clarification.
+    intent_router_enabled: bool = True
+    intent_router_confidence_threshold: float = 0.6
+
 
 settings = Settings()

@@ -1,0 +1,112 @@
+import pytest
+
+from app.agents.router_agent import classify_intent
+from app.agents.router_agent import graph as router_graph
+from app.config.settings import settings
+
+_TOOLS = [
+    {"name": "get_weather", "description": "Gets the weather for a location."},
+    {"name": "current_time", "description": "Gets the current time."},
+]
+
+
+@pytest.fixture(autouse=True)
+def _router_enabled_with_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tests/conftest.py disables the router by default (see its own docstring) - this file is
+    the one place that re-enables it, matching tests/test_memory.py's pattern for memory_enabled."""
+
+    monkeypatch.setattr(settings, "intent_router_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+
+
+async def test_classify_intent_picks_a_confident_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        router_graph,
+        "_query_router_llm",
+        lambda prompt: {"target_tool": "get_weather", "confidence": 0.95, "clarifying_question": None},
+    )
+
+    decision = await classify_intent("what's the weather in Tokyo?", has_image=False, candidate_tools=_TOOLS)
+
+    assert decision.target_tool == "get_weather"
+    assert decision.confidence == 0.95
+    assert decision.clarifying_question is None
+
+
+async def test_classify_intent_asks_for_clarification_when_ambiguous(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        router_graph,
+        "_query_router_llm",
+        lambda prompt: {
+            "target_tool": None,
+            "confidence": 0.2,
+            "clarifying_question": "Do you want the weather or the current time?",
+        },
+    )
+
+    decision = await classify_intent("tell me about Tokyo", has_image=False, candidate_tools=_TOOLS)
+
+    assert decision.confidence < settings.intent_router_confidence_threshold
+    assert decision.clarifying_question == "Do you want the weather or the current time?"
+
+
+async def test_classify_intent_rejects_a_hallucinated_tool_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        router_graph,
+        "_query_router_llm",
+        lambda prompt: {"target_tool": "not_a_real_tool", "confidence": 0.9, "clarifying_question": None},
+    )
+
+    decision = await classify_intent("do something", has_image=False, candidate_tools=_TOOLS)
+
+    assert decision.target_tool is None
+
+
+async def test_classify_intent_falls_back_to_not_routed_on_llm_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(prompt: str) -> dict[str, object]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(router_graph, "_query_router_llm", _raise)
+
+    decision = await classify_intent("anything", has_image=False, candidate_tools=_TOOLS)
+
+    assert decision.target_tool is None
+    assert decision.confidence == 1.0
+    assert decision.clarifying_question is None
+
+
+async def test_classify_intent_skips_the_llm_when_no_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        router_graph,
+        "_query_router_llm",
+        lambda prompt: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    decision = await classify_intent("anything", has_image=False, candidate_tools=[])
+
+    assert decision.target_tool is None
+    assert decision.confidence == 1.0
+
+
+async def test_classify_intent_skips_the_llm_when_no_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(
+        router_graph,
+        "_query_router_llm",
+        lambda prompt: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    decision = await classify_intent("anything", has_image=False, candidate_tools=_TOOLS)
+
+    assert decision.target_tool is None
+    assert decision.confidence == 1.0
