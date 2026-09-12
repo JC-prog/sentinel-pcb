@@ -54,7 +54,7 @@ flowchart TD
     be --> qd
     be --> lite --> openai
     be -.->|per-conversation choice| ollama
-    be -.->|not yet wired| inf
+    be -->|ADC Inspection Agent| inf
     be --> eqd
     be --> ometeo
 ```
@@ -70,7 +70,7 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 | **UI** (`ui/`) | Angular, standalone components, signals | Chat interface, login/register, settings, image attach (paperclip or drag-drop), light/dark theme. Streams the assistant reply chunk by chunk. |
 | **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | The core service: auth, chat SSE streaming, conversation persistence, image uploads, tool-calling loop, the Explainability Agent, and a client for the inference service. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
 | **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
-| **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time. The backend client (`app/inference/`) exists but nothing calls it yet. |
+| **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
 | **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. |
 | **Embedded Qdrant** | file-based Qdrant under `data/images/qdrant_db/` | Historical PCB defect cases the Explainability Agent retrieves against. Separate from the Qdrant above; loaded lazily on first agent use. |
@@ -101,17 +101,26 @@ safety net (`scripts/create_admin_user.py` can also promote one). Chat requires 
 
 ### Tool calling (within a chat turn)
 
-When `CHAT_TOOL_CALLING_ENABLED` is on, the backend sends the registered tool specs
-(`app/agents/registry.py`) to the provider and runs a bounded loop
-(`CHAT_TOOL_MAX_ROUNDS`): if the model asks for a tool, the backend executes it via
-`call_tool()` and feeds the result back, then streams the final answer. Registered tools:
+When `CHAT_TOOL_CALLING_ENABLED` is on, the backend builds the registered tool specs
+(`app/agents/registry.py`), filtered by `_available_tool_specs()`. Registered tools:
 
 - `current_time` - the Time Agent below.
 - `get_weather` - the Weather Agent below.
-- `explainability_review` - the agent below; only offered to the model when the message has an
-  attached image, since the model cannot reference a real upload id on its own.
+- `explainability_review` - the agent below; only offered when the message has an attached
+  image, since the model cannot reference a real upload id on its own.
+- `adc_inspection` - the ADC Inspection Agent below; same image-attached gating.
 
 Disabling the kill switch sends no `tools` field at all, byte-identical to the pre-tool request.
+
+If `INTENT_ROUTER_ENABLED` is also on and at least one tool is on offer, the Intent Router (below)
+runs first and either narrows `tools` down to its single pick (or clears it, for "no tool
+needed") or, below `INTENT_ROUTER_CONFIDENCE_THRESHOLD`, short-circuits the turn with a
+clarifying question instead of calling the provider at all. Otherwise every filtered tool is
+offered and the provider picks, exactly as before the router existed.
+
+Either way, the backend then runs a bounded loop (`CHAT_TOOL_MAX_ROUNDS`): if the model asks for
+a tool, the backend executes it via `call_tool()` and feeds the result back, then streams the
+final answer.
 
 ### Long-term memory
 
@@ -175,11 +184,38 @@ branch again, just a plain check this time. **No LLM step anywhere in this one**
 other two agents, "what time is it" is fully structured, so there's nothing an LLM would add
 besides latency and cost.
 
+### ADC Inspection Agent
+
+A small LangGraph pipeline (`app/agents/adc_inspection_agent/`), exposed only as the
+`adc_inspection` chat tool:
+
+```
+classify_region  ->  (routed?) --yes-->  classify_defect  --> END
+                                \--no --->  END
+```
+
+`classify_region` calls the inference service's `pcb_region` model to pick the component region
+(Body/Lead/Text); `classify_defect` then calls whichever of `pcb_body_defect`/`pcb_lead_defect`/
+`pcb_text_defect` matches. Unlike the Explainability & Review Agent, this is a raw two-stage
+classifier verdict with confidence scores, no LLM-written narrative. `ADC_INSPECTION_AGENT_ENABLED`
+is its kill switch.
+
+### Intent Router
+
+A one-node LangGraph pipeline (`app/agents/router_agent/`) that runs ahead of the tool-calling
+loop described above - not itself a registered tool, since it decides which tools (if any) get
+offered in the first place rather than being one the model can call. One LLM call picks the
+single best-matching tool by name (or `null` for "just answer, no tool needed") with a confidence
+score, or returns a `clarifying_question` when the request plausibly matches more than one tool
+or doesn't give enough detail to tell. `INTENT_ROUTER_ENABLED` is its kill switch; any failure
+(no key configured, nothing to route among, an upstream error) fails open to "offer every tool,
+no clarification" rather than blocking the turn.
+
 ### Inference service
 
-Independent of the flows above. A caller (eventually the Explainability Agent) `POST`s an image
-and a model name to the service; it runs that ONNX classifier and returns label + score. It
-holds no state and has no database.
+Called by the ADC Inspection Agent above. A caller `POST`s an image and a model name to the
+service; it runs that ONNX classifier and returns label + score. It holds no state and has no
+database.
 
 ---
 
@@ -253,7 +289,8 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
   (`ChatService`, `MemoryStore`, `Tool`, ...); a single factory constructs each concrete
   implementation. Swapping a provider or a vector store touches one file.
 - **Kill switches over redeploys.** `MEMORY_ENABLED`, `CHAT_TOOL_CALLING_ENABLED`,
-  `EXPLAINABILITY_AGENT_ENABLED` each turn a subsystem off without a code change.
+  `EXPLAINABILITY_AGENT_ENABLED`, `ADC_INSPECTION_AGENT_ENABLED`, `INTENT_ROUTER_ENABLED` each
+  turn a subsystem off without a code change.
 - **Keys isolated to a gateway.** The app process never holds a real OpenAI key.
 - **One HTTPS origin in production.** CloudFront fronts both UI and API.
 - **Provisioned ahead of need.** Postgres and Qdrant were wired into infra before the features
@@ -265,9 +302,13 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 
 - Chat image uploads are on local container disk, not S3 - blocks running more than one backend
   task.
-- The backend does not call the inference service yet; wiring it into the Explainability Agent
-  is the next step.
-- The Explainability Agent's object-detection node is a stub, and its telemetry is synthetic.
+- The Explainability Agent's object-detection node is a stub, and its telemetry is synthetic -
+  `JcProg/PCBInspect-AI` (object detection, on the same HF org as the ADC classifiers) is a
+  plausible real replacement, not yet wired in.
+- The ADC Inspection Agent's batch/dataset workflow (`orchestrator-agent/adc_agentic_project`'s
+  full planner/policy loop over a CSV + inspection XML) was deliberately not ported - only the
+  single-image two-stage classification maps onto one chat-turn tool call. If the batch workflow
+  is still wanted, it belongs behind its own CLI/admin route, not the chat tool-calling path.
 - No custom domain or TLS certificate - CloudFront and the ALB use default AWS domains.
 - LiteLLM auth is master-key-only (no per-consumer virtual keys or budgets yet).
 - No autoscaling on any ECS service; each runs a single task.

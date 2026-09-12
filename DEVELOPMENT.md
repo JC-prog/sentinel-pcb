@@ -75,14 +75,24 @@ cd ui && npx ng test --watch=false && npx ng build
   `tool_registry.specs()` as `tools` to whichever provider is selected, and loops (bounded by
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
-  `tools` field at all, identical to the pre-tool-calling request shape. Three tools are
+  `tools` field at all, identical to the pre-tool-calling request shape. Four tools are
   registered: `current_time` and `get_weather` (both real agents - see below), and
-  `explainability_review` (below) - only offered to the model when the chat message has an
-  attached image, since the model has no way to reference a real upload id itself.
+  `explainability_review`/`adc_inspection` (both below) - only offered to the model when the chat
+  message has an attached image, since the model has no way to reference a real upload id itself.
   `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
   implement, translating a provider-agnostic `ChatMessage` list to/from each API's own
   tool-calling wire format; the older `stream_reply()` is untouched and still used by
   `app/memory/service.py`'s fact extraction, which never needs tools.
+- **Intent router** (`app/agents/router_agent/`): runs ahead of the tool-calling loop above, when
+  `INTENT_ROUTER_ENABLED` is on and at least one tool is on offer. A one-node LangGraph pipeline
+  makes one LLM call to pick the single best-matching tool (or decide none is needed) with a
+  confidence score; below `INTENT_ROUTER_CONFIDENCE_THRESHOLD` it short-circuits the turn with a
+  clarifying question instead of guessing. Fails open on any problem (no key, upstream error,
+  nothing to route among) - same as every other kill-switchable piece here, a router outage
+  degrades to "offer every tool, no clarification," never a broken chat turn.
+  `tests/conftest.py` disables this by default across the whole suite (it makes its own sync
+  OpenAI call that the usual `httpx.AsyncClient` mocking doesn't catch); re-enabled explicitly in
+  `tests/agents/test_router_agent.py`.
 - **Explainability & Review Agent** (`app/agents/explainability_review_agent/`): a LangGraph
   pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning) that
   diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
@@ -114,6 +124,16 @@ cd ui && npx ng test --watch=false && npx ng build
   portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
   has the system IANA database and works without it, but the Python docs recommend it explicitly
   since not every environment does (Windows, some minimal/Alpine images).
+- **ADC Inspection Agent** (`app/agents/adc_inspection_agent/`): a small LangGraph pipeline -
+  classify the component region (Body/Lead/Text) -> classify the matching defect for that region
+  - exposed as the single `adc_inspection` tool. Ported from `orchestrator-agent/
+  adc_agentic_project`'s two-stage ONNX routing, but calling the `inference/` microservice
+  (`app.inference.client.classify()`) for both stages instead of loading ONNX in-process - see
+  `inference/models.toml`'s four `pcb_*` models. Unlike the Explainability & Review Agent, this
+  returns a raw classifier verdict (label + confidence per stage), no LLM narrative, so it has no
+  dependency on `settings.openai_api_key`. `ADC_INSPECTION_AGENT_ENABLED` is its kill switch; the
+  full batch/dataset workflow from the source prototype (CSV + inspection XML, the LLM
+  planner/policy loop) was deliberately not ported - it doesn't map onto one chat-turn tool call.
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local

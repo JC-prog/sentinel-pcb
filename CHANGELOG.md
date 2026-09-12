@@ -76,8 +76,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and their ONNX files are pulled from Hugging Face and baked into the image at build time. Runs
   as its own ECS Fargate service (`infra/production/inference.tf`), reachable only from the
   backend over Cloud Map private DNS - no public route. `app/inference/` is the backend client
-  (`INFERENCE_BASE_URL`); nothing calls it yet, wiring it into the Explainability & Review Agent
-  is the next step.
+  (`INFERENCE_BASE_URL`), now called by the ADC Inspection Agent below. Registered models: the
+  two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`,
+  `pcb_text_defect`).
 - Weather Agent (`app/agents/weather_agent/`): the `get_weather` chat tool is now a small
   LangGraph pipeline instead of a single deterministic lookup - geocode, fetch current
   conditions plus a short forecast (still Open-Meteo, still no key), then an LLM-synthesized
@@ -107,6 +108,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fully structured, so there's nothing an LLM would add. Same tool name/shape as before, plus new
   optional `location` support and `timezone`/`day_of_week`/`utc_offset`/`is_business_hours`/
   `note` fields in the result.
+- ADC Inspection Agent (`app/agents/adc_inspection_agent/`): a new `adc_inspection` chat tool that
+  classifies a PCB AOI image with the two-stage ADC classifier (component region, then the
+  matching defect model for that region), via the inference service above. Raw classifier
+  verdict with confidence scores, not an LLM narrative - no OpenAI key dependency. Only offered
+  when an image is attached, same gating as `explainability_review`. Disable with
+  `ADC_INSPECTION_AGENT_ENABLED=False`.
+- Intent router (`app/agents/router_agent/`): chat now asks a clarifying question instead of
+  guessing when a message doesn't clearly call for one tool over another - one LLM call picks the
+  best-matching tool (or decides none is needed) with a confidence score ahead of the existing
+  tool-calling loop; below `INTENT_ROUTER_CONFIDENCE_THRESHOLD` it asks the user for the missing
+  detail instead of offering every tool to the model's own judgement. Fails open (offers every
+  tool, no clarification) on any problem - no key configured, nothing to route among, upstream
+  error. Disable with `INTENT_ROUTER_ENABLED=False`.
 
 ### Changed
 
