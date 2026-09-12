@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     # bodies are noisy and can contain fields worth not logging by default.
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # Also persist logs to a rotating file under log_dir, in addition to stdout - lets past log
+    # lines be inspected after the fact (e.g. by a tool reading the file), not just from a live
+    # terminal. Off by default: it's a debugging convenience, not something every deployment
+    # needs. Same cwd-relative convention as chat_upload_dir - only host-visible for bare
+    # `uv run uvicorn`, not the containerized `app` service, since data/ isn't volume-mounted
+    # there (same caveat as chat_upload_dir/explainability_agent_data_dir).
+    log_to_file: bool = False
+    log_dir: str = "data/logs"
+
     # Where uploaded chat images are stored on disk (app.uploads.service). Swap for S3 before
     # running more than one instance - a later task, not needed for this scaffold.
     chat_upload_dir: str = "data/uploads"
@@ -100,6 +109,15 @@ class Settings(BaseSettings):
     # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
+
+    # Weather agent (app/agents/weather_agent/) - a small LangGraph pipeline (geocode -> current
+    # conditions + a short forecast -> an LLM-synthesized advisory, branching into a more
+    # cautious tone on a severe-weather signal). Kill switch, same pattern as memory_enabled -
+    # disabling it skips only the LLM step: conditions and the forecast are still fetched and
+    # returned, just with a templated summary instead of an LLM-written one. Uses the shared
+    # openai_api_key/openai_model/openai_base_url settings, not a key of its own, and falls back
+    # to the same templated summary automatically if no key is configured.
+    weather_advisory_enabled: bool = True
 
     # Internal ONNX classification service (inference/, infra/production/inference.tf). Empty
     # means "not configured" - app.inference.client raises rather than guessing a URL, and

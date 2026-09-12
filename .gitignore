@@ -18,6 +18,9 @@ __pycache__/
 # Uploaded chat images (app.settings.chat_upload_dir) - runtime data, not source.
 /data/uploads/
 
+# Rotating log files (settings.log_to_file / settings.log_dir) - runtime output, not source.
+/data/logs/
+
 # ONNX files the inference service downloads from Hugging Face (inference/scripts/fetch_models.py).
 # Fetched at image build time, never committed.
 /inference/model_store/

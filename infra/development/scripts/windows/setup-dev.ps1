@@ -50,7 +50,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose up -d --wait)"
-docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant litellm
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "==> Checking for Ollama (http://localhost:11434) - optional"
@@ -93,7 +93,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml down to stop them)."
+Write-Host "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml --env-file .env down to stop them)."
 Write-Host "To run the app:"
 Write-Host "  terminal 1: uv run uvicorn app.main:app --reload   # http://localhost:8000"
 Write-Host "  terminal 2: cd ui && npm start                     # http://localhost:4200"

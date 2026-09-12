@@ -78,6 +78,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend over Cloud Map private DNS - no public route. `app/inference/` is the backend client
   (`INFERENCE_BASE_URL`); nothing calls it yet, wiring it into the Explainability & Review Agent
   is the next step.
+- Weather Agent (`app/agents/weather_agent/`): the `get_weather` chat tool is now a small
+  LangGraph pipeline instead of a single deterministic lookup - geocode, fetch current
+  conditions plus a short forecast (still Open-Meteo, still no key), then an LLM-synthesized
+  advisory that branches into a more cautious tone on a deterministic severe-weather signal
+  (thunderstorm/heavy-precipitation WMO codes, or high wind). The advisory step is best-effort:
+  it degrades to a templated summary, never an error, when `WEATHER_ADVISORY_ENABLED` is off or
+  no OpenAI key is configured. Same tool name/shape as before, so nothing calling it changed.
 - LiteLLM proxy (`infra/litellm/`): every OpenAI-compatible call (chat, memory embeddings, the
   Explainability & Review Agent) now goes through an OpenAI-compatible gateway
   (`OPENAI_BASE_URL`), so real provider keys stay off developer laptops and out of the backend
@@ -88,6 +95,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stack; each developer supplies their own upstream OpenAI key via `LITELLM_OPENAI_API_KEY`
   (seen only by their local proxy container), while production uses one shared key in Secrets
   Manager.
+- Optional file logging (`LOG_TO_FILE=True`, `app/config/logging_config.py`): writes the same
+  lines already going to stdout to a rotating file (`LOG_DIR/app.log`, default `data/logs/`,
+  10 MiB x 5 backups) as well, so past log lines can be inspected after the fact instead of only
+  from a live terminal. Off by default; only host-visible for bare `uv run uvicorn`, same caveat
+  as chat uploads.
+- Time Agent (`app/agents/time_agent/`): the `current_time` chat tool is now a small LangGraph
+  pipeline too - resolve an optional location to a timezone (UTC if none given, otherwise the
+  same keyless Open-Meteo geocoding lookup the Weather Agent uses), then a deterministic
+  business-hours branch. Unlike the other two agents, no LLM step at all - "what time is it" is
+  fully structured, so there's nothing an LLM would add. Same tool name/shape as before, plus new
+  optional `location` support and `timezone`/`day_of_week`/`utc_offset`/`is_business_hours`/
+  `note` fields in the result.
 
 ### Changed
 
@@ -97,12 +116,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The backend no longer calls `api.openai.com` directly - it calls `settings.openai_base_url`
   (`OPENAI_BASE_URL`, default unchanged at OpenAI direct for a bare checkout). `OPENAI_API_KEY`
   is a LiteLLM key wherever a proxy is configured.
-- `infra/development/docker-compose.yml` runs `db` + `qdrant` + `app` by default; `ui`,
-  `offline-llm`, and `inference` moved behind `--profile` flags so a developer only builds and
-  runs their slice.
-- `setup-dev.sh` / `setup-dev.ps1` now generate `JWT_SECRET_KEY` when it's blank and no longer
-  push Ollama as a default dependency.
+- `infra/development/docker-compose.yml` runs `db` + `qdrant` + `litellm` + `app` by default
+  (local topology now matches production); `ui` and `inference` moved behind `--profile` flags
+  so a developer only builds and runs their slice.
+- `setup-dev.sh` / `setup-dev.ps1` now generate `JWT_SECRET_KEY` when it's blank, start `litellm`
+  alongside `db`/`qdrant`, and no longer push Ollama as a default dependency.
 
 ### Fixed
 
 - The chat sidebar no longer appears on the login and register pages.
+- The local LiteLLM proxy silently ran with no upstream OpenAI key (every OpenAI call 401'd)
+  whenever `docker compose -f infra/development/docker-compose.yml` was invoked without
+  `--env-file .env` - Compose's project directory defaulted to the compose file's own directory,
+  which has no `.env`, so `${LITELLM_OPENAI_API_KEY:-}` silently resolved empty. `setup-dev.sh`
+  / `setup-dev.ps1` and every documented command now pass `--env-file .env`.

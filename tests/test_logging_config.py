@@ -1,6 +1,7 @@
 import json
 import logging
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
@@ -93,6 +94,40 @@ def test_json_format_surfaces_extra_fields(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert payload["status_code"] == 200
     assert payload["duration_ms"] == 12.3
+
+
+def test_log_to_file_disabled_by_default_adds_no_file_handler() -> None:
+    configure_logging()
+
+    assert len(logging.getLogger().handlers) == 1
+    assert isinstance(logging.getLogger().handlers[0], logging.StreamHandler)
+
+
+def test_log_to_file_writes_a_rotating_file_alongside_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(settings, "log_to_file", True)
+    monkeypatch.setattr(settings, "log_dir", str(tmp_path))
+
+    configure_logging()
+    logging.getLogger("app.test").info("hello from the file handler")
+
+    assert len(logging.getLogger().handlers) == 2
+    log_file = tmp_path / "app.log"
+    assert log_file.is_file()
+    assert "hello from the file handler" in log_file.read_text()
+
+
+def test_log_to_file_creates_log_dir_if_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    nested_dir = tmp_path / "nested" / "logs"
+    monkeypatch.setattr(settings, "log_to_file", True)
+    monkeypatch.setattr(settings, "log_dir", str(nested_dir))
+
+    configure_logging()
+
+    assert nested_dir.is_dir()
 
 
 def test_json_format_includes_exception_info(monkeypatch: pytest.MonkeyPatch) -> None:

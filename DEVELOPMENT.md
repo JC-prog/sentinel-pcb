@@ -76,9 +76,9 @@ cd ui && npx ng test --watch=false && npx ng build
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
   `tools` field at all, identical to the pre-tool-calling request shape. Three tools are
-  registered: `current_time` (trivial), `get_weather` (`app/agents/weather_agent/`, Open-Meteo,
-  no key needed), and `explainability_review` (below) - only offered to the model when the chat
-  message has an attached image, since the model has no way to reference a real upload id itself.
+  registered: `current_time` and `get_weather` (both real agents - see below), and
+  `explainability_review` (below) - only offered to the model when the chat message has an
+  attached image, since the model has no way to reference a real upload id itself.
   `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
   implement, translating a provider-agnostic `ChatMessage` list to/from each API's own
   tool-calling wire format; the older `stream_reply()` is untouched and still used by
@@ -93,6 +93,27 @@ cd ui && npx ng test --watch=false && npx ng build
   model and embedded Qdrant collection it uses for historical-case lookup are loaded lazily on
   first use, not at import time, to keep app startup
   and test runs fast. See "Known gotchas" below for gaps carried over from the original prototype.
+- **Weather agent** (`app/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
+  fetch current conditions plus a short forecast -> an LLM-synthesized advisory - exposed to
+  chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
+  change). The advisory step is a real branch, not just a label: a deterministic check (severe
+  WMO codes or high wind, in `graph.py`) routes to a more cautious prompt/tone, not just a
+  different flag value. Uses the shared `settings.openai_api_key`/`openai_model`/`openai_base_url`
+  (the LiteLLM gateway, same as chat); the geocode and forecast calls (Open-Meteo) still need no
+  key at all, and the advisory step itself degrades to a templated summary - never an error -
+  when `WEATHER_ADVISORY_ENABLED` is off or no key is configured, same graceful-degradation
+  stance as the rest of this codebase's agents.
+- **Time agent** (`app/agents/time_agent/`): a small LangGraph pipeline - resolve an optional
+  location to a timezone (same Open-Meteo geocoding endpoint the Weather Agent uses; UTC if no
+  location is given) -> compute the current time there -> a deterministic business-hours branch
+  - exposed as the single `current_time` tool. Unlike the other two agents, this one has **no
+  LLM step at all**: "what time is it" is fully structured, so there's nothing an LLM would add
+  besides latency and cost. The branch is still real, not cosmetic - `business_hours`/
+  `after_hours` produce a different `note`, decided by a plain weekday/hour check
+  (`_BUSINESS_HOURS_START`/`_END` in `graph.py`). `tzdata` was added as a direct dependency as a
+  portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
+  has the system IANA database and works without it, but the Python docs recommend it explicitly
+  since not every environment does (Windows, some minimal/Alpine images).
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local
@@ -107,7 +128,10 @@ cd ui && npx ng test --watch=false && npx ng build
   results) - gated behind an `isEnabledFor()` check so there's zero extra buffering when it's off
   (default `INFO`). `/api/chat/stream`'s response is never buffered for this even at `DEBUG` -
   logging it there would delay the live SSE stream - it's logged separately, at the point
-  `_chat_sse` already assembles the final reply.
+  `_chat_sse` already assembles the final reply. `LOG_TO_FILE=True` additionally writes the same
+  lines to a rotating file (`LOG_DIR/app.log`, default `data/logs/`, 10 MiB x 5 backups) - off by
+  default, and only host-visible for bare `uv run uvicorn` (the containerized `app` service
+  doesn't volume-mount `data/`, same caveat as `chat_upload_dir`).
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.

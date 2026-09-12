@@ -1,3 +1,3 @@
-from app.agents.time_agent.tool import CurrentTimeTool
+from app.agents.time_agent.tool import CurrentTimeAgentTool
 
-__all__ = ["CurrentTimeTool"]
+__all__ = ["CurrentTimeAgentTool"]
