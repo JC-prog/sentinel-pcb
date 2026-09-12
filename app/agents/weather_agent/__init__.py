@@ -1,3 +1,3 @@
-from app.agents.weather_agent.tool import WeatherTool
+from app.agents.weather_agent.tool import WeatherAgentTool
 
-__all__ = ["WeatherTool"]
+__all__ = ["WeatherAgentTool"]

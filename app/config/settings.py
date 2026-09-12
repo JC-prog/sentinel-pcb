@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
 
+    # Weather agent (app/agents/weather_agent/) - a small LangGraph pipeline (geocode -> current
+    # conditions + a short forecast -> an LLM-synthesized advisory, branching into a more
+    # cautious tone on a severe-weather signal). Kill switch, same pattern as memory_enabled -
+    # disabling it skips only the LLM step: conditions and the forecast are still fetched and
+    # returned, just with a templated summary instead of an LLM-written one. Uses the shared
+    # openai_api_key/openai_model settings, not a key of its own, and falls back to the same
+    # templated summary automatically if no key is configured.
+    weather_advisory_enabled: bool = True
+
     # Internal ONNX classification service (inference/, infra/production/inference.tf). Empty
     # means "not configured" - app.inference.client raises rather than guessing a URL, and
     # nothing in the app calls it yet. In production this is the Cloud Map address
