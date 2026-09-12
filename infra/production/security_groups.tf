@@ -2,6 +2,7 @@
 # (not network isolation, since everything sits in public subnets):
 #   internet -> alb (80) -> ecs tasks (container_port) -> rds (5432)
 #                                                      \-> inference tasks (inference_container_port)
+#                                                      \-> litellm tasks (litellm_container_port)
 
 resource "aws_security_group" "alb" {
   name_prefix = "${var.project_name}-alb-"
@@ -62,6 +63,31 @@ resource "aws_security_group" "inference_tasks" {
     description     = "From backend ECS tasks"
     from_port       = var.inference_container_port
     to_port         = var.inference_container_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_security_group" "litellm_tasks" {
+  name_prefix = "${var.project_name}-litellm-tasks-"
+  description = "Allow inbound only from the backend ECS tasks."
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    description     = "From backend ECS tasks"
+    from_port       = var.litellm_container_port
+    to_port         = var.litellm_container_port
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_tasks.id]
   }

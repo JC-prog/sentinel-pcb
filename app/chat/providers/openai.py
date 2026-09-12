@@ -10,7 +10,12 @@ from app.core.chat import ChatMessage, ChatTurn, TextDelta, ToolCallRequest, Too
 
 logger = logging.getLogger(__name__)
 
-_OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
+
+def _chat_completions_url() -> str:
+    """Resolved per call, not at import - settings.openai_base_url is a LiteLLM proxy address in
+    most deployments (see app/config/settings.py) and tests monkeypatch it."""
+
+    return f"{settings.openai_base_url.rstrip('/')}/chat/completions"
 
 
 def _to_openai_message(message: ChatMessage) -> dict[str, Any]:
@@ -75,7 +80,7 @@ class OpenAiChatService:
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
             client.stream(
-                "POST", _OPENAI_CHAT_COMPLETIONS_URL, json=payload, headers=headers
+                "POST", _chat_completions_url(), json=payload, headers=headers
             ) as response,
         ):
             if response.status_code != 200:
@@ -131,7 +136,7 @@ class OpenAiChatService:
         async with (
             httpx.AsyncClient(timeout=60.0) as client,
             client.stream(
-                "POST", _OPENAI_CHAT_COMPLETIONS_URL, json=payload, headers=headers
+                "POST", _chat_completions_url(), json=payload, headers=headers
             ) as response,
         ):
             if response.status_code != 200:

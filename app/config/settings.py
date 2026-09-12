@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # Base URL for every OpenAI-compatible call - chat (app.chat.providers.openai), memory
+    # embeddings (app/memory/embeddings.py) and the Explainability & Review Agent's SDK client
+    # (app/agents/explainability_review_agent/models.py). Default is OpenAI direct. Point it at a
+    # LiteLLM proxy to keep real provider keys out of this service: the shared team proxy or the
+    # local `offline-llm` compose service in dev, and the Cloud Map address
+    # (http://litellm.sentinelchat.internal:4000/v1) set by the backend task definition in prod
+    # (infra/production/litellm.tf). When it points at a proxy, openai_api_key holds a LiteLLM
+    # key rather than an sk- provider key. Must include the /v1 suffix.
+    openai_base_url: str = "https://api.openai.com/v1"
+
     # How many prior messages (app/chat/history.py) get sent to the LLM as context for a reply.
     # A turn-count budget, not a token budget - simplest thing that works at this app's scale;
     # revisit only if long pasted content makes that insufficient in practice. Persisted history

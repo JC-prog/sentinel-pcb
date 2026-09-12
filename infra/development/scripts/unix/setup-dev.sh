@@ -32,6 +32,22 @@ else
   echo "==> .env already exists, leaving it alone"
 fi
 
+# Fill in a JWT_SECRET_KEY if it's still blank - the app refuses to issue usable tokens without
+# one, and there's no reason to make every developer do this by hand.
+if grep -qE '^JWT_SECRET_KEY=$' .env; then
+  echo "==> Generating JWT_SECRET_KEY in .env"
+  secret="$(uv run python -c 'import secrets; print(secrets.token_hex(32))')"
+  # portable in-place edit (BSD and GNU sed disagree on -i)
+  tmp="$(mktemp)"
+  sed "s|^JWT_SECRET_KEY=$|JWT_SECRET_KEY=${secret}|" .env > "$tmp" && mv "$tmp" .env
+fi
+
+if grep -qE '^LITELLM_OPENAI_API_KEY=$' .env; then
+  echo "    Note: put your own OpenAI key in LITELLM_OPENAI_API_KEY in .env for the OpenAI"
+  echo "    features - only your local LiteLLM proxy container sees it. Ollama-only? Leave it"
+  echo "    blank. Using a shared team proxy instead? See infra/litellm/README.md."
+fi
+
 echo "==> Checking Docker (needed for the local Postgres container)"
 if ! command -v docker >/dev/null 2>&1; then
   if [ "$IS_MACOS" = true ]; then
@@ -52,15 +68,15 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Starting local Postgres + Qdrant (docker compose up -d --wait db qdrant)"
-docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant
+echo "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose up -d --wait)"
+docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant litellm
 
-echo "==> Checking for Ollama (http://localhost:11434)"
+echo "==> Checking for Ollama (http://localhost:11434) - optional"
 if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
   echo "    Found - the Local LLM option in Settings will work."
 else
-  echo "    Not found. Install it to use the Local LLM option: https://ollama.com"
-  echo "    (not required if you'll only use the OpenAI option)"
+  echo "    Not found. Only needed for the Local LLM option: https://ollama.com"
+  echo "    The OpenAI path (via the LiteLLM proxy) does not need it."
 fi
 
 echo "==> UI: installing Node dependencies (npm install)"
@@ -89,3 +105,8 @@ echo "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f
 echo "To run the app:"
 echo "  terminal 1: uv run uvicorn app.main:app --reload   # http://localhost:8000"
 echo "  terminal 2: cd ui && npm start                     # http://localhost:4200"
+echo ""
+echo "Optional docker-compose profiles (only run your slice):"
+echo "  --profile ui         the containerized UI"
+echo "  --profile inference  the ONNX inference service (needs inference/models.toml filled)"
+echo "  --profile full       everything"

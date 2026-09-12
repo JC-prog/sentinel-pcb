@@ -11,10 +11,10 @@ bash infra/development/scripts/unix/setup-dev.sh        # macOS/Linux
 powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
-See `README.md` for what this does, how to run the app afterward, and the full external
-dependency list (Docker/Postgres/Qdrant auto-provisioned; Ollama models are not - see that
-table before assuming the Local LLM option or long-term memory "just work"). Re-run the setup
-script any time after pulling changes; it's idempotent.
+[`ONBOARDING.md`](ONBOARDING.md) is the exact step-by-step: software to install first, what the
+script does, the one `.env` value you may need to set (`LITELLM_OPENAI_API_KEY`), how to run and
+verify the app, per-section extras, and troubleshooting. Re-run the setup script any time after
+pulling changes; it's idempotent.
 
 Sanity check before writing anything:
 
@@ -50,7 +50,10 @@ cd ui && npx ng test --watch=false && npx ng build
   behind the `get_chat_service()` factory in `app/chat/service.py` - that factory is the swap
   point for adding another provider later. OpenAI uses a single server-side key
   (`settings.openai_api_key`, set via `OPENAI_API_KEY`) - no per-request bring-your-own-key; the
-  UI's Settings panel only lets a user pick Ollama vs OpenAI, not supply a key.
+  UI's Settings panel only lets a user pick Ollama vs OpenAI, not supply a key. Every
+  OpenAI-compatible call (chat, memory embeddings, the explainability agent) goes to
+  `settings.openai_base_url` (`OPENAI_BASE_URL`), which is a LiteLLM proxy in every real setup,
+  not `api.openai.com` - see `infra/litellm/README.md`. `OPENAI_API_KEY` is then a LiteLLM key.
 - **Frontend** (`ui/`): Angular, standalone components, signals for state (no NgRx/service
   subjects). `ChatResponder` (`ui/src/app/chat-responder.ts`) is the frontend's equivalent swap
   point - `HttpChatResponder` talks to the real backend, `MockChatResponder` is a fallback/test
@@ -119,7 +122,9 @@ cd ui && npx ng test --watch=false && npx ng build
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
-  (Terraform - see its own README).
+  (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `litellm` (a
+  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui` and `inference`
+  are opt-in via `--profile <name>` so you only build/run your slice.
 
 ## 4. Known gotchas
 

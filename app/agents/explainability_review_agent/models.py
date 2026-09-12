@@ -18,12 +18,14 @@ from openai.types.chat import ChatCompletionMessageParam
 from openai.types.shared_params import ResponseFormatJSONObject
 from PIL import Image
 
+from app.config.settings import settings
+
 
 class OpenAIReferee:
     """Reasoning engine using GPT-4o with guaranteed JSON format."""
 
     def __init__(self, api_key: str) -> None:
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, base_url=settings.openai_base_url)
 
     def query(self, prompt: str, require_json: bool = True) -> str:
         messages: list[ChatCompletionMessageParam] = [
@@ -47,7 +49,7 @@ class VisionInspector:
     """VLM vision node - actually GPT-4o Vision, not Ollama LLaVA despite the folder's README."""
 
     def __init__(self, api_key: str) -> None:
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, base_url=settings.openai_base_url)
 
     def query(self, image: Image.Image, prompt: str) -> str:
         buf = io.BytesIO()
