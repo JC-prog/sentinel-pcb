@@ -19,7 +19,10 @@ def _mock_client(
         kwargs["transport"] = httpx.MockTransport(handler)
         return _RealClient(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(weather_graph.httpx, "Client", factory)
+    # Patches the shared httpx module object (the same one graph.py's own `import httpx` sees),
+    # not weather_graph.httpx - mypy's strict --no-implicit-reexport flags reaching through a
+    # module for a name it only imports, doesn't re-export.
+    monkeypatch.setattr(httpx, "Client", factory)
 
 
 def _handler(
