@@ -77,16 +77,24 @@ services:
   # infra/litellm/README.md). Part of the default dev stack so local topology matches prod. Put a
   # real provider key in .env as LITELLM_OPENAI_API_KEY for OpenAI calls to actually go through -
   # only this container sees it. Leave it blank to work Ollama-only (calls just 401).
+  #
+  # IMPORTANT: every `docker compose` invocation against this file needs `--env-file .env` (run
+  # from the repo root) for the ${...} substitution below to see the repo-root .env - without it,
+  # Compose's project directory defaults to this file's own directory (no .env there), and
+  # OPENAI_API_KEY/LITELLM_MASTER_KEY silently resolve empty. setup-dev.sh/.ps1 already pass it.
+  # Deliberately not `env_file:` here (which doesn't have this problem) - that would import the
+  # *entire* .env verbatim, and this app's DATABASE_URL collides with a var name LiteLLM's own
+  # image reads for its own (unrelated, unwanted here) Postgres-backed features.
   litellm:
     image: ghcr.io/berriai/litellm:main-stable # pin a versioned -stable tag for real use
     labels:
       project: sentinelchat
     command: ["--config", "/app/config.yaml", "--port", "4000"]
-    ports:
-      - "4000:4000"
     environment:
       OPENAI_API_KEY: ${LITELLM_OPENAI_API_KEY:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-dev}
+    ports:
+      - "4000:4000"
     volumes:
       - ../litellm/config.dev.yaml:/app/config.yaml:ro
     healthcheck:
@@ -96,7 +104,9 @@ services:
       retries: 5
       start_period: 20s
 
-  # Services below are opt-in via profiles, so you only build/run your slice:
+  # Services below are opt-in via profiles, so you only build/run your slice. "..." below always
+  # stands for `-f infra/development/docker-compose.yml --env-file .env` (run from the repo
+  # root) - the --env-file is required, not optional; see the litellm service's comment above.
   #   docker compose ... up -d                      # db + qdrant + litellm + app (backend default)
   #   docker compose ... --profile ui up -d         # + the containerized UI
   #   docker compose ... --profile inference up -d  # + the ONNX inference service

@@ -32,8 +32,8 @@ powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 Installs backend + UI dependencies, creates `.env` from `.env.example` (generating
 `JWT_SECRET_KEY`), and starts the local `db` (Postgres, user accounts + per-conversation
 history), `qdrant` (long-term cross-conversation memory), and `litellm` (the OpenAI-compatible
-LLM gateway) containers via `docker compose -f infra/development/docker-compose.yml up -d
---wait`. Then, in two terminals:
+LLM gateway) containers via `docker compose -f infra/development/docker-compose.yml --env-file
+.env up -d --wait`. Then, in two terminals:
 
 ```bash
 uv run uvicorn app.main:app --reload   # http://localhost:8000

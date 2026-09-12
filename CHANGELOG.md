@@ -113,3 +113,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - The chat sidebar no longer appears on the login and register pages.
+- The local LiteLLM proxy silently ran with no upstream OpenAI key (every OpenAI call 401'd)
+  whenever `docker compose -f infra/development/docker-compose.yml` was invoked without
+  `--env-file .env` - Compose's project directory defaulted to the compose file's own directory,
+  which has no `.env`, so `${LITELLM_OPENAI_API_KEY:-}` silently resolved empty. `setup-dev.sh`
+  / `setup-dev.ps1` and every documented command now pass `--env-file .env`.

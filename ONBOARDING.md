@@ -54,7 +54,7 @@ It is idempotent (safe to re-run after every `git pull`). It:
 2. copies `.env.example` to `.env` if you don't have one, and generates `JWT_SECRET_KEY` in it
 3. checks Docker is installed and running
 4. starts the `db`, `qdrant`, and `litellm` containers:
-   `docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant litellm`
+   `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm`
 5. checks for Ollama (optional - just prints whether it found one)
 6. `npm install` in `ui/`
 7. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
@@ -98,7 +98,7 @@ cd ui && npm start                          # http://localhost:4200
 Stop the Docker services when you're done for the day:
 
 ```bash
-docker compose -f infra/development/docker-compose.yml down
+docker compose -f infra/development/docker-compose.yml --env-file .env down
 ```
 
 ---
@@ -125,7 +125,7 @@ needs it:
 |---|---|
 | Backend / chat / memory / agents | nothing - the default stack covers it |
 | UI | `npm start` is the real loop; `docker compose ... --profile ui up -d` only for a container smoke test |
-| Inference service (`inference/`) | fill in real Hugging Face repos in `inference/models.toml`, then `docker compose -f infra/development/docker-compose.yml --profile inference up -d`, or work in `inference/` with its own README |
+| Inference service (`inference/`) | fill in real Hugging Face repos in `inference/models.toml`, then `docker compose -f infra/development/docker-compose.yml --env-file .env --profile inference up -d`, or work in `inference/` with its own README |
 | Explainability & Review Agent data | seed its embedded Qdrant with `scripts/explainability_agent/generate_telemetry.py` and `scripts/explainability_agent/populate_qdrant.py` - see [`DEVELOPMENT.md`](DEVELOPMENT.md) |
 
 `docker compose ... --profile full up -d` runs everything.
@@ -149,9 +149,10 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 | Symptom | Fix |
 |---|---|
 | Script: `Docker daemon is not running` | Start Docker Desktop (macOS: `open -a Docker`) or `sudo systemctl start docker` (Linux), wait for it to be ready, re-run the script. |
-| `port is already allocated` / `address already in use` | Something else holds one of the ports below. Stop it, or stop a stale stack: `docker compose -f infra/development/docker-compose.yml down`. |
-| Backend won't start, `litellm` unhealthy | `docker compose -f infra/development/docker-compose.yml logs litellm`. The container is healthy without a key; it only needs `LITELLM_OPENAI_API_KEY` to actually reach OpenAI. |
-| OpenAI chat returns a 401 / auth error | Set `LITELLM_OPENAI_API_KEY` in `.env` and `docker compose -f infra/development/docker-compose.yml up -d --force-recreate litellm`. |
+| `port is already allocated` / `address already in use` | Something else holds one of the ports below. Stop it, or stop a stale stack: `docker compose -f infra/development/docker-compose.yml --env-file .env down`. |
+| Backend won't start, `litellm` unhealthy | `docker compose -f infra/development/docker-compose.yml --env-file .env logs litellm`. The container is healthy without a key; it only needs `LITELLM_OPENAI_API_KEY` to actually reach OpenAI. |
+| OpenAI chat returns a 401 / auth error | Set `LITELLM_OPENAI_API_KEY` in `.env` and `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --force-recreate litellm`. |
+| Ran a `docker compose` command by hand and litellm still 401s | You likely dropped `--env-file .env` from the command. Without it, Compose can't find the repo-root `.env` for this file's `${...}` substitutions and silently treats the key as blank - always include `--env-file .env` (run from the repo root) with any `docker compose -f infra/development/docker-compose.yml ...` command. |
 | Long-term memory silently does nothing | Using Ollama embeddings? Run `ollama pull nomic-embed-text`. Or disable it with `MEMORY_ENABLED=False` in `.env`. |
 | First Explainability Agent request is very slow | Expected - its CLIP image model (~350 MB, pulls `torch`) downloads on first use, not at install. |
 | Anything half-installed | The script is idempotent - just run it again. |
