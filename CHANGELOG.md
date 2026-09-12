@@ -95,6 +95,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stack; each developer supplies their own upstream OpenAI key via `LITELLM_OPENAI_API_KEY`
   (seen only by their local proxy container), while production uses one shared key in Secrets
   Manager.
+- Optional file logging (`LOG_TO_FILE=True`, `app/config/logging_config.py`): writes the same
+  lines already going to stdout to a rotating file (`LOG_DIR/app.log`, default `data/logs/`,
+  10 MiB x 5 backups) as well, so past log lines can be inspected after the fact instead of only
+  from a live terminal. Off by default; only host-visible for bare `uv run uvicorn`, same caveat
+  as chat uploads.
 
 ### Changed
 

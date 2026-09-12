@@ -33,6 +33,16 @@ def _memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "memory_enabled", False)
 
 
+@pytest.fixture(autouse=True)
+def _log_to_file_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeps tests independent of whatever LOG_TO_FILE happens to be in a developer's own .env -
+    without this, configure_logging() would add a second (file) handler and break assertions
+    that count handlers. tests/test_logging_config.py re-enables it explicitly to test the file
+    handler itself."""
+
+    monkeypatch.setattr(settings, "log_to_file", False)
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[None, None]:
     try:

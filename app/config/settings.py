@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     # bodies are noisy and can contain fields worth not logging by default.
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # Also persist logs to a rotating file under log_dir, in addition to stdout - lets past log
+    # lines be inspected after the fact (e.g. by a tool reading the file), not just from a live
+    # terminal. Off by default: it's a debugging convenience, not something every deployment
+    # needs. Same cwd-relative convention as chat_upload_dir - only host-visible for bare
+    # `uv run uvicorn`, not the containerized `app` service, since data/ isn't volume-mounted
+    # there (same caveat as chat_upload_dir/explainability_agent_data_dir).
+    log_to_file: bool = False
+    log_dir: str = "data/logs"
+
     # Where uploaded chat images are stored on disk (app.uploads.service). Swap for S3 before
     # running more than one instance - a later task, not needed for this scaffold.
     chat_upload_dir: str = "data/uploads"

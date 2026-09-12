@@ -117,7 +117,10 @@ cd ui && npx ng test --watch=false && npx ng build
   results) - gated behind an `isEnabledFor()` check so there's zero extra buffering when it's off
   (default `INFO`). `/api/chat/stream`'s response is never buffered for this even at `DEBUG` -
   logging it there would delay the live SSE stream - it's logged separately, at the point
-  `_chat_sse` already assembles the final reply.
+  `_chat_sse` already assembles the final reply. `LOG_TO_FILE=True` additionally writes the same
+  lines to a rotating file (`LOG_DIR/app.log`, default `data/logs/`, 10 MiB x 5 backups) - off by
+  default, and only host-visible for bare `uv run uvicorn` (the containerized `app` service
+  doesn't volume-mount `data/`, same caveat as `chat_upload_dir`).
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
   model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
