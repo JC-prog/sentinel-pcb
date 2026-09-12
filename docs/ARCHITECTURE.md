@@ -107,7 +107,7 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the backend sends the registered tool sp
 `call_tool()` and feeds the result back, then streams the final answer. Registered tools:
 
 - `current_time` - trivial.
-- `get_weather` (`app/agents/weather_agent/`) - Open-Meteo, no API key.
+- `get_weather` - the Weather Agent below.
 - `explainability_review` - the agent below; only offered to the model when the message has an
   attached image, since the model cannot reference a real upload id on its own.
 
@@ -139,6 +139,24 @@ self-check passed. The CLIP embedding model and the embedded Qdrant collection l
 first use to keep startup and tests fast. `EXPLAINABILITY_AGENT_ENABLED` is its kill switch.
 The `pcb_detector` node is a hardcoded stub carried over from the original prototype, not a real
 object detector.
+
+### Weather Agent
+
+A smaller LangGraph pipeline (`app/agents/weather_agent/`), exposed only as the `get_weather`
+chat tool:
+
+```
+geocode  ->  fetch_forecast  ->  (severe?) --yes-->  severe_advisory   --> END
+                                          \--no --->  normal_advisory  --> END
+```
+
+`fetch_forecast` (Open-Meteo, no key) also runs a deterministic severe-weather check (thunderstorm/
+heavy-precipitation WMO codes, or high wind) that decides which advisory node runs - a real
+branch, not a cosmetic flag: the two nodes use different prompts and, on failure, different
+templated fallback text. The advisory step itself is best-effort - it goes through the same
+LiteLLM gateway as everything else (`OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL`) and
+degrades to a templated summary (never an error) when `WEATHER_ADVISORY_ENABLED` is off, no key
+is configured, or the LLM call fails.
 
 ### Inference service
 

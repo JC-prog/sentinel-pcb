@@ -106,8 +106,8 @@ class Settings(BaseSettings):
     # cautious tone on a severe-weather signal). Kill switch, same pattern as memory_enabled -
     # disabling it skips only the LLM step: conditions and the forecast are still fetched and
     # returned, just with a templated summary instead of an LLM-written one. Uses the shared
-    # openai_api_key/openai_model settings, not a key of its own, and falls back to the same
-    # templated summary automatically if no key is configured.
+    # openai_api_key/openai_model/openai_base_url settings, not a key of its own, and falls back
+    # to the same templated summary automatically if no key is configured.
     weather_advisory_enabled: bool = True
 
     # Internal ONNX classification service (inference/, infra/production/inference.tf). Empty

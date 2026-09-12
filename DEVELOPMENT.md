@@ -98,10 +98,11 @@ cd ui && npx ng test --watch=false && npx ng build
   chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
   change). The advisory step is a real branch, not just a label: a deterministic check (severe
   WMO codes or high wind, in `graph.py`) routes to a more cautious prompt/tone, not just a
-  different flag value. Uses the shared `settings.openai_api_key`/`openai_model`; the geocode and
-  forecast calls (Open-Meteo) still need no key at all, and the advisory step itself degrades to
-  a templated summary - never an error - when `WEATHER_ADVISORY_ENABLED` is off or no key is
-  configured, same graceful-degradation stance as the rest of this codebase's agents.
+  different flag value. Uses the shared `settings.openai_api_key`/`openai_model`/`openai_base_url`
+  (the LiteLLM gateway, same as chat); the geocode and forecast calls (Open-Meteo) still need no
+  key at all, and the advisory step itself degrades to a templated summary - never an error -
+  when `WEATHER_ADVISORY_ENABLED` is off or no key is configured, same graceful-degradation
+  stance as the rest of this codebase's agents.
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local

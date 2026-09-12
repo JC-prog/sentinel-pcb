@@ -113,10 +113,10 @@ def _fallback_advisory(current: dict[str, Any], severe: bool) -> str:
 
 
 def _query_advisory_llm(state: WeatherAdvisoryState, *, severe: bool) -> str:
-    # No base_url override - this server-side key talks to OpenAI directly, same as
-    # app/agents/explainability_review_agent/models.py today. If OPENAI_BASE_URL/a gateway is
-    # introduced later, point this at settings.openai_base_url the same way that file does.
-    client = OpenAI(api_key=settings.openai_api_key)
+    # Routed through the LiteLLM gateway like every other OpenAI-compatible call in the app
+    # (app/agents/explainability_review_agent/models.py, app/chat/providers/openai.py) - never
+    # api.openai.com directly. settings.openai_api_key is then a LiteLLM key, not an sk- key.
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
     current = state["current"]
     forecast_summary = (
         "; ".join(
