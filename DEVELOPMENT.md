@@ -76,7 +76,7 @@ cd ui && npx ng test --watch=false && npx ng build
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
   `tools` field at all, identical to the pre-tool-calling request shape. Three tools are
-  registered: `current_time` (trivial), `get_weather` (a real agent - see below), and
+  registered: `current_time` and `get_weather` (both real agents - see below), and
   `explainability_review` (below) - only offered to the model when the chat message has an
   attached image, since the model has no way to reference a real upload id itself.
   `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
@@ -103,6 +103,17 @@ cd ui && npx ng test --watch=false && npx ng build
   key at all, and the advisory step itself degrades to a templated summary - never an error -
   when `WEATHER_ADVISORY_ENABLED` is off or no key is configured, same graceful-degradation
   stance as the rest of this codebase's agents.
+- **Time agent** (`app/agents/time_agent/`): a small LangGraph pipeline - resolve an optional
+  location to a timezone (same Open-Meteo geocoding endpoint the Weather Agent uses; UTC if no
+  location is given) -> compute the current time there -> a deterministic business-hours branch
+  - exposed as the single `current_time` tool. Unlike the other two agents, this one has **no
+  LLM step at all**: "what time is it" is fully structured, so there's nothing an LLM would add
+  besides latency and cost. The branch is still real, not cosmetic - `business_hours`/
+  `after_hours` produce a different `note`, decided by a plain weekday/hour check
+  (`_BUSINESS_HOURS_START`/`_END` in `graph.py`). `tzdata` was added as a direct dependency as a
+  portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
+  has the system IANA database and works without it, but the Python docs recommend it explicitly
+  since not every environment does (Windows, some minimal/Alpine images).
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local

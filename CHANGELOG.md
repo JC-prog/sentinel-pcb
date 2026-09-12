@@ -100,6 +100,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   10 MiB x 5 backups) as well, so past log lines can be inspected after the fact instead of only
   from a live terminal. Off by default; only host-visible for bare `uv run uvicorn`, same caveat
   as chat uploads.
+- Time Agent (`app/agents/time_agent/`): the `current_time` chat tool is now a small LangGraph
+  pipeline too - resolve an optional location to a timezone (UTC if none given, otherwise the
+  same keyless Open-Meteo geocoding lookup the Weather Agent uses), then a deterministic
+  business-hours branch. Unlike the other two agents, no LLM step at all - "what time is it" is
+  fully structured, so there's nothing an LLM would add. Same tool name/shape as before, plus new
+  optional `location` support and `timezone`/`day_of_week`/`utc_offset`/`is_business_hours`/
+  `note` fields in the result.
 
 ### Changed
 

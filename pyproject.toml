@@ -25,6 +25,7 @@ dependencies = [
     "qdrant-client>=1.19.0",
     "sentence-transformers>=6.0.1",
     "sqlalchemy[asyncio]>=2.0.51",
+    "tzdata>=2026.3",
     "uvicorn[standard]>=0.52.0",
 ]
 

@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 
-from app.agents import CurrentTimeTool, ToolRegistry, WeatherAgentTool, call_tool
+from app.agents import CurrentTimeAgentTool, ToolRegistry, WeatherAgentTool, call_tool
 from app.agents.explainability_review_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
@@ -193,7 +193,9 @@ async def _log_requests(
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
 # app/agents/explainability_review_agent/graph.py's get_mcp_client()).
-tool_registry = ToolRegistry([CurrentTimeTool(), ExplainabilityReviewTool(), WeatherAgentTool()])
+tool_registry = ToolRegistry(
+    [CurrentTimeAgentTool(), ExplainabilityReviewTool(), WeatherAgentTool()]
+)
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:

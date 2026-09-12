@@ -106,7 +106,7 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the backend sends the registered tool sp
 (`CHAT_TOOL_MAX_ROUNDS`): if the model asks for a tool, the backend executes it via
 `call_tool()` and feeds the result back, then streams the final answer. Registered tools:
 
-- `current_time` - trivial.
+- `current_time` - the Time Agent below.
 - `get_weather` - the Weather Agent below.
 - `explainability_review` - the agent below; only offered to the model when the message has an
   attached image, since the model cannot reference a real upload id on its own.
@@ -157,6 +157,23 @@ templated fallback text. The advisory step itself is best-effort - it goes throu
 LiteLLM gateway as everything else (`OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL`) and
 degrades to a templated summary (never an error) when `WEATHER_ADVISORY_ENABLED` is off, no key
 is configured, or the LLM call fails.
+
+### Time Agent
+
+The smallest LangGraph pipeline (`app/agents/time_agent/`), exposed only as the `current_time`
+chat tool:
+
+```
+resolve_timezone  ->  compute_time  ->  (business hours?) --yes-->  business_hours  --> END
+                                                           \--no --->  after_hours  --> END
+```
+
+`resolve_timezone` geocodes an optional location (the same Open-Meteo endpoint the Weather Agent
+uses, and no key either) to an IANA timezone, or uses UTC if no location was given.
+`compute_time` runs a deterministic weekday/hour check that decides which branch runs - a real
+branch again, just a plain check this time. **No LLM step anywhere in this one** - unlike the
+other two agents, "what time is it" is fully structured, so there's nothing an LLM would add
+besides latency and cost.
 
 ### Inference service
 
