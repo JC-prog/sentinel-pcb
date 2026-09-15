@@ -32,7 +32,7 @@ from app.agents.explainability_review_agent import (
     ExplainabilityReviewResponse,
     ExplainabilityReviewTool,
 )
-from app.agents.router_agent import classify_intent
+from app.agents.router_agent import Clarify, route
 from app.auth import LoginRequest, RegisterRequest, UserOut, get_current_user
 from app.auth.dependencies import SessionDep
 from app.auth.security import decode_access_token
@@ -446,30 +446,18 @@ async def _chat_sse(
         extra={"provider": provider, "chat_message": message, "image_ids": image_ids},
     )
 
-    if settings.intent_router_enabled and available_tools:
-        decision = await classify_intent(
-            message, has_image=bool(image_ids), candidate_tools=available_tools
+    routing_outcome = await route(
+        message, has_image=bool(image_ids), candidate_tools=available_tools
+    )
+    if isinstance(routing_outcome, Clarify):
+        yield f"event: delta\ndata: {json.dumps({'text': routing_outcome.question})}\n\n"
+        await history.append_message(
+            session, conversation.id, "assistant", routing_outcome.question, []
         )
-        if decision.confidence < settings.intent_router_confidence_threshold:
-            clarifying_question = (
-                decision.clarifying_question
-                or "Could you share a bit more detail about what you'd like help with?"
-            )
-            yield f"event: delta\ndata: {json.dumps({'text': clarifying_question})}\n\n"
-            await history.append_message(
-                session, conversation.id, "assistant", clarifying_question, []
-            )
-            await history.maybe_set_title(session, conversation, message)
-            yield "event: done\ndata: {}\n\n"
-            return
-        # High-confidence match - narrow the tools on offer to just that one (or none, if the
-        # router decided this message needs no tool at all) rather than leaving every tool open
-        # to the model's own judgement.
-        available_tools = (
-            [t for t in available_tools if t["name"] == decision.target_tool]
-            if decision.target_tool is not None
-            else None
-        )
+        await history.maybe_set_title(session, conversation, message)
+        yield "event: done\ndata: {}\n\n"
+        return
+    available_tools = routing_outcome.available_tools
 
     final_text = ""
     try:

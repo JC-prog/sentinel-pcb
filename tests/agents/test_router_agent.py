@@ -1,6 +1,7 @@
 import pytest
 
-from app.agents.router_agent import classify_intent
+from app.agents import router_agent
+from app.agents.router_agent import Clarify, Proceed, RouterDecision, classify_intent, route
 from app.agents.router_agent import graph as router_graph
 from app.config.settings import settings
 
@@ -110,3 +111,82 @@ async def test_classify_intent_skips_the_llm_when_no_key_configured(
 
     assert decision.target_tool is None
     assert decision.confidence == 1.0
+
+
+# route() is the policy layer built on top of classify_intent() - these tests mock
+# classify_intent() directly (via the router_agent module object, since route() looks it up as a
+# module global) rather than going through the LLM, so they only exercise the threshold/narrowing
+# policy itself, independent of app/main.py or the HTTP layer.
+
+
+def _mock_decision(monkeypatch: pytest.MonkeyPatch, decision: RouterDecision) -> None:
+    async def _fake_classify_intent(message: str, *, has_image: bool, candidate_tools: object) -> RouterDecision:
+        return decision
+
+    monkeypatch.setattr(router_agent, "classify_intent", _fake_classify_intent)
+
+
+async def test_route_proceeds_unrestricted_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "intent_router_enabled", False)
+    monkeypatch.setattr(
+        router_agent, "classify_intent", lambda *a, **k: (_ for _ in ()).throw(AssertionError())
+    )
+
+    outcome = await route("anything", has_image=False, candidate_tools=_TOOLS)
+
+    assert outcome == Proceed(_TOOLS)
+
+
+async def test_route_proceeds_unrestricted_when_no_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        router_agent, "classify_intent", lambda *a, **k: (_ for _ in ()).throw(AssertionError())
+    )
+
+    outcome = await route("anything", has_image=False, candidate_tools=[])
+
+    assert outcome == Proceed([])
+
+
+async def test_route_clarifies_below_the_confidence_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_decision(
+        monkeypatch,
+        RouterDecision(target_tool=None, confidence=0.2, clarifying_question="Weather or time?"),
+    )
+
+    outcome = await route("tell me about Tokyo", has_image=False, candidate_tools=_TOOLS)
+
+    assert outcome == Clarify("Weather or time?")
+
+
+async def test_route_falls_back_to_a_default_clarifying_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_decision(
+        monkeypatch, RouterDecision(target_tool=None, confidence=0.0, clarifying_question=None)
+    )
+
+    outcome = await route("tell me about Tokyo", has_image=False, candidate_tools=_TOOLS)
+
+    assert isinstance(outcome, Clarify)
+    assert outcome.question
+
+
+async def test_route_narrows_to_the_confident_pick(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_decision(
+        monkeypatch,
+        RouterDecision(target_tool="get_weather", confidence=0.95, clarifying_question=None),
+    )
+
+    outcome = await route("what's the weather in Tokyo?", has_image=False, candidate_tools=_TOOLS)
+
+    assert outcome == Proceed([_TOOLS[0]])
+
+
+async def test_route_clears_tools_when_none_are_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_decision(
+        monkeypatch, RouterDecision(target_tool=None, confidence=0.99, clarifying_question=None)
+    )
+
+    outcome = await route("hi there", has_image=False, candidate_tools=_TOOLS)
+
+    assert outcome == Proceed(None)
