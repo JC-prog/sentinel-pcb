@@ -22,7 +22,9 @@ def _mock_async_client(
     monkeypatch.setattr(httpx, "AsyncClient", factory)
 
 
-def _classify_response(model: str, label: str, index: int, scores: dict[str, float]) -> dict:
+def _classify_response(
+    model: str, label: str, index: int, scores: dict[str, float]
+) -> dict[str, object]:
     return {
         "model": model,
         "username": "jane-qa",
