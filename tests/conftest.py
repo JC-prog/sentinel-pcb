@@ -43,6 +43,18 @@ def _log_to_file_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "log_to_file", False)
 
 
+@pytest.fixture(autouse=True)
+def _intent_router_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The intent router (app/agents/router_agent/) makes its own sync OpenAI call - via the
+    `openai` SDK's own httpx.Client, not the httpx.AsyncClient chat tests mock - whenever
+    settings.openai_api_key is set and a tool is on offer. Left enabled, that call would hit a
+    real network endpoint in any test that configures an OpenAI key (e.g. to exercise the OpenAI
+    chat provider), same risk _memory_disabled_by_default guards against. Disabled here by
+    default; tests/agents/test_router_agent.py re-enables it explicitly."""
+
+    monkeypatch.setattr(settings, "intent_router_enabled", False)
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[None, None]:
     try:

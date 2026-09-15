@@ -102,7 +102,12 @@ def test_tools_field_includes_explainability_when_image_attached(
     _mock_async_client(monkeypatch, handler)
     _stream(authenticated_client, "check this board", image_ids=["some-upload-id"])
 
-    assert _tool_names(requests[0]) == {"current_time", "get_weather", "explainability_review"}
+    assert _tool_names(requests[0]) == {
+        "current_time",
+        "get_weather",
+        "explainability_review",
+        "adc_inspection",
+    }
 
 
 def test_tools_disabled_sends_no_tools_field(
