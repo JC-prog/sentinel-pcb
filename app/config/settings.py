@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     chat_tool_calling_enabled: bool = True
     chat_tool_max_rounds: int = 4
 
-    # Orchestrator / ADC inspection agent (app/agents/adc_inspection_agent/) - a QA/Admin-triggered
+    # ADC inspection agent (app/agents/adc_inspection_agent/) - a QA/Admin-triggered
     # tool that runs a deterministic plan/policy loop (workflow_state.py/planner.py/policy_engine.py)
     # over an uploaded image: two-stage region/defect classification through the inference/
     # microservice, golden-image lookup and alignment/quality checks, optional inspection-XML
@@ -197,6 +197,23 @@ class Settings(BaseSettings):
     # the containerized `app` service overrides this to http://langfuse-web:3000 (that file's own
     # `environment:` block), same pattern as openai_base_url/qdrant_url above.
     langfuse_host: str = "http://localhost:3000"
+
+    # orchestrator_agent (app/agents/orchestrator_agent/) - a QA/Admin-only, chat-invisible agent
+    # driven from the UI's "Work" tab, not chat. Ported from orchestrator-agent/adc_agentic_project:
+    # runs its plan/policy loop over a whole uploaded dataset CSV (many rows at once), unlike
+    # adc_inspection_agent's create_case, which handles one chat-attached image. Never registered
+    # in app/agents/registry.py/access.py - structurally unreachable from the chat tool-calling
+    # loop, not just settings-gated. Kill switch, same pattern as the others.
+    orchestrator_agent_enabled: bool = True
+    # Its own direct OpenAI client, isolated from openai_api_key/openai_base_url above (which may
+    # point at a LiteLLM proxy key rather than a real sk-... key) - this one always calls
+    # api.openai.com directly, so it needs a real OpenAI key here regardless of what
+    # openai_base_url is set to elsewhere. Empty by default - never commit a real value.
+    orchestrator_openai_api_key: str = ""
+    orchestrator_openai_model: str = "gpt-5.6-luna"
+    # Uploaded dataset CSVs, inspection XMLs, and image-root folders for Work-tab runs - same
+    # cwd-relative convention/caveat as chat_upload_dir.
+    orchestrator_data_dir: str = "data/orchestrator"
 
 
 settings = Settings()
