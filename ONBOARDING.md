@@ -113,6 +113,8 @@ docker compose -f infra/development/docker-compose.yml --env-file .env down
    curl http://localhost:8000/health              # backend -> {"status":"ok"} style response
    curl http://localhost:4000/health/liveliness   # LiteLLM proxy -> 200
    ```
+3. Qdrant ships its own web dashboard, no extra setup: open http://localhost:6333/dashboard to
+   browse collections/points directly.
 
 ---
 
@@ -127,6 +129,7 @@ needs it:
 | UI | `npm start` is the real loop; `docker compose ... --profile ui up -d` only for a container smoke test |
 | Inference service (`inference/`) | fill in real Hugging Face repos in `inference/models.toml`, then `docker compose -f infra/development/docker-compose.yml --env-file .env --profile inference up -d`, or work in `inference/` with its own README |
 | Explainability & Review Agent data | seed its embedded Qdrant with `scripts/explainability_agent/generate_telemetry.py` and `scripts/explainability_agent/populate_qdrant.py` - see [`DEVELOPMENT.md`](DEVELOPMENT.md) |
+| LangFuse tracing for the agent pipelines | `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait`, then set `LANGFUSE_ENABLED=True` in `.env` and restart the backend. Auto-provisions an org/project/API key on first boot - log in at http://localhost:3000 with `dev@sentinelchat.local` / `sentinelchat-dev-password`. |
 
 `docker compose ... --profile full up -d` runs everything.
 
@@ -167,8 +170,9 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 | 4200 | UI (`npm start`) | you, terminal 2 |
 | 4000 | LiteLLM proxy | Compose (`litellm`) |
 | 5433 | Postgres (`5433` -> container `5432`) | Compose (`db`) |
-| 6333 / 6334 | Qdrant REST / gRPC | Compose (`qdrant`) |
+| 6333 / 6334 | Qdrant REST / gRPC (dashboard at `6333/dashboard`) | Compose (`qdrant`) |
 | 8001 | inference service | Compose (`inference`), profile only |
+| 3000 | LangFuse tracing UI | Compose (`langfuse-web`), profile only |
 
 ---
 

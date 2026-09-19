@@ -194,8 +194,9 @@ cd ui && npx ng test --watch=false && npx ng build
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
   (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `litellm` (a
-  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui` and `inference`
-  are opt-in via `--profile <name>` so you only build/run your slice.
+  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui`, `inference`, and
+  `langfuse` (self-hosted LLM tracing - `app/config/langfuse.py`) are opt-in via
+  `--profile <name>` so you only build/run your slice.
 
 ## 4. Known gotchas
 
