@@ -166,6 +166,12 @@ class Settings(BaseSettings):
     # one instance.
     case_golden_image_dir: str = "data/golden_images"
 
+    # Monitoring agent (app/agents/monitoring_agent/) - flag_case_for_retraining (QA/Admin) queues
+    # a RetrainingTicket for a case a reviewer believes the model got wrong; actual retraining
+    # happens on the separate inference server, never here. monitoring_status remains an Admin-only
+    # placeholder tool with no real logic yet. Kill switch, same pattern as the others.
+    monitoring_agent_enabled: bool = True
+
     # Intent router (app/agents/router_agent/) - a classification step run before the tool-calling
     # loop that either picks the single best-matching tool or, below
     # intent_router_confidence_threshold, asks the user a clarifying question instead of guessing.
