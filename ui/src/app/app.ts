@@ -13,6 +13,11 @@ import { ThemeToggle } from './theme-toggle/theme-toggle';
 // history, so it gets no chat sidebar - same reasoning as login/register.
 const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register', '/work']);
 
+// The Chat/Work toggle only makes sense once logged in - login/register aren't "modes" to switch
+// between, so it stays hidden there (unlike the sidebar, it IS shown on /work - that's the whole
+// point of the toggle).
+const ROUTES_WITHOUT_MODE_TOGGLE = new Set(['/login', '/register']);
+
 @Component({
   imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner, ThemeToggle, ModeToggle],
   selector: 'app-root',
@@ -21,6 +26,7 @@ const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register', '/work']);
 })
 export class App {
   protected readonly showSidebar: Signal<boolean>;
+  protected readonly showModeToggle: Signal<boolean>;
 
   constructor(
     protected readonly settingsService: SettingsService,
@@ -34,5 +40,6 @@ export class App {
       { initialValue: this.router.url },
     );
     this.showSidebar = computed(() => !ROUTES_WITHOUT_SIDEBAR.has(url()));
+    this.showModeToggle = computed(() => !ROUTES_WITHOUT_MODE_TOGGLE.has(url()));
   }
 }
