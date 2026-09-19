@@ -14,7 +14,10 @@ import asyncio
 import json
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.weather_agent.graph import WeatherAdvisoryState, get_pipeline
+from app.config.langfuse import get_langfuse_callbacks
 
 
 class WeatherAgentTool:
@@ -54,7 +57,8 @@ class WeatherAgentTool:
         # Node bodies do blocking HTTP/OpenAI calls - run off the event loop rather than
         # stalling every other in-flight request, same reasoning as
         # app/agents/explainability_review_agent/tool.py.
-        final_state = await asyncio.to_thread(pipeline.invoke, initial_state)
+        config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+        final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
 
         if final_state.get("error"):
             return json.dumps({"error": final_state["error"]})

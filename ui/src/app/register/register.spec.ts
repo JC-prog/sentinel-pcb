@@ -29,11 +29,11 @@ describe('Register', () => {
     expect(fixture.componentInstance['role']()).toBe('qa');
   });
 
-  it('offers admin as a selectable role', () => {
+  it('offers qa and admin as selectable roles', () => {
     const options = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll('#role option'),
     ) as HTMLOptionElement[];
-    expect(options.map((option) => option.value)).toEqual(['qa', 'operator', 'admin']);
+    expect(options.map((option) => option.value)).toEqual(['qa', 'admin']);
   });
 
   it('registers with the entered fields and navigates to the chat home on success', async () => {
@@ -46,7 +46,7 @@ describe('Register', () => {
     component['password'].set('correct-horse-battery-staple');
     component['employeeId'].set('EMP-042');
     component['departmentShift'].set('QA Day Shift');
-    component['role'].set('operator');
+    component['role'].set('admin');
     await component.submit();
 
     expect(authService.register).toHaveBeenCalledWith({
@@ -55,7 +55,7 @@ describe('Register', () => {
       password: 'correct-horse-battery-staple',
       employeeId: 'EMP-042',
       departmentShift: 'QA Day Shift',
-      role: 'operator',
+      role: 'admin',
     });
     expect(router.navigateByUrl).toHaveBeenCalledWith('/');
   });

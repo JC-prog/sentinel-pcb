@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { AuthService, AuthUser } from './auth.service';
-import { ChatResponder, CHAT_RESPONDER } from './chat-responder';
+import { ChatResponder, ChatResponderEvent, CHAT_RESPONDER } from './chat-responder';
 import { ChatService } from './chat.service';
 
 function createFile(name = 'board.png', type = 'image/png'): File {
@@ -50,7 +50,7 @@ describe('ChatService', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    responder = { respond: vi.fn().mockReturnValue(of('mock reply')) };
+    responder = { respond: vi.fn().mockReturnValue(of({ type: 'delta', text: 'mock reply' })) };
     service = createChatService(responder);
   });
 
@@ -76,29 +76,46 @@ describe('ChatService', () => {
   });
 
   it('sets isLoading while awaiting a reply and clears it once resolved', () => {
-    const chunks = new Subject<string>();
+    const chunks = new Subject<ChatResponderEvent>();
     const slowService = createChatService({ respond: () => chunks.asObservable() });
 
     const id = slowService.send(null, 'hi', []);
     expect(slowService.isLoading(id)()).toBe(true);
 
-    chunks.next('done');
+    chunks.next({ type: 'delta', text: 'done' });
     chunks.complete();
     expect(slowService.isLoading(id)()).toBe(false);
   });
 
   it('accumulates streamed chunks into a single assistant message as they arrive', () => {
-    const chunks = new Subject<string>();
+    const chunks = new Subject<ChatResponderEvent>();
     const streamingService = createChatService({ respond: () => chunks.asObservable() });
 
     const id = streamingService.send(null, 'hi', []);
-    chunks.next('Hel');
+    chunks.next({ type: 'delta', text: 'Hel' });
     expect(streamingService.get(id)()?.messages[1].content).toBe('Hel');
 
-    chunks.next('lo');
+    chunks.next({ type: 'delta', text: 'lo' });
     chunks.complete();
     expect(streamingService.get(id)()?.messages[1].content).toBe('Hello');
     expect(streamingService.get(id)()?.messages.length).toBe(2);
+  });
+
+  it('shows the tool-call label while a tool is running, then clears it once text arrives', () => {
+    const chunks = new Subject<ChatResponderEvent>();
+    const streamingService = createChatService({ respond: () => chunks.asObservable() });
+
+    const id = streamingService.send(null, 'check this board', []);
+    expect(streamingService.toolCallLabel(id)()).toBeNull();
+
+    chunks.next({ type: 'toolCall', label: 'Orchestrator Agent' });
+    expect(streamingService.toolCallLabel(id)()).toBe('Orchestrator Agent');
+
+    chunks.next({ type: 'delta', text: 'Logged as CASE-000001.' });
+    expect(streamingService.toolCallLabel(id)()).toBeNull();
+
+    chunks.complete();
+    expect(streamingService.toolCallLabel(id)()).toBeNull();
   });
 
   it('appends a fallback message and clears loading when the responder errors', () => {

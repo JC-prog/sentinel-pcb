@@ -37,10 +37,10 @@ def test_second_user_gets_the_role_they_requested(client: TestClient) -> None:
         username="second-user",
         email="second@example.com",
         employee_id="EMP-002",
-        role="operator",
+        role="qa",
     )
     assert response.status_code == 201
-    assert response.json()["role"] == "operator"
+    assert response.json()["role"] == "qa"
 
 
 def test_register_allows_admin_role(client: TestClient) -> None:

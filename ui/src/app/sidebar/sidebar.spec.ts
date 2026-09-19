@@ -28,7 +28,7 @@ describe('Sidebar', () => {
       imports: [Sidebar],
       providers: [
         provideRouter([]),
-        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
       ],
     }).compileComponents();
 

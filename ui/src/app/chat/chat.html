@@ -14,7 +14,27 @@
   }
   @if (!conversation() || conversation()!.messages.length === 0) {
     <div class="flex flex-1 flex-col items-center justify-center gap-6 px-4">
-      <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">What can I help with?</h1>
+      <div class="max-w-2xl text-center">
+        <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">
+          Hi, I'm the Sentinel PCB assistant
+        </h1>
+        <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          I inspect PCB AOI images for defects. Attach an image (and an inspection XML, if you
+          have one) to classify it, flag an ambiguous result as a case for a person to review, or
+          check on cases already flagged.
+        </p>
+      </div>
+      <div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+        @for (suggestion of suggestions; track suggestion.label) {
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            (click)="useSuggestion(suggestion)"
+          >
+            {{ suggestion.label }}
+          </button>
+        }
+      </div>
       <div class="w-full max-w-2xl">
         <ng-container [ngTemplateOutlet]="inputBar" />
       </div>
@@ -48,7 +68,11 @@
             <div
               class="max-w-[80%] rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-400"
             >
-              Thinking…
+              @if (toolCallLabel(); as label) {
+                Calling {{ label }}…
+              } @else {
+                Thinking…
+              }
             </div>
           </div>
         }
@@ -83,6 +107,26 @@
     </div>
   }
 
+  @if (pendingXmlFiles().length > 0) {
+    <div class="mb-2 flex flex-wrap gap-2">
+      @for (xml of pendingXmlFiles(); track xml.file.name; let i = $index) {
+        <div
+          class="flex items-center gap-2 rounded-lg bg-slate-200 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+        >
+          <span>📄 {{ xml.file.name }}</span>
+          <button
+            type="button"
+            class="flex h-4 w-4 items-center justify-center rounded-full hover:bg-slate-300 dark:hover:bg-slate-600"
+            aria-label="Remove XML"
+            (click)="removePendingXml(i)"
+          >
+            ✕
+          </button>
+        </div>
+      }
+    </div>
+  }
+
   <div
     class="flex items-end gap-2 rounded-2xl border border-slate-300 bg-slate-100 p-2 dark:border-slate-700 dark:bg-slate-800"
   >
@@ -102,6 +146,23 @@
     >
       📎
     </button>
+    <input
+      #xmlInput
+      type="file"
+      accept=".xml,application/xml,text/xml"
+      multiple
+      hidden
+      (change)="onXmlFilesSelected($event)"
+    />
+    <button
+      type="button"
+      class="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      aria-label="Attach inspection XML"
+      title="Attach inspection XML"
+      (click)="xmlInput.click()"
+    >
+      📄
+    </button>
     <textarea
       class="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
       rows="1"
@@ -113,7 +174,7 @@
     <button
       type="button"
       class="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-600 dark:disabled:text-slate-400"
-      [disabled]="!draftText().trim() && pendingImages().length === 0"
+      [disabled]="!draftText().trim() && pendingImages().length === 0 && pendingXmlFiles().length === 0"
       (click)="send()"
     >
       Send

@@ -43,7 +43,7 @@ describe('Chat', () => {
       imports: [Chat],
       providers: [
         provideRouter([]),
-        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
         { provide: AuthService, useValue: fakeAuthService() },
         { provide: ActivatedRoute, useValue: route },
       ],
@@ -61,7 +61,7 @@ describe('Chat', () => {
   it('shows the empty-state hero when there is no conversation yet', async () => {
     await setup(new FakeActivatedRoute());
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('What can I help with?');
+    expect(compiled.textContent).toContain("Hi, I'm the Sentinel PCB assistant");
   });
 
   it('creates a conversation and navigates to it when sending the first message', async () => {
@@ -83,7 +83,7 @@ describe('Chat', () => {
   it('renders existing messages and the mocked assistant reply', async () => {
     await TestBed.configureTestingModule({
       providers: [
-        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
         { provide: AuthService, useValue: fakeAuthService() },
       ],
     }).compileComponents();
@@ -95,7 +95,7 @@ describe('Chat', () => {
       imports: [Chat],
       providers: [
         provideRouter([]),
-        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
         { provide: ChatService, useValue: chatServiceProbe },
         { provide: ActivatedRoute, useValue: new FakeActivatedRoute({ id }) },
       ],
@@ -190,5 +190,51 @@ describe('Chat', () => {
     fixture.componentInstance.onDrop(fakeDropEvent([]));
 
     expect(fixture.componentInstance['isDraggingOver']()).toBe(false);
+  });
+
+  function fakeFileInputEvent(files: File[]): Event {
+    return { target: { files, value: '' } } as unknown as Event;
+  }
+
+  it('adds a selected XML file to the pending attachments', async () => {
+    await setup(new FakeActivatedRoute());
+    const file = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+
+    fixture.componentInstance.onXmlFilesSelected(fakeFileInputEvent([file]));
+
+    expect(fixture.componentInstance['pendingXmlFiles']().map((xml) => xml.file)).toEqual([file]);
+  });
+
+  it('ignores a selected non-XML file in the XML picker', async () => {
+    await setup(new FakeActivatedRoute());
+    const file = new File(['x'], 'notes.txt', { type: 'text/plain' });
+
+    fixture.componentInstance.onXmlFilesSelected(fakeFileInputEvent([file]));
+
+    expect(fixture.componentInstance['pendingXmlFiles']()).toEqual([]);
+  });
+
+  it('removes a pending XML file by index', async () => {
+    await setup(new FakeActivatedRoute());
+    const file = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+    fixture.componentInstance.onXmlFilesSelected(fakeFileInputEvent([file]));
+
+    fixture.componentInstance.removePendingXml(0);
+
+    expect(fixture.componentInstance['pendingXmlFiles']()).toEqual([]);
+  });
+
+  it('sends a message with no text when only an XML file is attached', async () => {
+    await setup(new FakeActivatedRoute());
+    const router = TestBed.inject(Router);
+    const chatService = TestBed.inject(ChatService);
+    vi.spyOn(router, 'navigate');
+    const file = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+    fixture.componentInstance.onXmlFilesSelected(fakeFileInputEvent([file]));
+
+    fixture.componentInstance.send();
+
+    expect(chatService.list()().length).toBe(1);
+    expect(fixture.componentInstance['pendingXmlFiles']()).toEqual([]);
   });
 });

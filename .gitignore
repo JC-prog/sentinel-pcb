@@ -43,6 +43,11 @@ __pycache__/
 /data/images/outputs/
 /data/images/qdrant_db/
 
+# Admin-registered golden reference images (app.settings.case_golden_image_dir) - runtime data
+# uploaded via POST /api/admin/golden-images, not source.
+/data/golden_images/*
+!/data/golden_images/.gitkeep
+
 # Planning docs (proposals, reports, working design docs) - not part of the shipped repo.
 planning/
 

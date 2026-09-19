@@ -25,7 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Production infrastructure under `infra/production/` (Terraform): ECS Fargate, RDS, ECR, and
   S3 with CloudFront for the AWS deployment, once that work is picked up.
 - User accounts: register, log in (with a username, not an email), and log out, with role-based
-  access (QA, Operator, Admin) - all three are selectable on the public registration form.
+  access (QA, Admin) - both are selectable on the public registration form.
   Sessions use short-lived JWT access tokens plus a rotating, revocable refresh token, both in
   httpOnly cookies. The very first account ever created becomes Admin automatically regardless of
   what was requested, as a safety net; `scripts/create_admin_user.py` can also create or promote
@@ -108,12 +108,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fully structured, so there's nothing an LLM would add. Same tool name/shape as before, plus new
   optional `location` support and `timezone`/`day_of_week`/`utc_offset`/`is_business_hours`/
   `note` fields in the result.
-- ADC Inspection Agent (`app/agents/adc_inspection_agent/`): a new `adc_inspection` chat tool that
-  classifies a PCB AOI image with the two-stage ADC classifier (component region, then the
-  matching defect model for that region), via the inference service above. Raw classifier
-  verdict with confidence scores, not an LLM narrative - no OpenAI key dependency. Only offered
-  when an image is attached, same gating as `explainability_review`. Disable with
-  `ADC_INSPECTION_AGENT_ENABLED=False`.
+- Orchestrator agent (`app/agents/adc_inspection_agent/`): the `create_case` chat tool runs a
+  deterministic plan/policy loop over an uploaded PCB AOI image - looks up a matching golden
+  reference image and checks phase-correlation alignment/quality against it, classifies the
+  component region then the matching defect model for that region via the inference service
+  above, optionally validates an attached inspection XML's measurements, and always persists the
+  result as a reviewable Case with a case number (`CASE-000123`), whether the verdict is ACCEPTED
+  or REVIEW_REQUIRED. When the verdict is REVIEW_REQUIRED, it automatically hands the case to the
+  Explainability & Review Agent below and attaches its diagnosis to the case before persisting -
+  no separate step required. `list_cases` and `review_case` list and resolve (approve/override)
+  reviewable cases; golden reference images are registered one at a time via
+  `POST /api/admin/golden-images` (Admin only). Only offered when an image is attached, same
+  gating as `explainability_review`. Disable with `ADC_INSPECTION_AGENT_ENABLED=False`.
 - Intent router (`app/agents/router_agent/`): chat now asks a clarifying question instead of
   guessing when a message doesn't clearly call for one tool over another - one LLM call picks the
   best-matching tool (or decides none is needed) with a confidence score ahead of the existing
@@ -121,6 +127,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detail instead of offering every tool to the model's own judgement. Fails open (offers every
   tool, no clarification) on any problem - no key configured, nothing to route among, upstream
   error. Disable with `INTENT_ROUTER_ENABLED=False`.
+- Explainability & Review Agent's historical-case lookup is now a real CLIP embedding similarity
+  search against the embedded Qdrant collection instead of a metadata filter, and its AOI/ICT
+  telemetry now reads a case's actual attached inspection-XML measurements when available
+  (falling back to the original mock only when no XML is attached at all), with a deterministic,
+  physics-based reasoning fallback (laser height/side-overhang thresholds) for when the OpenAI
+  reasoning call fails.
+- New `investigate_case` chat tool (QA/Admin): runs the Explainability & Review Agent's pipeline
+  against an existing Case by case number (e.g. "investigate CASE-000123"), resolving its stored
+  image, inspection XML, and board/component fields automatically - no need to re-attach the
+  image.
+- New `flag_case_for_retraining` chat tool (QA/Admin, `app/agents/monitoring_agent/`): flags a
+  Case as a bad model call and queues a retraining ticket for engineering, requiring an
+  explanation of what looked wrong. Only queues the request - actual model retraining happens on
+  the separate inference server, never in this app.
+- The chat UI now shows which agent is currently running (e.g. "Calling Orchestrator Agent…",
+  "Calling Explainability Agent…") instead of a generic "Thinking…" while a tool call is in
+  flight, via a new `event: tool_call` SSE frame - purely a progress indicator, never persisted
+  to conversation history.
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md): a practical guide to what to type/attach in chat to
+  trigger each capability (submitting an image, getting a diagnosis, investigating a case,
+  reviewing, flagging for retraining), linked from `README.md`.
 
 ### Changed
 
@@ -135,6 +162,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so a developer only builds and runs their slice.
 - `setup-dev.sh` / `setup-dev.ps1` now generate `JWT_SECRET_KEY` when it's blank, start `litellm`
   alongside `db`/`qdrant`, and no longer push Ollama as a default dependency.
+- User roles simplified from four (QA, Operator, Admin, Engineer) to two (QA, Admin) - QA is the
+  role for day-to-day use (inspecting, reviewing, flagging), Admin is a superset of QA plus
+  configuration-only actions (registering golden images, infra/monitoring visibility).
+- The one-shot, non-persisting `adc_inspection` chat tool is removed - `create_case` (see the
+  Orchestrator agent entry above) is now the only way to submit an image for inspection through
+  chat, and it always persists a reviewable Case.
 
 ### Fixed
 

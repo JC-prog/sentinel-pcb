@@ -85,6 +85,10 @@ function fromServerSummary(summary: ServerConversationSummary): Conversation {
 export class ChatService {
   private readonly conversations = signal<Conversation[]>([]);
   private readonly loadingIds = signal<ReadonlySet<string>>(new Set());
+  /** conversationId -> the label of whichever tool call is currently in flight (e.g. "Orchestrator
+   * Agent"), or absent when none is - a transient UI progress indicator only, never persisted to
+   * history. Cleared as soon as real reply text starts arriving, or the turn ends either way. */
+  private readonly toolCallLabels = signal<ReadonlyMap<string, string>>(new Map());
   private readonly hydratedConversationIds = new Set<string>();
   private lastTimestamp = 0;
   private storageKey = storageKeyFor(null);
@@ -194,6 +198,13 @@ export class ChatService {
     return computed(() => this.loadingIds().has(id));
   }
 
+  /** The in-flight tool call's display label for this conversation (e.g. "Explainability Agent"),
+   * or null when no tool call is currently running - see isLoading() for the broader "still
+   * waiting on a reply at all" signal, which stays true for longer than this does. */
+  toolCallLabel(id: string): Signal<string | null> {
+    return computed(() => this.toolCallLabels().get(id) ?? null);
+  }
+
   delete(id: string): void {
     this.conversations.update((all) => all.filter((c) => c.id !== id));
     this.persist();
@@ -208,7 +219,7 @@ export class ChatService {
    * Sends a user message, creating a new conversation first if conversationId is null.
    * Returns the id of the conversation the message was added to.
    */
-  send(conversationId: string | null, text: string, images: File[]): string {
+  send(conversationId: string | null, text: string, images: File[], xmlFiles: File[] = []): string {
     const now = this.now();
     const imageUrls = images.map((file) => URL.createObjectURL(file));
     const userMessage: ChatMessage = {
@@ -238,7 +249,7 @@ export class ChatService {
       return [...all, created];
     });
     this.persist();
-    this.awaitReply(id, text, images);
+    this.awaitReply(id, text, images, xmlFiles);
     return id;
   }
 
@@ -247,7 +258,7 @@ export class ChatService {
    * assistant message; every chunk after that appends to it, so the UI renders the reply
    * arriving incrementally instead of waiting for the whole thing.
    */
-  private awaitReply(conversationId: string, text: string, images: File[]): void {
+  private awaitReply(conversationId: string, text: string, images: File[], xmlFiles: File[]): void {
     this.loadingIds.update((ids) => new Set(ids).add(conversationId));
     let assistantMessageId: string | null = null;
 
@@ -279,17 +290,37 @@ export class ChatService {
       );
     };
 
+    const setToolCallLabel = (label: string | null): void => {
+      this.toolCallLabels.update((labels) => {
+        const next = new Map(labels);
+        if (label === null) {
+          next.delete(conversationId);
+        } else {
+          next.set(conversationId, label);
+        }
+        return next;
+      });
+    };
+
     const finish = (): void => {
       this.loadingIds.update((ids) => {
         const next = new Set(ids);
         next.delete(conversationId);
         return next;
       });
+      setToolCallLabel(null);
       this.persist();
     };
 
-    this.responder.respond(conversationId, text, images).subscribe({
-      next: appendChunk,
+    this.responder.respond(conversationId, text, images, xmlFiles).subscribe({
+      next: (event) => {
+        if (event.type === 'toolCall') {
+          setToolCallLabel(event.label);
+        } else {
+          setToolCallLabel(null);
+          appendChunk(event.text);
+        }
+      },
       error: () => {
         appendChunk('Sorry, something went wrong reaching the assistant.');
         finish();

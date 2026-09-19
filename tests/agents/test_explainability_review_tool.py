@@ -15,8 +15,12 @@ def _final_state(**overrides: Any) -> PCBInspectionState:
         "board_id": "B1",
         "component_ref": "R131",
         "issue_symptom": "AOI flagged anomaly",
+        "inspection_xml_bytes": None,
+        "package": None,
+        "feature": None,
         "historical_context": "",
         "reference_standards": "",
+        "similar_cases": [],
         "visual_bounding_boxes": [],
         "visual_description": "",
         "measurements": {},
@@ -35,7 +39,7 @@ class _FakePipeline:
     def __init__(self, final_state: PCBInspectionState) -> None:
         self._final_state = final_state
 
-    def invoke(self, _initial_state: PCBInspectionState) -> PCBInspectionState:
+    def invoke(self, _initial_state: PCBInspectionState, **_kwargs: Any) -> PCBInspectionState:
         return self._final_state
 
 
@@ -53,7 +57,7 @@ def test_tool_metadata_shape() -> None:
 
 async def test_run_returns_diagnosis_from_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tool.get_pipeline",
+        "app.agents.explainability_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(_final_state()),
     )
 
@@ -73,6 +77,7 @@ async def test_run_returns_diagnosis_from_pipeline(monkeypatch: pytest.MonkeyPat
         "explanation": "Component lifted on one side.",
         "confidence_score": 0.87,
         "self_check_passed": True,
+        "similar_cases": [],
         "errors": [],
     }
 
@@ -81,7 +86,7 @@ async def test_run_normalizes_unrecognized_category_to_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tool.get_pipeline",
+        "app.agents.explainability_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(_final_state(final_defect_category="not_a_real_category")),
     )
 
@@ -99,12 +104,12 @@ async def test_run_defaults_issue_symptom_when_omitted(monkeypatch: pytest.Monke
     captured: dict[str, Any] = {}
 
     class _CapturingPipeline:
-        def invoke(self, initial_state: PCBInspectionState) -> PCBInspectionState:
+        def invoke(self, initial_state: PCBInspectionState, **_kwargs: Any) -> PCBInspectionState:
             captured["issue_symptom"] = initial_state["issue_symptom"]
             return _final_state()
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tool.get_pipeline",
+        "app.agents.explainability_review_agent.tools.get_pipeline",
         lambda api_key: _CapturingPipeline(),
     )
 

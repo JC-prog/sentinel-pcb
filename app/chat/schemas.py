@@ -10,6 +10,10 @@ class ChatStreamRequest(BaseModel):
     conversation_id: str
     message: str
     image_ids: list[str] = []
+    # Inspection XML upload ids (app.uploads, via POST /api/uploads/xml) - only consumed by
+    # create_case (app/agents/adc_inspection_agent/), optional there too. Not persisted on Message
+    # like image_ids is - ephemeral to the tool call, not part of the message history.
+    xml_ids: list[str] = []
     provider: LlmProvider = "ollama"
 
 

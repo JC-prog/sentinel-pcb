@@ -11,6 +11,7 @@ from fastapi import (
     Depends,
     FastAPI,
     File,
+    Form,
     HTTPException,
     Request,
     Response,
@@ -21,12 +22,20 @@ from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 
 from app.agents import (
-    AdcInspectionTool,
+    CreateCaseTool,
     CurrentTimeAgentTool,
+    FlagCaseForRetrainingTool,
+    InvestigateCaseTool,
+    ListCasesTool,
+    MonitoringAgentTool,
+    ReviewCaseTool,
     ToolRegistry,
     WeatherAgentTool,
     call_tool,
 )
+from app.agents.access import allowed_tool_names
+from app.agents.adc_inspection_agent import golden_images
+from app.agents.adc_inspection_agent.schemas import GoldenImageOut
 from app.agents.explainability_review_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
@@ -55,7 +64,7 @@ from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvide
 from app.config.logging_config import configure_logging
 from app.config.settings import settings
 from app.core.chat import ChatMessage, ConversationNotFound, TextDelta, ToolCallRequest
-from app.db import Conversation, User, init_models
+from app.db import Conversation, User, UserRole, init_models
 from app.memory import build_memory_preamble, maybe_extract, remember_explicit
 from app.uploads import UploadRecord, resolve_upload_path, save_upload
 
@@ -201,7 +210,17 @@ async def _log_requests(
 # the actual CLIP model load is deferred to first use of the agent (see
 # app/agents/explainability_review_agent/graph.py's get_mcp_client()).
 tool_registry = ToolRegistry(
-    [AdcInspectionTool(), CurrentTimeAgentTool(), ExplainabilityReviewTool(), WeatherAgentTool()]
+    [
+        CreateCaseTool(),
+        CurrentTimeAgentTool(),
+        ExplainabilityReviewTool(),
+        FlagCaseForRetrainingTool(),
+        InvestigateCaseTool(),
+        ListCasesTool(),
+        MonitoringAgentTool(),
+        ReviewCaseTool(),
+        WeatherAgentTool(),
+    ]
 )
 
 
@@ -324,32 +343,98 @@ async def get_upload(
     return FileResponse(path)
 
 
-def _available_tool_specs(image_ids: list[str]) -> list[dict[str, Any]] | None:
+@app.post("/api/uploads/xml")
+async def upload_inspection_xml(
+    file: Annotated[UploadFile, File()],
+    _user: Annotated[User, Depends(get_current_user)],
+) -> UploadRecord:
+    """Same storage (app.uploads.service) as image uploads - content-type-agnostic already, so no
+    new storage dir/setting is needed for this. Only consumed by create_case
+    (app/agents/adc_inspection_agent/), and only optionally there."""
+
+    if not (file.filename or "").lower().endswith(".xml"):
+        raise HTTPException(status_code=422, detail="file must be an XML document")
+    return await save_upload(file)
+
+
+# Human-friendly names for the `event: tool_call` SSE frame emitted just before each tool actually
+# runs (see _chat_sse below) - purely cosmetic, for the UI to show "Calling <label>..." while a
+# tool call is in flight. Falls back to a humanized version of the raw tool name for anything not
+# listed here, so a future tool never goes unlabeled.
+_TOOL_DISPLAY_LABELS: dict[str, str] = {
+    "create_case": "Orchestrator Agent",
+    "explainability_review": "Explainability Agent",
+    "investigate_case": "Explainability Agent",
+    "list_cases": "Case Lookup",
+    "review_case": "Case Review",
+    "flag_case_for_retraining": "Monitoring Agent",
+    "monitoring_status": "Monitoring Agent",
+    "current_time": "Current Time",
+    "get_weather": "Weather Agent",
+}
+
+
+def _tool_display_label(name: str) -> str:
+    return _TOOL_DISPLAY_LABELS.get(name, name.replace("_", " ").title())
+
+
+def _available_tool_specs(image_ids: list[str], role: UserRole) -> list[dict[str, Any]] | None:
     """None means "send no `tools` field at all" - both the kill switch and the empty-registry
     case fall back to this, so a disabled feature is byte-identical to the pre-tool-calling
-    request shape. explainability_review and adc_inspection are only ever offered when an image
-    is actually attached to this message - the model has no way to reference a real upload id
-    itself (see _run_tool_call, which overrides whatever it supplies anyway)."""
+    request shape. Every spec is first narrowed to what `role` is allowed to call at all
+    (app/agents/access.py) - re-checked again at dispatch time in _run_tool_call, since hiding a
+    spec from the LLM isn't itself an access control. explainability_review and create_case are
+    only ever offered when an image is actually attached to this message - the model has no way to
+    reference a real upload id itself (see _run_tool_call, which overrides whatever it supplies
+    anyway). investigate_case and flag_case_for_retraining need no image attached - they resolve
+    an existing Case by number instead."""
 
     if not settings.chat_tool_calling_enabled:
         return None
-    specs = tool_registry.specs()
-    if not image_ids or not settings.explainability_agent_enabled:
+    specs = [s for s in tool_registry.specs() if s["name"] in allowed_tool_names(role)]
+
+    if not settings.explainability_agent_enabled:
+        specs = [s for s in specs if s["name"] not in ("explainability_review", "investigate_case")]
+    if not image_ids:
         specs = [s for s in specs if s["name"] != "explainability_review"]
+
     if not image_ids or not settings.adc_inspection_agent_enabled:
-        specs = [s for s in specs if s["name"] != "adc_inspection"]
+        specs = [s for s in specs if s["name"] != "create_case"]
+
+    if not settings.monitoring_agent_enabled:
+        specs = [
+            s for s in specs if s["name"] not in ("monitoring_status", "flag_case_for_retraining")
+        ]
+
     return specs or None
 
 
-async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str], username: str) -> str:
+async def _run_tool_call(
+    call: ToolCallRequest,
+    *,
+    session: SessionDep,
+    image_ids: list[str],
+    xml_ids: list[str],
+    conversation_id: str,
+    user: User,
+) -> str:
     """Executes one model-requested tool call. Never raises - any failure becomes a
     {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
     instead of ending the whole SSE stream (mirrors app/agents/explainability_review_agent/
     mcp_client.py's own graceful-degradation pattern).
 
-    explainability_review and adc_inspection need kwargs the model can't supply itself - a real
-    image and (for explainability_review) the server's OpenAI key - injected here the same way
-    POST /api/agents/explainability-review already does it by hand."""
+    Defense in depth: re-checks role access even though _available_tool_specs already filtered
+    what the LLM was offered - a tool-call request naming something that wasn't offered should
+    never actually dispatch.
+
+    explainability_review, investigate_case, and the case tools need kwargs the model can't supply
+    itself - a real image (and, for explainability_review/investigate_case, the server's OpenAI
+    key) - injected here the same way POST /api/agents/explainability-review already does it by
+    hand."""
+
+    role = UserRole(user.role)
+    if call.name not in allowed_tool_names(role):
+        return json.dumps({"error": f"tool {call.name!r} is not permitted for role {user.role!r}"})
 
     arguments = dict(call.arguments)
     if call.name == "explainability_review":
@@ -367,16 +452,41 @@ async def _run_tool_call(call: ToolCallRequest, *, image_ids: list[str], usernam
             "issue_symptom": arguments.get("issue_symptom"),
             "openai_api_key": settings.openai_api_key,
         }
-    elif call.name == "adc_inspection":
+    elif call.name == "investigate_case":
+        if not settings.openai_api_key:
+            return json.dumps({"error": "no OpenAI key configured on this server"})
+        arguments = {**arguments, "session": session, "openai_api_key": settings.openai_api_key}
+    elif call.name == "flag_case_for_retraining":
+        arguments = {**arguments, "session": session, "user_id": user.id}
+    elif call.name == "create_case":
         image_id = image_ids[0]  # only offered when non-empty - see _available_tool_specs
         image_path = resolve_upload_path(image_id)
         if image_path is None:
             return json.dumps({"error": "image not found"})
+        inspection_xml_bytes = None
+        inspection_xml_id = None
+        if xml_ids:
+            xml_path = resolve_upload_path(xml_ids[0])
+            if xml_path is not None:
+                inspection_xml_bytes = xml_path.read_bytes()
+                inspection_xml_id = xml_ids[0]
         arguments = {
+            "session": session,
             "image_bytes": image_path.read_bytes(),
             "image_name": image_id,
-            "username": username,
+            "inspection_xml_bytes": inspection_xml_bytes,
+            "inspection_xml_id": inspection_xml_id,
+            "username": user.username,
+            "user_id": user.id,
+            "conversation_id": conversation_id,
+            "board_id": arguments.get("board_id", ""),
+            "component_ref": arguments.get("component_ref", ""),
+            "package": arguments.get("package"),
+            "feature": arguments.get("feature"),
+            "issue_symptom": arguments.get("issue_symptom"),
         }
+    elif call.name in {"list_cases", "review_case"}:
+        arguments = {**arguments, "session": session, "user_id": user.id, "username": user.username}
 
     try:
         return await call_tool(tool_registry, call.name, arguments)
@@ -391,11 +501,13 @@ async def _chat_sse(
     provider: LlmProvider,
     message: str,
     image_ids: list[str],
-    username: str,
+    xml_ids: list[str],
+    user: User,
 ) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream: `event: delta` per chunk from the chat service,
-    `event: error` if it raises, always ending in `event: done`. Same framing as the original
-    app's `_trace_stream` (GET /workflows/{id}/trace).
+    `event: tool_call` (`{name, label}`) just before a tool call actually dispatches, `event:
+    error` if it raises, always ending in `event: done`. Same framing as the original app's
+    `_trace_stream` (GET /workflows/{id}/trace).
 
     Persists the user's message before streaming starts (durable even if the LLM call fails
     partway) and the assistant's full reply after streaming succeeds - see app/chat/history.py.
@@ -406,6 +518,8 @@ async def _chat_sse(
     The reply itself may take several tool-call round trips (app/agents/registry.py) before the
     model produces a final answer - see the loop below. Only the final round's text is persisted
     as the assistant's message; intermediate tool-call rounds' text (usually empty) is discarded.
+    `tool_call` events are purely a UI progress indicator ("Calling Explainability Agent...") -
+    they're never persisted to history either.
     """
 
     # A pure memory-write command (app/memory/service.py) - never reaches the LLM, so it can't
@@ -436,8 +550,8 @@ async def _chat_sse(
     )
 
     service = get_chat_service(provider)
-    messages = build_messages(system_prompt, turns, message)
-    available_tools = _available_tool_specs(image_ids)
+    messages = build_messages(system_prompt, turns, message, image_ids=image_ids, xml_ids=xml_ids)
+    available_tools = _available_tool_specs(image_ids, UserRole(user.role))
     logger.debug(
         "chat request: provider=%s message=%r image_ids=%s",
         provider,
@@ -478,7 +592,19 @@ async def _chat_sse(
                 ChatMessage(role="assistant", content=final_text or None, tool_calls=pending_calls)
             )
             for call in pending_calls:
-                result = await _run_tool_call(call, image_ids=image_ids, username=username)
+                yield (
+                    "event: tool_call\n"
+                    f"data: {json.dumps({'name': call.name, 'label': _tool_display_label(call.name)})}"
+                    "\n\n"
+                )
+                result = await _run_tool_call(
+                    call,
+                    session=session,
+                    image_ids=image_ids,
+                    xml_ids=xml_ids,
+                    conversation_id=conversation.id,
+                    user=user,
+                )
                 messages.append(
                     ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=result)
                 )
@@ -529,7 +655,8 @@ async def chat_stream(
             request.provider,
             request.message,
             request.image_ids,
-            user.username,
+            request.xml_ids,
+            user,
         ),
         media_type="text/event-stream",
     )
@@ -608,3 +735,38 @@ async def explainability_review(
         },
     )
     return ExplainabilityReviewResponse.model_validate_json(result_json)
+
+
+@app.post("/api/admin/golden-images", status_code=201)
+async def register_golden_image(
+    board_id: Annotated[str, Form()],
+    component_ref: Annotated[str, Form()],
+    package: Annotated[str, Form()],
+    feature: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+    notes: Annotated[str | None, Form()] = None,
+) -> GoldenImageOut:
+    """Admin-only: registers one golden reference image, looked up later by
+    app/agents/adc_inspection_agent/golden_images.py's find_golden_image() when a case is flagged
+    for the same board_id/component_ref/package/feature. Minimal by design - a single-image
+    registration endpoint, not a bulk importer or management UI."""
+
+    if UserRole(user.role) != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="admin role required")
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=422, detail="file must be an image")
+
+    golden = await golden_images.save_golden_image(
+        session,
+        file_bytes=await file.read(),
+        filename=file.filename or "golden.png",
+        board_id=board_id,
+        component_ref=component_ref,
+        package=package,
+        feature=feature,
+        notes=notes,
+        registered_by_user_id=user.id,
+    )
+    return GoldenImageOut.model_validate(golden)

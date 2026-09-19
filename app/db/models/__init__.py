@@ -6,6 +6,20 @@ have actually been imported somewhere.
 """
 
 from app.db.models.auth import RefreshToken, User, UserRole
+from app.db.models.case import Case, CaseStatus
 from app.db.models.chat import Conversation, Message
+from app.db.models.golden_image import GoldenImage
+from app.db.models.retraining_ticket import RetrainingTicket, RetrainingTicketStatus
 
-__all__ = ["Conversation", "Message", "RefreshToken", "User", "UserRole"]
+__all__ = [
+    "Case",
+    "CaseStatus",
+    "Conversation",
+    "GoldenImage",
+    "Message",
+    "RefreshToken",
+    "RetrainingTicket",
+    "RetrainingTicketStatus",
+    "User",
+    "UserRole",
+]

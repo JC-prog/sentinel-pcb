@@ -136,11 +136,41 @@ class Settings(BaseSettings):
     chat_tool_calling_enabled: bool = True
     chat_tool_max_rounds: int = 4
 
-    # ADC inspection agent (app/agents/adc_inspection_agent/) - a two-stage PCB defect classifier
-    # (region -> matching defect model) served through the inference/ microservice. Kill switch,
-    # same pattern as explainability_agent_enabled; only offered as a tool when an image is
-    # attached, same gating as explainability_review.
+    # Orchestrator / ADC inspection agent (app/agents/adc_inspection_agent/) - a QA/Admin-triggered
+    # tool that runs a deterministic plan/policy loop (workflow_state.py/planner.py/policy_engine.py)
+    # over an uploaded image: two-stage region/defect classification through the inference/
+    # microservice, golden-image lookup and alignment/quality checks, optional inspection-XML
+    # measurement validation, and an automatic hand-off to the explainability review agent when the
+    # verdict is REVIEW_REQUIRED - always persisting the result as a Case. The only tool offered for
+    # submitting an image for inspection through chat. Kill switch, same pattern as
+    # explainability_agent_enabled; only offered as a tool when an image is attached.
     adc_inspection_agent_enabled: bool = True
+    # Confidence gates mirroring orchestrator-agent/adc_agentic_project's OrchestratorAgent
+    # (feature_threshold/defect_threshold, both 0.70 there too). Below adc_region_confidence_threshold,
+    # graph.py stops after stage 1 and reports REVIEW_REQUIRED instead of routing to a defect model
+    # on a guess. Below adc_defect_confidence_threshold, the stage-2 verdict is still returned but
+    # final_decision is REVIEW_REQUIRED rather than ACCEPTED.
+    adc_region_confidence_threshold: float = 0.70
+    adc_defect_confidence_threshold: float = 0.70
+    # Golden/case image phase-correlation shift thresholds (app/agents/adc_inspection_agent/
+    # verification.py's estimate_translation, ported from orchestrator-agent/adc_agentic_project's
+    # verification/image_alignment.py), in pixels. Above the warning threshold, a note is recorded
+    # but the verdict is untouched; above the fail threshold, the align_and_check_quality node
+    # flags IMAGE_PAIR_ALIGNMENT_FAILED and finalize downgrades an otherwise-confident verdict to
+    # REVIEW_REQUIRED, the same way a failed measurement validation already does.
+    adc_alignment_warning_shift_px: float = 12.0
+    adc_alignment_fail_shift_px: float = 35.0
+    # Where registered golden reference images are stored on disk
+    # (app/agents/adc_inspection_agent/golden_images.py) - a separate, admin-curated directory from
+    # chat_upload_dir. Same cwd-relative convention/caveat: swap for S3 before running more than
+    # one instance.
+    case_golden_image_dir: str = "data/golden_images"
+
+    # Monitoring agent (app/agents/monitoring_agent/) - flag_case_for_retraining (QA/Admin) queues
+    # a RetrainingTicket for a case a reviewer believes the model got wrong; actual retraining
+    # happens on the separate inference server, never here. monitoring_status remains an Admin-only
+    # placeholder tool with no real logic yet. Kill switch, same pattern as the others.
+    monitoring_agent_enabled: bool = True
 
     # Intent router (app/agents/router_agent/) - a classification step run before the tool-calling
     # loop that either picks the single best-matching tool or, below
@@ -149,6 +179,24 @@ class Settings(BaseSettings):
     # behavior exactly - every tool offered, no clarification.
     intent_router_enabled: bool = True
     intent_router_confidence_threshold: float = 0.6
+
+    # LangFuse (infra/development/docker-compose.yml's "langfuse" profile) - self-hosted LLM
+    # observability/tracing for the LangGraph pipelines only (app/agents/{time_agent,
+    # weather_agent,router_agent,explainability_review_agent,adc_inspection_agent}) - see
+    # app/config/langfuse.py. Deliberately not wired into the raw (non-LangChain) OpenAI() calls
+    # in router_agent/graph.py, weather_agent/graph.py, explainability_review_agent/models.py, or
+    # app/chat/providers/openai.py's raw httpx streaming path. Kill switch, default False (unlike
+    # the "on by default" feature switches above) since this is optional tooling, not something a
+    # fresh dev environment needs working out of the box; get_langfuse_callbacks() also treats a
+    # blank key as "not configured" and returns no callbacks even when this is True, so a
+    # half-configured .env never raises.
+    langfuse_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    # Bare local dev (uv run uvicorn ...) reaches langfuse-web's published host port directly;
+    # the containerized `app` service overrides this to http://langfuse-web:3000 (that file's own
+    # `environment:` block), same pattern as openai_base_url/qdrant_url above.
+    langfuse_host: str = "http://localhost:3000"
 
 
 settings = Settings()

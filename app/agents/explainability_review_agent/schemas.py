@@ -16,4 +16,5 @@ class ExplainabilityReviewResponse(BaseModel):
     explanation: str
     confidence_score: float
     self_check_passed: bool
+    similar_cases: list[dict[str, Any]] = []
     errors: list[str]

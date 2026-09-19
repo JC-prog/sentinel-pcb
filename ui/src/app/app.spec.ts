@@ -26,7 +26,7 @@ describe('App', () => {
           { path: 'login', component: StubComponent },
           { path: 'register', component: StubComponent },
         ]),
-        { provide: CHAT_RESPONDER, useValue: { respond: () => of('mock reply') } },
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
         { provide: BackendStatusService, useValue: backendStatusStub },
       ],
     }).compileComponents();

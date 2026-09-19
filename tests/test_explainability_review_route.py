@@ -1,6 +1,7 @@
 import io
 import shutil
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,7 +46,7 @@ def _upload(client: TestClient) -> str:
 
 def _mock_pipeline_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakePipeline:
-        def invoke(self, initial_state: PCBInspectionState) -> PCBInspectionState:
+        def invoke(self, initial_state: PCBInspectionState, **_kwargs: Any) -> PCBInspectionState:
             state = dict(initial_state)
             state["final_defect_category"] = "no defect"
             state["final_diagnosis_text"] = "Looks fine."
@@ -55,7 +56,7 @@ def _mock_pipeline_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
             return state  # type: ignore[return-value]
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tool.get_pipeline",
+        "app.agents.explainability_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(),
     )
 
@@ -120,5 +121,6 @@ def test_happy_path(authenticated_client: TestClient, monkeypatch: pytest.Monkey
         "explanation": "Looks fine.",
         "confidence_score": 0.95,
         "self_check_passed": True,
+        "similar_cases": [],
         "errors": [],
     }

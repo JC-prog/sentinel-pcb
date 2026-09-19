@@ -12,7 +12,10 @@ import asyncio
 import json
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.time_agent.graph import TimeState, get_pipeline
+from app.config.langfuse import get_langfuse_callbacks
 
 
 class CurrentTimeAgentTool:
@@ -56,7 +59,8 @@ class CurrentTimeAgentTool:
         # The geocode node does a blocking HTTP call (only when a location is given) - run off
         # the event loop rather than stalling every other in-flight request, same reasoning as
         # the other agents.
-        final_state = await asyncio.to_thread(pipeline.invoke, initial_state)
+        config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+        final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
 
         if final_state.get("error"):
             return json.dumps({"error": final_state["error"]})

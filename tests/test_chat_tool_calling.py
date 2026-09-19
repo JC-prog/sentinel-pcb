@@ -78,6 +78,10 @@ def _stream(client: TestClient, message: str, image_ids: list[str] | None = None
 def test_tools_field_sent_by_default_excluding_explainability(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """authenticated_client is the first user registered in a fresh DB, which
+    app/auth/service.py auto-promotes to ADMIN regardless of the requested role - see
+    tests/test_role_gated_tools.py for the full role -> tool-visibility matrix."""
+
     requests: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -87,12 +91,23 @@ def test_tools_field_sent_by_default_excluding_explainability(
     _mock_async_client(monkeypatch, handler)
     _stream(authenticated_client, "hi")
 
-    assert _tool_names(requests[0]) == {"current_time", "get_weather"}
+    assert _tool_names(requests[0]) == {
+        "current_time",
+        "get_weather",
+        "list_cases",
+        "review_case",
+        "monitoring_status",
+        "investigate_case",
+        "flag_case_for_retraining",
+    }
 
 
 def test_tools_field_includes_explainability_when_image_attached(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """See the note on test_tools_field_sent_by_default_excluding_explainability -
+    authenticated_client is ADMIN, which can reach every tool once an image is attached."""
+
     requests: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -106,7 +121,12 @@ def test_tools_field_includes_explainability_when_image_attached(
         "current_time",
         "get_weather",
         "explainability_review",
-        "adc_inspection",
+        "create_case",
+        "list_cases",
+        "review_case",
+        "monitoring_status",
+        "investigate_case",
+        "flag_case_for_retraining",
     }
 
 
@@ -140,9 +160,13 @@ def test_ollama_tool_call_round_trip(
     _mock_async_client(monkeypatch, handler)
     body = _stream(authenticated_client, "what time is it?")
 
-    deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
+    frames = _parse_sse(body)
+    deltas = [str(data["text"]) for event, data in frames if event == "delta"]
     assert "".join(deltas) == "It is currently noon UTC."
     assert len(calls) == 2
+
+    tool_call_events = [data for event, data in frames if event == "tool_call"]
+    assert tool_call_events == [{"name": "current_time", "label": "Current Time"}]
 
     second_call_messages = calls[1]["messages"]
     assert isinstance(second_call_messages, list)

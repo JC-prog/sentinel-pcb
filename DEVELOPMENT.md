@@ -75,10 +75,15 @@ cd ui && npx ng test --watch=false && npx ng build
   `tool_registry.specs()` as `tools` to whichever provider is selected, and loops (bounded by
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
-  `tools` field at all, identical to the pre-tool-calling request shape. Four tools are
-  registered: `current_time` and `get_weather` (both real agents - see below), and
-  `explainability_review`/`adc_inspection` (both below) - only offered to the model when the chat
-  message has an attached image, since the model has no way to reference a real upload id itself.
+  `tools` field at all, identical to the pre-tool-calling request shape. Tools registered:
+  `current_time` and `get_weather` (generic, every role); `create_case` and `explainability_review`
+  (both below, only offered when the chat message has an attached image, since the model has no
+  way to reference a real upload id itself); `investigate_case`, `list_cases`, `review_case`, and
+  `flag_case_for_retraining` (all below, need no image attached - they resolve an existing Case by
+  number instead); `monitoring_status` (Admin only). Just before each tool call actually
+  dispatches, `_chat_sse` emits an `event: tool_call` SSE frame (`{name, label}`, `_TOOL_DISPLAY_LABELS`)
+  purely so the UI can show "Calling Orchestrator Agent…" instead of a generic "Thinking…" -
+  never persisted to conversation history.
   `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
   implement, translating a provider-agnostic `ChatMessage` list to/from each API's own
   tool-calling wire format; the older `stream_reply()` is untouched and still used by
@@ -97,12 +102,23 @@ cd ui && npx ng test --watch=false && npx ng build
   pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning) that
   diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
   into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`, `app/agents/registry.py`).
-  Callable directly via `POST /api/agents/explainability-review`, or through chat (above) when an
-  image is attached to the message. Uses the same server-side `settings.openai_api_key` as chat -
-  not a key of its own; `EXPLAINABILITY_AGENT_ENABLED` is its kill switch. The CLIP embedding
-  model and embedded Qdrant collection it uses for historical-case lookup are loaded lazily on
-  first use, not at import time, to keep app startup
-  and test runs fast. See "Known gotchas" below for gaps carried over from the original prototype.
+  Two entry points: `explainability_review` (chat, or `POST /api/agents/explainability-review`)
+  takes a raw uploaded image; `investigate_case` (chat only) takes a case number instead and
+  resolves that Case's stored image/inspection XML/board/component fields itself - no re-upload
+  needed. Also called in-process (not a chat tool call) by the orchestrator agent's
+  `escalate_review` step below, whenever a case's verdict is REVIEW_REQUIRED. Uses the same
+  server-side `settings.openai_api_key` as chat - not a key of its own; `EXPLAINABILITY_AGENT_ENABLED`
+  is its kill switch. Historical-case lookup (`mcp_client.py`'s `search_historical()`) is a real
+  CLIP embedding similarity search against the embedded Qdrant collection (seeded by
+  `scripts/explainability_agent/populate_qdrant.py`); AOI/ICT telemetry (`get_measurements()`)
+  reads a case's actual attached inspection-XML measurements when available (reusing
+  `app/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a hardcoded
+  mock only when no XML is attached at all; and the reasoning step falls back to a deterministic,
+  physics-based self-check (laser-height/side-overhang thresholds, `graph.py`'s
+  `_heuristic_self_check`) when the OpenAI reasoning call itself fails. The CLIP embedding model
+  and embedded Qdrant collection are loaded lazily on first use, not at import time, to keep app
+  startup and test runs fast. See "Known gotchas" below for the remaining stubs carried over from
+  the original prototype (bounding-box detection, IPC standards lookup).
 - **Weather agent** (`app/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
   fetch current conditions plus a short forecast -> an LLM-synthesized advisory - exposed to
   chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
@@ -124,16 +140,36 @@ cd ui && npx ng test --watch=false && npx ng build
   portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
   has the system IANA database and works without it, but the Python docs recommend it explicitly
   since not every environment does (Windows, some minimal/Alpine images).
-- **ADC Inspection Agent** (`app/agents/adc_inspection_agent/`): a small LangGraph pipeline -
-  classify the component region (Body/Lead/Text) -> classify the matching defect for that region
-  - exposed as the single `adc_inspection` tool. Ported from `orchestrator-agent/
-  adc_agentic_project`'s two-stage ONNX routing, but calling the `inference/` microservice
-  (`app.inference.client.classify()`) for both stages instead of loading ONNX in-process - see
-  `inference/models.toml`'s four `pcb_*` models. Unlike the Explainability & Review Agent, this
-  returns a raw classifier verdict (label + confidence per stage), no LLM narrative, so it has no
-  dependency on `settings.openai_api_key`. `ADC_INSPECTION_AGENT_ENABLED` is its kill switch; the
-  full batch/dataset workflow from the source prototype (CSV + inspection XML, the LLM
-  planner/policy loop) was deliberately not ported - it doesn't map onto one chat-turn tool call.
+- **Orchestrator agent** (`app/agents/adc_inspection_agent/`): the `create_case` tool runs a
+  cyclic LangGraph pipeline that reproduces `orchestrator-agent/adc_agentic_project`'s
+  Planner -> PolicyEngine -> execute -> replan loop for exactly one case, rather than a batch of
+  dataset rows - `planner.py`'s `Planner` proposes the next step (deterministic only; a single
+  case never has genuine step-order ambiguity, see its docstring), `policy_engine.py`'s
+  `PolicyEngine` validates it before `graph.py` dispatches, and a rejection routes straight to
+  `abort` (not back to the planner - a pure function asked again would propose the same rejected
+  step forever). Step sequence: verify the image is readable -> look up a matching golden
+  reference image (`golden_images.py`) -> validate an attached inspection XML's measurements, if
+  one was attached (`xml_measurements.py`) -> check phase-correlation alignment/quality against
+  the golden reference, if one was found (`verification.py`, ported from `orchestrator-agent`'s
+  `verification/{image_alignment,image_quality}.py`, using numpy's FFT rather than adding an
+  OpenCV dependency for two narrow checks) -> classify region then the matching defect model for
+  that region via the `inference/` microservice (`app.inference.client.classify()`, see
+  `inference/models.toml`'s four `pcb_*` models) -> finalize a verdict -> if REVIEW_REQUIRED,
+  escalate to the Explainability & Review Agent in-process and attach its diagnosis (never blocks
+  persistence if escalation fails - see `graph.py`'s `escalate_review` node) -> persist the result
+  as a `Case` row (`repository.py`), always, whether ACCEPTED or REVIEW_REQUIRED. `list_cases` and
+  `review_case` list and resolve (approve/override) reviewable cases. `ADC_INSPECTION_AGENT_ENABLED`
+  is its kill switch; `ADC_REGION_CONFIDENCE_THRESHOLD`/`ADC_DEFECT_CONFIDENCE_THRESHOLD`/
+  `ADC_ALIGNMENT_WARNING_SHIFT_PX`/`ADC_ALIGNMENT_FAIL_SHIFT_PX` tune its gates. The full
+  batch/dataset ingestion mode from the source prototype (a CSV of many samples joined against an
+  AOI machine's inspection XML) was deliberately not ported - there's no CSV row for a chat
+  upload, and nothing in this app currently ingests one.
+- **Monitoring agent** (`app/agents/monitoring_agent/`): `monitoring_status` remains an Admin-only
+  placeholder with no real logic yet (model/dataset performance, drift detection - future work).
+  `flag_case_for_retraining` (QA/Admin) is real, if intentionally small: a single DB write queuing
+  a `RetrainingTicket` for a Case a reviewer believes the model got wrong, requiring a reason.
+  Actual model retraining happens on the separate inference server, never here - this only queues
+  the request. `MONITORING_AGENT_ENABLED` is the kill switch for both tools.
 - **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local
@@ -158,8 +194,9 @@ cd ui && npx ng test --watch=false && npx ng build
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
   (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `litellm` (a
-  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui` and `inference`
-  are opt-in via `--profile <name>` so you only build/run your slice.
+  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui`, `inference`, and
+  `langfuse` (self-hosted LLM tracing - `app/config/langfuse.py`) are opt-in via
+  `--profile <name>` so you only build/run your slice.
 
 ## 4. Known gotchas
 
@@ -190,16 +227,14 @@ cd ui && npx ng test --watch=false && npx ng build
   already, but it's worth knowing if you're debugging a hang-then-burst pattern. `CHAT_TOOL_MAX_ROUNDS`
   (default 4) caps how many tool-call round trips one message can trigger before the loop gives
   up and answers with what it has, in case a model keeps calling tools without ever finishing.
-- **Explainability & Review Agent has known stubs, faithfully ported rather than fixed**:
-  `models.py`'s `BoundingBoxDetector` ("YOLO") always returns the same hardcoded bounding box, and
-  `mcp_client.py`'s `get_standards()`/`get_measurements()` are hardcoded placeholders that don't
-  actually read `data/ipc_standards/ipc_a_610_chip_components.json` or the telemetry file the
-  scripts below generate. `search_historical()` does a Qdrant metadata filter, not an embedding
-  similarity search - the CLIP encoder it loads is real (and needed so
-  `scripts/explainability_agent/populate_qdrant.py` can embed images with the same model at seed
-  time) but isn't queried by that method yet. None of this blocks the pipeline from running end to
-  end; it just means the diagnosis quality is currently bounded by GPT-4o's reasoning over mocked
-  standards/telemetry rather than real ones.
+- **Explainability & Review Agent still has two known stubs, faithfully ported rather than
+  fixed**: `models.py`'s `BoundingBoxDetector` ("YOLO") always returns the same hardcoded bounding
+  box, and `mcp_client.py`'s `get_standards()` is a hardcoded placeholder that doesn't actually
+  read `data/ipc_standards/ipc_a_610_chip_components.json`. `get_measurements()` and
+  `search_historical()` are no longer stubs (see the agent's own bullet above) - real telemetry
+  and real similarity search. None of this blocks the pipeline from running end to end; it just
+  means defect *location* and cited IPC clause text are still bounded by GPT-4o's reasoning over a
+  fixed bounding box and mocked standards rather than real ones.
 - **Explainability & Review Agent data prep is a manual, admin-triggered step**: the agent needs
   PCB images under `data/images/inputs/` (`EXPLAINABILITY_AGENT_DATA_DIR`, gitignored - not
   committed; `data/images/ipc_standards/` in the same directory *is* committed, since that's a
