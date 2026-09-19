@@ -190,11 +190,13 @@ async def _log_requests(
             )
             # body_iterator is now exhausted - rebuild a Response over the same bytes so the
             # client still receives it (this becomes what's actually returned, below).
-            response = Response(
-                content=response_body_bytes,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-            )
+            # headers=dict(response.headers) would silently collapse repeated header names (e.g.
+            # register/login/refresh's two Set-Cookie headers) down to just the first one - dict()
+            # on Starlette's Headers keeps only one value per key. Copy raw_headers instead so
+            # every original header, duplicates included, survives the rebuild.
+            original_headers = response.raw_headers
+            response = Response(content=response_body_bytes, status_code=response.status_code)
+            response.raw_headers = original_headers
         _access_logger.debug(
             "%s %s request body: %s response body: %s",
             request.method,

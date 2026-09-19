@@ -52,8 +52,12 @@ def test_chat_stream_rejects_empty_message(authenticated_client: TestClient) -> 
 
 
 def test_chat_stream_returns_503_when_openai_not_configured(
-    authenticated_client: TestClient,
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # .env.example ships a non-empty OPENAI_API_KEY (the local LiteLLM proxy's dev key), so a
+    # normal dev .env would otherwise defeat this test - force the "not configured" case
+    # explicitly rather than relying on the default being empty.
+    monkeypatch.setattr(settings, "openai_api_key", "")
     response = authenticated_client.post(
         "/api/chat/stream",
         json={"conversation_id": "c1", "message": "hi", "image_ids": [], "provider": "openai"},
