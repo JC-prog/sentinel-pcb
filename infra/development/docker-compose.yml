@@ -266,6 +266,11 @@ services:
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
       CLICKHOUSE_USER: clickhouse
       CLICKHOUSE_PASSWORD: clickhouse
+      # Our clickhouse-server is a single standalone node with no Zookeeper, but the image ships
+      # a default "default" cluster definition regardless - without this, langfuse-worker's
+      # migration runner issues `ON CLUSTER default` DDL (ReplicatedMergeTree), which needs
+      # Zookeeper and fails migrations on startup.
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
