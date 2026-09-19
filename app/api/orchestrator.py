@@ -1,26 +1,20 @@
-"""Work-tab routes: uploads (dataset CSV / inspection XML / image-root) and the streaming run
-endpoint. Split out of app/main.py so orchestrator_agent, like every other agent package, owns
-its own routes rather than main.py accumulating every domain's endpoints in one file. Gated to
-QA/Admin and settings.orchestrator_agent_enabled - never registered as a chat Tool, so the chat
-LLM's function-calling loop can never reach any of this (see the package's own docstring).
+"""Routes only - see app/agents/orchestrator_agent/streaming.py for the streaming-run logic and
+app/agents/orchestrator_agent/uploads.py for upload storage. Gated to QA/Admin and
+settings.orchestrator_agent_enabled; never registered as a chat Tool, so the chat LLM's
+function-calling loop can never reach any of this.
 """
 
-import json
-import logging
-from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agents.orchestrator_agent import uploads as orchestrator_uploads
-from app.agents.orchestrator_agent.runner import run_stream as orchestrator_run_stream
 from app.agents.orchestrator_agent.schemas import OrchestratorRunRequest, OrchestratorUploadRecord
+from app.agents.orchestrator_agent.streaming import orchestrator_sse
 from app.auth import get_current_user
 from app.config.settings import settings
 from app.db import User, UserRole
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -82,44 +76,6 @@ async def orchestrator_upload_image_root(
     return OrchestratorUploadRecord(id=upload_id)
 
 
-async def _orchestrator_sse(request: OrchestratorRunRequest, username: str) -> AsyncGenerator[str, None]:
-    dataset_path = orchestrator_uploads.resolve_dataset_path(request.dataset_id)
-    xml_path = orchestrator_uploads.resolve_xml_path(request.xml_id)
-    image_root_path = (
-        orchestrator_uploads.resolve_image_root_path(request.image_root_id)
-        if request.image_root_id
-        else None
-    )
-
-    if dataset_path is None:
-        yield f"event: error\ndata: {json.dumps({'message': 'dataset upload not found'})}\n\n"
-        yield "event: done\ndata: {}\n\n"
-        return
-    if xml_path is None:
-        yield f"event: error\ndata: {json.dumps({'message': 'inspection XML upload not found'})}\n\n"
-        yield "event: done\ndata: {}\n\n"
-        return
-
-    try:
-        async for event in orchestrator_run_stream(
-            mode=request.mode,
-            dataset_csv=str(dataset_path),
-            inspection_xml=str(xml_path),
-            image_root=str(image_root_path) if image_root_path else None,
-            username=username,
-            feature_threshold=request.feature_threshold,
-            defect_threshold=request.defect_threshold,
-            use_llm=request.use_llm,
-            llm_model=request.llm_model,
-            llm_fallback=request.llm_fallback,
-        ):
-            yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
-    except Exception as exc:  # reported to the client as an SSE error event
-        logger.exception("orchestrator_agent run failed")
-        yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
-        yield "event: done\ndata: {}\n\n"
-
-
 @router.post("/api/orchestrator/run/stream")
 async def orchestrator_run(
     request: OrchestratorRunRequest,
@@ -130,6 +86,6 @@ async def orchestrator_run(
     _require_qa_or_admin(user)
 
     return StreamingResponse(
-        _orchestrator_sse(request, user.username),
+        orchestrator_sse(request, user.username),
         media_type="text/event-stream",
     )

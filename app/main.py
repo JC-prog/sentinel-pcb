@@ -1,59 +1,32 @@
+"""Composition root: creates the app, wires up middleware/lifespan, and mounts every route
+module under app/api/. Carries no route declarations of its own - see app/api/'s own docstring
+for how routes are organized and where to add a new one.
+"""
+
 import json
 import logging
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
 import jwt
-from fastapi import (
-    Cookie,
-    Depends,
-    FastAPI,
-    File,
-    Form,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
-)
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
-from app.agents.adc_inspection_agent import golden_images
-from app.agents.adc_inspection_agent.schemas import GoldenImageOut
-from app.agents.orchestrator_agent.router import router as orchestrator_router
-from app.auth import LoginRequest, RegisterRequest, UserOut, get_current_user
-from app.auth.dependencies import SessionDep
+from app.api import admin, auth, chat, health, orchestrator, uploads
+from app.api.auth import ACCESS_TOKEN_COOKIE
 from app.auth.security import decode_access_token
-from app.auth.service import (
-    EmailAlreadyRegistered,
-    EmployeeIdAlreadyRegistered,
-    InvalidCredentials,
-    InvalidRefreshToken,
-    UsernameAlreadyRegistered,
-    authenticate_user,
-    issue_tokens,
-    register_user,
-    revoke_refresh_token,
-    rotate_refresh_token,
-)
-from app.chat.router import router as chat_router
 from app.config.logging_config import configure_logging
 from app.config.settings import settings
-from app.db import User, UserRole, init_models
-from app.uploads import UploadRecord, resolve_upload_path, save_upload
-
-_ACCESS_TOKEN_COOKIE = "access_token"
-_REFRESH_TOKEN_COOKIE = "refresh_token"
-_REFRESH_TOKEN_PATH = "/api/auth"
+from app.db import init_models
 
 _access_logger = logging.getLogger("app.access")
 logger = logging.getLogger(__name__)
 
-# Configured at import time (like each router's own module-level setup) rather than inside
-# lifespan, so anything logged before the app finishes starting up - or by a standalone script
-# that imports app.main - still gets the right format. See app/config/logging_config.py.
+# Configured at import time (like each app/api/ module's own module-level setup) rather than
+# inside lifespan, so anything logged before the app finishes starting up - or by a standalone
+# script that imports app.main - still gets the right format. See app/config/logging_config.py.
 configure_logging()
 
 
@@ -73,13 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Each domain owns its own routes - see app/chat/router.py (chat streaming, conversations, the
-# Explainability & Review Agent's direct-invocation endpoint) and
-# app/agents/orchestrator_agent/router.py (the Work tab's uploads and streaming run endpoint).
-# What stays here is app-wide: setup/middleware/lifespan, auth, generic uploads, and the one
-# small admin endpoint below.
-app.include_router(chat_router)
-app.include_router(orchestrator_router)
+# Every API surface the app exposes, one module per domain - see app/api/'s docstring. Adding a
+# new endpoint means adding (or extending) a module under app/api/, not this file.
+app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(uploads.router)
+app.include_router(admin.router)
+app.include_router(chat.router)
+app.include_router(orchestrator.router)
 
 
 def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
@@ -125,7 +99,8 @@ async def _log_requests(
     ordinary quick JSON responses, but draining a streaming route's body_iterator here would
     buffer the *entire* SSE stream before any of it reaches the browser - so those routes are
     explicitly skipped (_STREAMING_RESPONSE_PATHS) and log their own request/response content at
-    the source instead (chat's _chat_sse, orchestrator_agent's _orchestrator_sse)."""
+    the source instead (app/chat/streaming.py's chat_sse, app/agents/orchestrator_agent/streaming.py's
+    orchestrator_sse)."""
 
     debug_enabled = _access_logger.isEnabledFor(logging.DEBUG)
     request_body_bytes = await request.body() if debug_enabled else b""
@@ -135,7 +110,7 @@ async def _log_requests(
     duration_ms = (time.perf_counter() - start) * 1000
 
     user_id: str | None = None
-    access_token = request.cookies.get(_ACCESS_TOKEN_COOKIE)
+    access_token = request.cookies.get(ACCESS_TOKEN_COOKIE)
     if access_token:
         try:
             user_id = decode_access_token(access_token).user_id
@@ -189,171 +164,3 @@ async def _log_requests(
             extra={"request_body": request_body, "response_body": response_body},
         )
     return response
-
-
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
-    response.set_cookie(
-        _ACCESS_TOKEN_COOKIE,
-        access_token,
-        max_age=settings.jwt_access_token_expires_minutes * 60,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        path="/",
-    )
-    # Scoped to /api/auth only - the refresh token doesn't need to (and shouldn't) go out on
-    # every chat/upload request, only to the endpoints that actually use it.
-    response.set_cookie(
-        _REFRESH_TOKEN_COOKIE,
-        refresh_token,
-        max_age=settings.jwt_refresh_token_expires_days * 86400,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        path=_REFRESH_TOKEN_PATH,
-    )
-
-
-def _clear_auth_cookies(response: Response) -> None:
-    response.delete_cookie(_ACCESS_TOKEN_COOKIE, path="/")
-    response.delete_cookie(_REFRESH_TOKEN_COOKIE, path=_REFRESH_TOKEN_PATH)
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.post("/api/auth/register", status_code=201)
-async def register(request: RegisterRequest, response: Response, session: SessionDep) -> UserOut:
-    try:
-        user = await register_user(session, request)
-    except UsernameAlreadyRegistered as exc:
-        raise HTTPException(status_code=409, detail="username already registered") from exc
-    except EmailAlreadyRegistered as exc:
-        raise HTTPException(status_code=409, detail="email already registered") from exc
-    except EmployeeIdAlreadyRegistered as exc:
-        raise HTTPException(status_code=409, detail="employee ID already registered") from exc
-
-    access_token, refresh_token = await issue_tokens(session, user)
-    _set_auth_cookies(response, access_token, refresh_token)
-    return UserOut.model_validate(user)
-
-
-@app.post("/api/auth/login")
-async def login(request: LoginRequest, response: Response, session: SessionDep) -> UserOut:
-    try:
-        user = await authenticate_user(session, request.username, request.password)
-    except InvalidCredentials as exc:
-        raise HTTPException(status_code=401, detail="incorrect username or password") from exc
-
-    access_token, refresh_token = await issue_tokens(session, user)
-    _set_auth_cookies(response, access_token, refresh_token)
-    return UserOut.model_validate(user)
-
-
-@app.post("/api/auth/logout", status_code=204)
-async def logout(
-    response: Response,
-    session: SessionDep,
-    refresh_token: Annotated[str | None, Cookie()] = None,
-) -> None:
-    if refresh_token is not None:
-        await revoke_refresh_token(session, refresh_token)
-    _clear_auth_cookies(response)
-
-
-@app.post("/api/auth/refresh")
-async def refresh(
-    response: Response,
-    session: SessionDep,
-    refresh_token: Annotated[str | None, Cookie()] = None,
-) -> UserOut:
-    if refresh_token is None:
-        raise HTTPException(status_code=401, detail="no refresh token")
-    try:
-        access_token, new_refresh_token = await rotate_refresh_token(session, refresh_token)
-    except InvalidRefreshToken as exc:
-        _clear_auth_cookies(response)
-        raise HTTPException(status_code=401, detail="invalid or expired refresh token") from exc
-
-    payload = decode_access_token(access_token)
-    user = await session.get(User, payload.user_id)
-    assert user is not None  # rotate_refresh_token already checked this user exists and is active
-    _set_auth_cookies(response, access_token, new_refresh_token)
-    return UserOut.model_validate(user)
-
-
-@app.get("/api/auth/me")
-async def me(user: Annotated[User, Depends(get_current_user)]) -> UserOut:
-    return UserOut.model_validate(user)
-
-
-@app.post("/api/uploads")
-async def upload_image(
-    file: Annotated[UploadFile, File()],
-    _user: Annotated[User, Depends(get_current_user)],
-) -> UploadRecord:
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=422, detail="file must be an image")
-    return await save_upload(file)
-
-
-@app.get("/api/uploads/{filename}")
-async def get_upload(
-    filename: str,
-    _user: Annotated[User, Depends(get_current_user)],
-) -> FileResponse:
-    path = resolve_upload_path(filename)
-    if path is None:
-        raise HTTPException(status_code=404, detail="upload not found")
-    return FileResponse(path)
-
-
-@app.post("/api/uploads/xml")
-async def upload_inspection_xml(
-    file: Annotated[UploadFile, File()],
-    _user: Annotated[User, Depends(get_current_user)],
-) -> UploadRecord:
-    """Same storage (app.uploads.service) as image uploads - content-type-agnostic already, so no
-    new storage dir/setting is needed for this. Only consumed by create_case
-    (app/agents/adc_inspection_agent/), and only optionally there."""
-
-    if not (file.filename or "").lower().endswith(".xml"):
-        raise HTTPException(status_code=422, detail="file must be an XML document")
-    return await save_upload(file)
-
-
-@app.post("/api/admin/golden-images", status_code=201)
-async def register_golden_image(
-    board_id: Annotated[str, Form()],
-    component_ref: Annotated[str, Form()],
-    package: Annotated[str, Form()],
-    feature: Annotated[str, Form()],
-    file: Annotated[UploadFile, File()],
-    user: Annotated[User, Depends(get_current_user)],
-    session: SessionDep,
-    notes: Annotated[str | None, Form()] = None,
-) -> GoldenImageOut:
-    """Admin-only: registers one golden reference image, looked up later by
-    app/agents/adc_inspection_agent/golden_images.py's find_golden_image() when a case is flagged
-    for the same board_id/component_ref/package/feature. Minimal by design - a single-image
-    registration endpoint, not a bulk importer or management UI."""
-
-    if UserRole(user.role) != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="admin role required")
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=422, detail="file must be an image")
-
-    golden = await golden_images.save_golden_image(
-        session,
-        file_bytes=await file.read(),
-        filename=file.filename or "golden.png",
-        board_id=board_id,
-        component_ref=component_ref,
-        package=package,
-        feature=feature,
-        notes=notes,
-        registered_by_user_id=user.id,
-    )
-    return GoldenImageOut.model_validate(golden)

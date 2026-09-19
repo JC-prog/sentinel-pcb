@@ -1,19 +1,15 @@
-"""Chat domain routes: the LLM tool-calling conversation loop (POST /api/chat/stream),
-conversation CRUD, and the Explainability & Review Agent's direct-invocation endpoint - grouped
-together because all three share the same tool registry/dispatch machinery
-(tool_registry/call_tool/_run_tool_call), not because they share a URL prefix. Split out of
-app/main.py to keep that file to app-wide concerns (setup, middleware, auth, generic uploads)
-while each domain (chat here, orchestrator_agent's Work tab in
-app/agents/orchestrator_agent/router.py) owns its own routes.
+"""Business logic for the chat tool-calling loop: the tool registry, which tools a role/request
+may see, dispatching a model-requested tool call, and the SSE reply generator itself. Kept
+separate from app/api/chat.py (the thin route layer) so that file stays limited to request
+validation and response shaping - this is where the actual conversation/tool-orchestration
+behavior lives.
 """
 
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from PIL import Image
 
 from app.agents import (
@@ -29,20 +25,14 @@ from app.agents import (
     call_tool,
 )
 from app.agents.access import allowed_tool_names
-from app.agents.explainability_review_agent import (
-    ExplainabilityReviewRequest,
-    ExplainabilityReviewResponse,
-    ExplainabilityReviewTool,
-)
+from app.agents.explainability_review_agent import ExplainabilityReviewTool
 from app.agents.router_agent import Clarify, route
-from app.auth import get_current_user
 from app.auth.dependencies import SessionDep
-from app.chat import ChatStreamRequest, get_chat_service, history
-from app.chat import repository as chat_repository
+from app.chat import get_chat_service, history
 from app.chat.messages import build_messages
-from app.chat.schemas import ConversationDetail, ConversationSummary, LlmProvider, MessageOut
+from app.chat.schemas import LlmProvider
 from app.config.settings import settings
-from app.core.chat import ChatMessage, ConversationNotFound, TextDelta, ToolCallRequest
+from app.core.chat import ChatMessage, TextDelta, ToolCallRequest
 from app.db import Conversation, User, UserRole
 from app.memory import build_memory_preamble, maybe_extract, remember_explicit
 from app.uploads import resolve_upload_path
@@ -51,11 +41,10 @@ _REMEMBER_PREFIX = "/remember "
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
-# app/agents/explainability_review_agent/graph.py's get_mcp_client()).
+# app/agents/explainability_review_agent/graph.py's get_mcp_client()). Exposed to app/api/chat.py
+# for its own direct-invocation explainability-review route.
 tool_registry = ToolRegistry(
     [
         CreateCaseTool(),
@@ -72,7 +61,7 @@ tool_registry = ToolRegistry(
 
 
 # Human-friendly names for the `event: tool_call` SSE frame emitted just before each tool actually
-# runs (see _chat_sse below) - purely cosmetic, for the UI to show "Calling <label>..." while a
+# runs (see chat_sse below) - purely cosmetic, for the UI to show "Calling <label>..." while a
 # tool call is in flight. Falls back to a humanized version of the raw tool name for anything not
 # listed here, so a future tool never goes unlabeled.
 _TOOL_DISPLAY_LABELS: dict[str, str] = {
@@ -143,8 +132,8 @@ async def _run_tool_call(
 
     explainability_review, investigate_case, and the case tools need kwargs the model can't supply
     itself - a real image (and, for explainability_review/investigate_case, the server's OpenAI
-    key) - injected here the same way POST /api/agents/explainability-review already does it by
-    hand."""
+    key) - injected here the same way app/api/chat.py's explainability-review route already does
+    it by hand."""
 
     role = UserRole(user.role)
     if call.name not in allowed_tool_names(role):
@@ -208,7 +197,7 @@ async def _run_tool_call(
         return json.dumps({"error": str(exc)})
 
 
-async def _chat_sse(
+async def chat_sse(
     session: SessionDep,
     conversation: Conversation,
     is_new_conversation: bool,
@@ -225,9 +214,10 @@ async def _chat_sse(
 
     Persists the user's message before streaming starts (durable even if the LLM call fails
     partway) and the assistant's full reply after streaming succeeds - see app/chat/history.py.
-    `conversation` is already resolved/ownership-checked by the caller (chat_stream), since a
-    StreamingResponse commits its 200 status before this generator's first item is even
-    requested - anything that should be able to 404 instead has to happen before this is called.
+    `conversation` is already resolved/ownership-checked by the caller (app/api/chat.py's
+    chat_stream), since a StreamingResponse commits its 200 status before this generator's first
+    item is even requested - anything that should be able to 404 instead has to happen before
+    this is called.
 
     The reply itself may take several tool-call round trips (app/agents/registry.py) before the
     model produces a final answer - see the loop below. Only the final round's text is persisted
@@ -339,113 +329,3 @@ async def _chat_sse(
     await history.maybe_set_title(session, conversation, message)
     await maybe_extract(session, conversation, provider)
     yield "event: done\ndata: {}\n\n"
-
-
-@router.post("/api/chat/stream")
-async def chat_stream(
-    request: ChatStreamRequest,
-    user: Annotated[User, Depends(get_current_user)],
-    session: SessionDep,
-) -> StreamingResponse:
-    if not request.message.strip() and not request.image_ids:
-        raise HTTPException(status_code=422, detail="message must not be empty")
-    if request.provider == "openai" and not settings.openai_api_key:
-        raise HTTPException(
-            status_code=503, detail="OpenAI provider is not configured on this server"
-        )
-
-    try:
-        conversation, is_new_conversation = await history.get_or_create_conversation(
-            session, user.id, request.conversation_id
-        )
-    except ConversationNotFound as exc:
-        raise HTTPException(status_code=404, detail="conversation not found") from exc
-
-    return StreamingResponse(
-        _chat_sse(
-            session,
-            conversation,
-            is_new_conversation,
-            request.provider,
-            request.message,
-            request.image_ids,
-            request.xml_ids,
-            user,
-        ),
-        media_type="text/event-stream",
-    )
-
-
-@router.get("/api/conversations")
-async def list_conversations(
-    user: Annotated[User, Depends(get_current_user)],
-    session: SessionDep,
-) -> list[ConversationSummary]:
-    conversations = await chat_repository.list_conversations_for_user(session, user.id)
-    return [ConversationSummary.model_validate(c) for c in conversations]
-
-
-@router.get("/api/conversations/{conversation_id}")
-async def get_conversation(
-    conversation_id: str,
-    user: Annotated[User, Depends(get_current_user)],
-    session: SessionDep,
-) -> ConversationDetail:
-    conversation = await chat_repository.get_conversation_with_messages(session, conversation_id)
-    if conversation is None or conversation.user_id != user.id:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    return ConversationDetail(
-        id=conversation.id,
-        title=conversation.title,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
-        messages=[MessageOut.model_validate(m) for m in conversation.messages],
-    )
-
-
-@router.delete("/api/conversations/{conversation_id}", status_code=204)
-async def delete_conversation(
-    conversation_id: str,
-    user: Annotated[User, Depends(get_current_user)],
-    session: SessionDep,
-) -> None:
-    conversation = await chat_repository.get_conversation(session, conversation_id)
-    if conversation is None or conversation.user_id != user.id:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    await chat_repository.delete_conversation(session, conversation)
-
-
-@router.post("/api/agents/explainability-review")
-async def explainability_review(
-    request: ExplainabilityReviewRequest,
-    _user: Annotated[User, Depends(get_current_user)],
-) -> ExplainabilityReviewResponse:
-    """Direct invocation of ExplainabilityReviewTool through the same ToolRegistry/call_tool()
-    an LLM-driven tool-calling loop would use later (see DEVELOPMENT.md) - just called by this
-    route instead of by a model deciding to call it."""
-
-    if not settings.explainability_agent_enabled:
-        raise HTTPException(status_code=503, detail="explainability review agent is disabled")
-    if not settings.openai_api_key:
-        raise HTTPException(
-            status_code=503, detail="OpenAI provider is not configured on this server"
-        )
-
-    image_path = resolve_upload_path(request.image_id)
-    if image_path is None:
-        raise HTTPException(status_code=404, detail="image not found")
-    image = Image.open(image_path).convert("RGB")
-
-    result_json = await call_tool(
-        tool_registry,
-        "explainability_review",
-        {
-            "image": image,
-            "image_name": request.image_id,
-            "board_id": request.board_id,
-            "component_ref": request.component_ref,
-            "issue_symptom": request.issue_symptom,
-            "openai_api_key": settings.openai_api_key,
-        },
-    )
-    return ExplainabilityReviewResponse.model_validate_json(result_json)
