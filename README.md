@@ -5,8 +5,9 @@ LLM provider per conversation (a local Ollama model, or OpenAI using a key the s
 configures), user accounts, and both short-term (per-conversation) and long-term
 (cross-conversation) chat memory. The assistant can also call tools mid-conversation - the
 current time, live weather for a named location, and (when you attach an image - via the
-paperclip button or by dragging a file onto the chat window) PCB defect diagnosis via the
-Explainability & Review Agent - deciding on its own when one is actually needed.
+paperclip button or by dragging a file onto the chat window) PCB defect inspection and diagnosis -
+deciding on its own when one is actually needed. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
+for what to type/attach to trigger each capability.
 
 ## Getting started
 
