@@ -21,7 +21,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.router_agent.graph import RouterState, get_pipeline
+from app.config.langfuse import get_langfuse_callbacks
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -59,7 +62,8 @@ async def classify_intent(
     }
 
     pipeline = get_pipeline()
-    final_state = await asyncio.to_thread(pipeline.invoke, initial_state)
+    config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+    final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
 
     if final_state.get("error"):
         logger.warning("Intent router failed, offering every tool: %s", final_state["error"])

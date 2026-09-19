@@ -39,7 +39,7 @@ class _FakePipeline:
     def __init__(self, final_state: PCBInspectionState) -> None:
         self._final_state = final_state
 
-    def invoke(self, _initial_state: PCBInspectionState) -> PCBInspectionState:
+    def invoke(self, _initial_state: PCBInspectionState, **_kwargs: Any) -> PCBInspectionState:
         return self._final_state
 
 
@@ -104,7 +104,7 @@ async def test_run_defaults_issue_symptom_when_omitted(monkeypatch: pytest.Monke
     captured: dict[str, Any] = {}
 
     class _CapturingPipeline:
-        def invoke(self, initial_state: PCBInspectionState) -> PCBInspectionState:
+        def invoke(self, initial_state: PCBInspectionState, **_kwargs: Any) -> PCBInspectionState:
             captured["issue_symptom"] = initial_state["issue_symptom"]
             return _final_state()
 

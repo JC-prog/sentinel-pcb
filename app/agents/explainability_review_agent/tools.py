@@ -21,9 +21,11 @@ import asyncio
 import json
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from PIL import Image
 
 from app.agents.explainability_review_agent.graph import PCBInspectionState, get_pipeline
+from app.config.langfuse import get_langfuse_callbacks
 
 _VALID_DEFECT_CATEGORIES = frozenset(
     {
@@ -97,7 +99,8 @@ class ExplainabilityReviewTool:
         pipeline = get_pipeline(kwargs["openai_api_key"])
         # pipeline.invoke() and the OpenAI SDK calls inside it are blocking - run off the event
         # loop rather than stalling every other in-flight request.
-        final_state = await asyncio.to_thread(pipeline.invoke, initial_state)
+        config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+        final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
         return _format_result(final_state)
 
 
@@ -178,7 +181,8 @@ class InvestigateCaseTool:
         }
 
         pipeline = get_pipeline(kwargs["openai_api_key"])
-        final_state = await asyncio.to_thread(pipeline.invoke, initial_state)
+        config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+        final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
         result = json.loads(_format_result(final_state))
         result["case_number"] = case.case_number
         return json.dumps(result)

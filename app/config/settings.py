@@ -180,5 +180,23 @@ class Settings(BaseSettings):
     intent_router_enabled: bool = True
     intent_router_confidence_threshold: float = 0.6
 
+    # LangFuse (infra/development/docker-compose.yml's "langfuse" profile) - self-hosted LLM
+    # observability/tracing for the LangGraph pipelines only (app/agents/{time_agent,
+    # weather_agent,router_agent,explainability_review_agent,adc_inspection_agent}) - see
+    # app/config/langfuse.py. Deliberately not wired into the raw (non-LangChain) OpenAI() calls
+    # in router_agent/graph.py, weather_agent/graph.py, explainability_review_agent/models.py, or
+    # app/chat/providers/openai.py's raw httpx streaming path. Kill switch, default False (unlike
+    # the "on by default" feature switches above) since this is optional tooling, not something a
+    # fresh dev environment needs working out of the box; get_langfuse_callbacks() also treats a
+    # blank key as "not configured" and returns no callbacks even when this is True, so a
+    # half-configured .env never raises.
+    langfuse_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    # Bare local dev (uv run uvicorn ...) reaches langfuse-web's published host port directly;
+    # the containerized `app` service overrides this to http://langfuse-web:3000 (that file's own
+    # `environment:` block), same pattern as openai_base_url/qdrant_url above.
+    langfuse_host: str = "http://localhost:3000"
+
 
 settings = Settings()

@@ -95,7 +95,7 @@ class _FakePipeline:
     def __init__(self, overrides: dict[str, Any]) -> None:
         self._overrides = overrides
 
-    def invoke(self, initial_state: PCBInspectionState) -> dict[str, Any]:
+    def invoke(self, initial_state: PCBInspectionState, **_kwargs: Any) -> dict[str, Any]:
         merged: dict[str, Any] = dict(initial_state)
         merged.update(self._overrides)
         return merged
@@ -163,7 +163,7 @@ async def test_investigate_case_resolves_attached_inspection_xml(
     captured: dict[str, Any] = {}
 
     class _CapturingPipeline:
-        def invoke(self, initial_state: PCBInspectionState) -> dict[str, Any]:
+        def invoke(self, initial_state: PCBInspectionState, **_kwargs: Any) -> dict[str, Any]:
             captured["inspection_xml_bytes"] = initial_state["inspection_xml_bytes"]
             merged: dict[str, Any] = dict(initial_state)
             merged.update(_final_state_overrides())

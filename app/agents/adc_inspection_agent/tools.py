@@ -22,6 +22,7 @@ from app.agents.adc_inspection_agent.repository import (
     resolve_case,
 )
 from app.agents.adc_inspection_agent.workflow_state import OrchestratorState
+from app.config.langfuse import get_langfuse_callbacks
 from app.db.models import CaseStatus
 
 # A generous ceiling on LangGraph super-steps for one run of the plan/policy loop (graph.py) -
@@ -128,7 +129,11 @@ class CreateCaseTool:
 
         pipeline = build_graph(kwargs["session"])
         final_state = await pipeline.ainvoke(
-            initial_state, config={"recursion_limit": _RECURSION_LIMIT}
+            initial_state,
+            config={
+                "recursion_limit": _RECURSION_LIMIT,
+                "callbacks": get_langfuse_callbacks(),
+            },
         )
 
         if not final_state.get("case_persisted"):
