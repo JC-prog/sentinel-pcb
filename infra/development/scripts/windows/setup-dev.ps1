@@ -3,6 +3,12 @@
 # Usage: powershell -File infra\development\scripts\windows\setup-dev.ps1
 
 $ErrorActionPreference = "Stop"
+# PowerShell 7.3+ treats any stderr line from a native command as an error by default, which -
+# combined with "Stop" above - would abort this script on a harmless warning (e.g. Docker
+# Desktop/WSL2's "No blkio throttle.read_bps_device support") even though the command itself
+# exited 0. Every native call below already checks $LASTEXITCODE for real failures, so disable
+# this. No-op on Windows PowerShell 5.1, which doesn't have this variable.
+$PSNativeCommandUseErrorActionPreference = $false
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")
 Set-Location $RootDir
