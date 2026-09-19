@@ -77,9 +77,7 @@ async def test_classify_intent_falls_back_to_not_routed_on_llm_failure(
 
     decision = await classify_intent("anything", has_image=False, candidate_tools=_TOOLS)
 
-    assert decision.target_tool is None
-    assert decision.confidence == 1.0
-    assert decision.clarifying_question is None
+    assert decision is None
 
 
 async def test_classify_intent_skips_the_llm_when_no_candidates(
@@ -93,8 +91,7 @@ async def test_classify_intent_skips_the_llm_when_no_candidates(
 
     decision = await classify_intent("anything", has_image=False, candidate_tools=[])
 
-    assert decision.target_tool is None
-    assert decision.confidence == 1.0
+    assert decision is None
 
 
 async def test_classify_intent_skips_the_llm_when_no_key_configured(
@@ -109,8 +106,7 @@ async def test_classify_intent_skips_the_llm_when_no_key_configured(
 
     decision = await classify_intent("anything", has_image=False, candidate_tools=_TOOLS)
 
-    assert decision.target_tool is None
-    assert decision.confidence == 1.0
+    assert decision is None
 
 
 # route() is the policy layer built on top of classify_intent() - these tests mock
@@ -119,8 +115,10 @@ async def test_classify_intent_skips_the_llm_when_no_key_configured(
 # policy itself, independent of app/main.py or the HTTP layer.
 
 
-def _mock_decision(monkeypatch: pytest.MonkeyPatch, decision: RouterDecision) -> None:
-    async def _fake_classify_intent(message: str, *, has_image: bool, candidate_tools: object) -> RouterDecision:
+def _mock_decision(monkeypatch: pytest.MonkeyPatch, decision: RouterDecision | None) -> None:
+    async def _fake_classify_intent(
+        message: str, *, has_image: bool, candidate_tools: object
+    ) -> RouterDecision | None:
         return decision
 
     monkeypatch.setattr(router_agent, "classify_intent", _fake_classify_intent)
@@ -145,6 +143,21 @@ async def test_route_proceeds_unrestricted_when_no_candidates(monkeypatch: pytes
     outcome = await route("anything", has_image=False, candidate_tools=[])
 
     assert outcome == Proceed([])
+
+
+async def test_route_proceeds_unrestricted_when_classify_intent_could_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression this guards: classify_intent() returning None (no key, no candidates, or
+    an upstream failure) used to be indistinguishable from a genuine high-confidence "no tool
+    needed" RouterDecision, so route() cleared every tool instead of falling back to offering
+    them all - see classify_intent()'s docstring."""
+
+    _mock_decision(monkeypatch, None)
+
+    outcome = await route("classify this board", has_image=True, candidate_tools=_TOOLS)
+
+    assert outcome == Proceed(_TOOLS)
 
 
 async def test_route_clarifies_below_the_confidence_threshold(monkeypatch: pytest.MonkeyPatch) -> None:

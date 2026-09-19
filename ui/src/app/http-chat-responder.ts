@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 import { AuthService } from './auth.service';
-import { ChatResponder } from './chat-responder';
+import { ChatResponder, ChatResponderEvent } from './chat-responder';
 import { SettingsService } from './settings.service';
 
 interface SseFrame {
@@ -44,12 +44,32 @@ export class HttpChatResponder implements ChatResponder {
     return body.id;
   }
 
-  respond(conversationId: string, message: string, images: File[]): Observable<string> {
-    return new Observable<string>((subscriber) => {
+  private async uploadXml(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/uploads/xml`,
+      { method: 'POST', body: formData },
+    );
+    if (!response.ok) {
+      throw new Error(`XML upload failed: ${response.status}`);
+    }
+    const body: { id: string } = await response.json();
+    return body.id;
+  }
+
+  respond(
+    conversationId: string,
+    message: string,
+    images: File[],
+    xmlFiles: File[] = [],
+  ): Observable<ChatResponderEvent> {
+    return new Observable<ChatResponderEvent>((subscriber) => {
       const controller = new AbortController();
 
       (async () => {
         const imageIds = await Promise.all(images.map((file) => this.uploadImage(file)));
+        const xmlIds = await Promise.all(xmlFiles.map((file) => this.uploadXml(file)));
 
         const provider = this.settings.provider();
         const response = await this.authService.fetchWithAuth(
@@ -61,6 +81,7 @@ export class HttpChatResponder implements ChatResponder {
               conversation_id: conversationId,
               message,
               image_ids: imageIds,
+              xml_ids: xmlIds,
               provider,
             }),
             signal: controller.signal,
@@ -85,7 +106,9 @@ export class HttpChatResponder implements ChatResponder {
             buffer = buffer.slice(separatorIndex + 2);
 
             if (frame.event === 'delta') {
-              subscriber.next(String(frame.data['text']));
+              subscriber.next({ type: 'delta', text: String(frame.data['text']) });
+            } else if (frame.event === 'tool_call') {
+              subscriber.next({ type: 'toolCall', label: String(frame.data['label']) });
             } else if (frame.event === 'error') {
               throw new Error(String(frame.data['message'] ?? 'Chat stream error'));
             } else if (frame.event === 'done') {

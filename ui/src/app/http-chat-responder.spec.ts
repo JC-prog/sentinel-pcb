@@ -39,7 +39,7 @@ describe('HttpChatResponder', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits one value per delta frame, in order, then completes', async () => {
+  it('emits one delta event per delta frame, in order, then completes', async () => {
     const body =
       'event: delta\ndata: {"text":"Hel"}\n\n' +
       'event: delta\ndata: {"text":"lo"}\n\n' +
@@ -50,7 +50,27 @@ describe('HttpChatResponder', () => {
       new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
     );
 
-    expect(chunks).toEqual(['Hel', 'lo']);
+    expect(chunks).toEqual([
+      { type: 'delta', text: 'Hel' },
+      { type: 'delta', text: 'lo' },
+    ]);
+  });
+
+  it('emits a toolCall event for a tool_call frame', async () => {
+    const body =
+      'event: tool_call\ndata: {"name":"create_case","label":"Orchestrator Agent"}\n\n' +
+      'event: delta\ndata: {"text":"Done."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([
+      { type: 'toolCall', label: 'Orchestrator Agent' },
+      { type: 'delta', text: 'Done.' },
+    ]);
   });
 
   it('errors the observable when the stream sends an error frame', async () => {
@@ -88,6 +108,44 @@ describe('HttpChatResponder', () => {
     );
     const requestBody = JSON.parse(chatCall![1].body);
     expect(requestBody.image_ids).toEqual(['img-1']);
+  });
+
+  it('uploads each XML file before opening the chat stream', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/api/uploads/xml')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 'xml-1', url: '/api/uploads/xml-1.xml' }),
+        } as Response);
+      }
+      return Promise.resolve(sseResponse('event: done\ndata: {}\n\n'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService)
+        .respond('c1', 'see attached', [], [file])
+        .pipe(toArray()),
+    );
+
+    const chatCall = fetchMock.mock.calls.find((call: unknown[]) =>
+      (call[0] as string).endsWith('/api/chat/stream'),
+    );
+    const requestBody = JSON.parse(chatCall![1].body);
+    expect(requestBody.xml_ids).toEqual(['xml-1']);
+  });
+
+  it('sends an empty xml_ids array when no XML is attached', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.xml_ids).toEqual([]);
   });
 
   it('defaults to the ollama provider', async () => {

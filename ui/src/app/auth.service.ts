@@ -2,7 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { environment } from '../environments/environment';
 
-export type UserRole = 'qa' | 'operator' | 'admin';
+export type UserRole = 'qa' | 'admin';
 
 export interface AuthUser {
   id: string;

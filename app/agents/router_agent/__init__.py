@@ -2,9 +2,12 @@
 
 - classify_intent() is the low-level primitive: it runs the one-node LangGraph pipeline
   (graph.py) off the event loop (its OpenAI call is blocking) and turns any failure - no OpenAI
-  key, nothing to route among, an upstream error - into a RouterDecision that means "couldn't
-  route, proceed unrestricted" rather than raising. It knows nothing about confidence thresholds
-  or what a caller should *do* with a decision.
+  key, nothing to route among, an upstream error - into None rather than raising, so route() can
+  tell "couldn't route, proceed unrestricted" apart from a genuine, confident "no tool needed"
+  decision (which is a real RouterDecision with target_tool=None) - the two used to collapse into
+  the same shape, which meant a broken/unconfigured router silently stripped every tool from the
+  request instead of falling back to offering them all. It knows nothing about confidence
+  thresholds or what a caller should *do* with a decision.
 - route() is the policy layer: it calls classify_intent() and applies
   settings.intent_router_confidence_threshold - either Clarify (stop the turn, show this
   question) or Proceed (continue with the tool list narrowed to the router's pick, or
@@ -33,18 +36,17 @@ class RouterDecision:
     clarifying_question: str | None
 
 
-_NOT_ROUTED = RouterDecision(target_tool=None, confidence=1.0, clarifying_question=None)
-
-
 async def classify_intent(
     message: str, *, has_image: bool, candidate_tools: list[dict[str, Any]]
-) -> RouterDecision:
-    """High confidence + no clarifying_question means "proceed as if routing were off" - used
-    both when routing genuinely isn't needed (nothing to route among) and when it couldn't run at
-    all (no OpenAI key, upstream failure)."""
+) -> RouterDecision | None:
+    """None means "couldn't classify - proceed as if routing were off" - routing genuinely isn't
+    needed (nothing to route among), couldn't run at all (no OpenAI key), or the call itself
+    failed (upstream error). Distinct from a real RouterDecision with target_tool=None, which
+    means the LLM was actually asked and confidently decided no tool applies - only that case
+    should clear the tool list; these should leave it untouched."""
 
     if not candidate_tools or not settings.openai_api_key:
-        return _NOT_ROUTED
+        return None
 
     initial_state: RouterState = {
         "message": message,
@@ -61,7 +63,7 @@ async def classify_intent(
 
     if final_state.get("error"):
         logger.warning("Intent router failed, offering every tool: %s", final_state["error"])
-        return _NOT_ROUTED
+        return None
 
     return RouterDecision(
         target_tool=final_state["target_tool"],
@@ -103,6 +105,8 @@ async def route(
     decision = await classify_intent(
         message, has_image=has_image, candidate_tools=candidate_tools
     )
+    if decision is None:
+        return Proceed(candidate_tools)
 
     if decision.confidence < settings.intent_router_confidence_threshold:
         return Clarify(decision.clarifying_question or _DEFAULT_CLARIFYING_QUESTION)

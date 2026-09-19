@@ -8,10 +8,11 @@ import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import async_session_factory, engine
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +87,16 @@ def client(db_session: None) -> Generator[TestClient, None, None]:
         yield test_client
 
 
+@pytest_asyncio.fixture
+async def db_async_session(db_session: None) -> AsyncGenerator[AsyncSession, None]:
+    """A real AsyncSession against the same schema/truncation lifecycle as `client` - for tests
+    that call repository/agent functions directly (app/agents/adc_inspection_agent/) rather than
+    through the HTTP API, since those take a session as a parameter."""
+
+    async with async_session_factory() as session:
+        yield session
+
+
 _REGISTER_PAYLOAD = {
     "username": "test-qa",
     "email": "qa@example.com",
@@ -107,12 +118,12 @@ def authenticated_client(client: TestClient) -> TestClient:
 
 
 _OTHER_REGISTER_PAYLOAD = {
-    "username": "other-operator",
-    "email": "operator@example.com",
+    "username": "other-qa",
+    "email": "other-qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-002",
-    "department_shift": "Operator Day Shift",
-    "role": "operator",
+    "department_shift": "QA Night Shift",
+    "role": "qa",
 }
 
 
@@ -120,11 +131,42 @@ _OTHER_REGISTER_PAYLOAD = {
 def other_authenticated_client(db_session: None) -> Generator[TestClient, None, None]:
     """A second authenticated user with its own TestClient/cookie jar, for cross-user isolation
     tests (chat/conversation scoping) - a distinct instance from `client`/`authenticated_client`
-    so the two sessions don't share cookies."""
+    so the two sessions don't share cookies.
+
+    Registers with role "qa", but that only sticks if a user already exists in this test's DB -
+    app/auth/service.py auto-promotes the *first* registered user to ADMIN regardless of requested
+    role. Request `authenticated_client` in the same test (it doesn't need to be used) to
+    guarantee this one lands second and keeps its requested role."""
 
     from app.main import app
 
     with TestClient(app) as test_client:
         response = test_client.post("/api/auth/register", json=_OTHER_REGISTER_PAYLOAD)
+        assert response.status_code == 201, response.text
+        yield test_client
+
+
+_QA_REGISTER_PAYLOAD = {
+    "username": "second-qa",
+    "email": "second-qa@example.com",
+    "password": "correct-horse-battery-staple",
+    "employee_id": "EMP-003",
+    "department_shift": "QA Day Shift",
+    "role": "qa",
+}
+
+
+@pytest.fixture
+def qa_authenticated_client(
+    authenticated_client: TestClient,
+) -> Generator[TestClient, None, None]:
+    """A QA-role user, registered second (via the `authenticated_client` dependency, which
+    consumes the "first user becomes admin" slot - see other_authenticated_client's docstring) so
+    it actually keeps the "qa" role it requests."""
+
+    from app.main import app
+
+    with TestClient(app) as test_client:
+        response = test_client.post("/api/auth/register", json=_QA_REGISTER_PAYLOAD)
         assert response.status_code == 201, response.text
         yield test_client
