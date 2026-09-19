@@ -1,109 +1,206 @@
-<div class="mx-auto flex h-full w-full max-w-4xl flex-col gap-6 overflow-y-auto p-6 pt-16">
+<div
+  class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 pt-16 pb-10">
   <div>
-    <h1 class="text-lg font-semibold">Agentic ADC – LLM Planning + Deterministic Policy + Two-Stage Inference</h1>
-    <p class="text-sm text-slate-500 dark:text-slate-400">
-      ADC Inputs → Workflow State → LLM Planner → Observation / Constraint / Decision / Reason
-      → Policy Engine → Tool Execution → State Update → Re-plan
+    <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">Automated Defect Classification</h1>
+    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+      Upload a dataset and let the planner prepare, verify, and classify it end to end - or run
+      each step on its own.
     </p>
   </div>
 
-  <section class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-    <h2 class="mb-3 text-sm font-semibold">Input Selection</h2>
-    <div class="flex flex-col gap-3">
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Dataset CSV</span>
-        <input type="file" accept=".csv" (change)="onDatasetFileChange($event)" class="text-sm" />
+  <section class="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
+    <h2 class="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Inputs</h2>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <!-- Dataset CSV -->
+      <div>
+        <input #datasetInput type="file" accept=".csv" hidden (change)="onDatasetFileChange($event)" />
         @if (datasetFile(); as file) {
-          <span class="text-xs text-slate-500 dark:text-slate-400">{{ file.name }}</span>
+          <div
+            class="flex h-full flex-col justify-between rounded-xl border border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-lg leading-none">📊</span>
+              <button
+                type="button"
+                class="rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                aria-label="Remove dataset CSV"
+                (click)="removeDatasetFile(datasetInput)"
+              >
+                ✕
+              </button>
+            </div>
+            <p class="truncate text-sm font-medium">{{ file.name }}</p>
+          </div>
+        } @else {
+          <button
+            type="button"
+            class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 p-4 text-center hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            (click)="datasetInput.click()"
+          >
+            <span class="text-lg leading-none">📊</span>
+            <span class="text-sm font-medium">Dataset CSV</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Required</span>
+          </button>
         }
-      </label>
+      </div>
 
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Inspection XML</span>
-        <input type="file" accept=".xml" (change)="onXmlFileChange($event)" class="text-sm" />
+      <!-- Inspection XML -->
+      <div>
+        <input #xmlInput type="file" accept=".xml" hidden (change)="onXmlFileChange($event)" />
         @if (xmlFile(); as file) {
-          <span class="text-xs text-slate-500 dark:text-slate-400">{{ file.name }}</span>
+          <div
+            class="flex h-full flex-col justify-between rounded-xl border border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-lg leading-none">📄</span>
+              <button
+                type="button"
+                class="rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                aria-label="Remove inspection XML"
+                (click)="removeXmlFile(xmlInput)"
+              >
+                ✕
+              </button>
+            </div>
+            <p class="truncate text-sm font-medium">{{ file.name }}</p>
+          </div>
+        } @else {
+          <button
+            type="button"
+            class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 p-4 text-center hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            (click)="xmlInput.click()"
+          >
+            <span class="text-lg leading-none">📄</span>
+            <span class="text-sm font-medium">Inspection XML</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Required</span>
+          </button>
         }
-      </label>
+      </div>
 
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Image Folder (Optional)</span>
-        <input type="file" webkitdirectory multiple (change)="onImageRootFilesChange($event)" class="text-sm" />
-        @if (imageRootFiles().length) {
-          <span class="text-xs text-slate-500 dark:text-slate-400">
-            {{ imageRootFiles().length }} file(s) selected
-          </span>
+      <!-- Image root folder -->
+      <div>
+        <input
+          #imageRootInput
+          type="file"
+          webkitdirectory
+          multiple
+          hidden
+          (change)="onImageRootFilesChange($event)"
+        />
+        @if (imageRootSummary(); as summary) {
+          <div
+            class="flex h-full flex-col justify-between rounded-xl border border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-lg leading-none">🗂️</span>
+              <button
+                type="button"
+                class="rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                aria-label="Remove image folder"
+                (click)="removeImageRootFiles(imageRootInput)"
+              >
+                ✕
+              </button>
+            </div>
+            <p class="truncate text-sm font-medium">{{ summary }}</p>
+          </div>
+        } @else {
+          <button
+            type="button"
+            class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 p-4 text-center hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            (click)="imageRootInput.click()"
+          >
+            <span class="text-lg leading-none">🗂️</span>
+            <span class="text-sm font-medium">Image folder</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Optional</span>
+          </button>
         }
-      </label>
-      <p class="text-xs text-slate-500 dark:text-slate-400">
-        Image Folder remaps paths below the original "usi" root, e.g. ...\usi\35-... → the folder you pick here.
-      </p>
+      </div>
     </div>
+    <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+      Image folder remaps paths below the original "usi" root, e.g. ...\usi\35-... → the folder you pick here.
+    </p>
   </section>
 
-  <section class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-    <h2 class="mb-3 text-sm font-semibold">Policy + LLM Planner</h2>
-    <div class="grid grid-cols-2 gap-4">
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Feature confidence threshold</span>
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.05"
-          class="w-28 rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-          [ngModel]="featureThreshold()"
-          (ngModelChange)="featureThreshold.set($event)"
-          name="featureThreshold"
-        />
-      </label>
+  <section class="rounded-2xl border border-slate-200 dark:border-slate-800">
+    <button
+      type="button"
+      class="flex w-full items-center justify-between gap-2 p-5 text-left"
+      (click)="toggleAdvanced()"
+      [attr.aria-expanded]="showAdvanced()"
+    >
+      <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">
+        Advanced: confidence thresholds &amp; LLM planner
+      </span>
+      <span class="text-slate-400 transition-transform" [class.rotate-180]="showAdvanced()">⌄</span>
+    </button>
+    @if (showAdvanced()) {
+      <div class="grid grid-cols-1 gap-4 px-5 pb-5 sm:grid-cols-2">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="font-medium">Feature confidence threshold</span>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            class="w-28 rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="featureThreshold()"
+            (ngModelChange)="featureThreshold.set($event)"
+            name="featureThreshold"
+          />
+        </label>
 
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Defect confidence threshold</span>
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.05"
-          class="w-28 rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-          [ngModel]="defectThreshold()"
-          (ngModelChange)="defectThreshold.set($event)"
-          name="defectThreshold"
-        />
-      </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="font-medium">Defect confidence threshold</span>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            class="w-28 rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="defectThreshold()"
+            (ngModelChange)="defectThreshold.set($event)"
+            name="defectThreshold"
+          />
+        </label>
 
-      <label class="col-span-2 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          [ngModel]="useLlm()"
-          (ngModelChange)="useLlm.set($event)"
-          name="useLlm"
-        />
-        Use real LLM Planner
-      </label>
+        <label class="col-span-full flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-slate-900 dark:accent-slate-100"
+            [ngModel]="useLlm()"
+            (ngModelChange)="useLlm.set($event)"
+            name="useLlm"
+          />
+          Use real LLM planner
+        </label>
 
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">OpenAI model</span>
-        <input
-          type="text"
-          placeholder="gpt-5.6-luna"
-          class="w-full rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-          [ngModel]="llmModel()"
-          (ngModelChange)="llmModel.set($event)"
-          name="llmModel"
-        />
-      </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="font-medium">OpenAI model</span>
+          <input
+            type="text"
+            placeholder="gpt-5.6-luna"
+            class="w-full rounded-lg border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="llmModel()"
+            (ngModelChange)="llmModel.set($event)"
+            name="llmModel"
+          />
+        </label>
 
-      <label class="col-span-2 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          [ngModel]="llmFallback()"
-          (ngModelChange)="llmFallback.set($event)"
-          name="llmFallback"
-        />
-        Fallback to deterministic planner if LLM call fails
-      </label>
-    </div>
+        <label class="col-span-full flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-slate-900 dark:accent-slate-100"
+            [ngModel]="llmFallback()"
+            (ngModelChange)="llmFallback.set($event)"
+            name="llmFallback"
+          />
+          Fall back to the deterministic planner if the LLM call fails
+        </label>
+      </div>
+    }
   </section>
 
   @if (uploadError()) {
@@ -116,84 +213,132 @@
     <button
       type="button"
       [disabled]="!canRun()"
-      (click)="prepare()"
-      class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+      (click)="runFull()"
+      class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
     >
-      1. Prepare
+      {{ workService.running() ? 'Running…' : 'Run agentic workflow' }}
     </button>
     <button
       type="button"
       [disabled]="!canRun()"
       (click)="prepareAndVerify()"
-      class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+      class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
     >
-      2. Prepare + Verify
+      Prepare + verify only
     </button>
     <button
       type="button"
       [disabled]="!canRun()"
-      (click)="runFull()"
-      class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+      (click)="prepare()"
+      class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
     >
-      3. Run Agentic Workflow
+      Prepare only
     </button>
-    <button
-      type="button"
-      (click)="clearLog()"
-      class="ml-auto rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-    >
-      Clear Log
-    </button>
+    @if (hasRun()) {
+      <button
+        type="button"
+        (click)="clearLog()"
+        class="ml-auto rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+      >
+        Clear log
+      </button>
+    }
   </div>
 
-  <section class="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-    <h2 class="mb-3 text-sm font-semibold">Workflow Summary</h2>
-    <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-      <p><span class="text-slate-500 dark:text-slate-400">Status:</span> <span class="font-semibold">{{ workService.status().status }}</span></p>
-      <p><span class="text-slate-500 dark:text-slate-400">Input:</span> {{ workService.status().input_samples }}</p>
-      <p><span class="text-slate-500 dark:text-slate-400">Prep Ready:</span> {{ workService.status().preparation_ready }}</p>
-      <p><span class="text-slate-500 dark:text-slate-400">Verified:</span> {{ workService.status().verification_passed }}</p>
-      <p><span class="text-slate-500 dark:text-slate-400">Inference:</span> {{ workService.status().inference_attempted }}</p>
-      <p><span class="text-slate-500 dark:text-slate-400">Accepted:</span> {{ workService.status().accepted }}</p>
-      <p><span class="text-slate-500 dark:text-slate-400">Review:</span> {{ workService.status().review_required }}</p>
-    </div>
-  </section>
-
-  <section class="flex min-h-64 flex-1 flex-col rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-    <div class="mb-3 flex items-center justify-between">
-      <h2 class="text-sm font-semibold">Execution Log / Planner History / Results</h2>
-      @if (resultJson()) {
-        <button
-          type="button"
-          (click)="downloadResult()"
-          class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-        >
-          Download result.json
-        </button>
-      }
-    </div>
-    <div class="flex-1 overflow-y-auto rounded-lg bg-slate-50 p-3 font-mono text-xs whitespace-pre-wrap dark:bg-slate-900">
-      @for (entry of workService.log(); track $index) {
-        @if (entry.kind === 'log') {
-          <p class="mb-2">{{ entry.text }}</p>
-        } @else if (entry.kind === 'plan_step') {
-          <p class="mb-2 border-l-2 border-cyan-500 pl-2">
-            #{{ entry.step.plan_version }} [{{ entry.step.planner_source }}] {{ entry.step.decision }}
-            — {{ entry.step.reason }}
-            @if (entry.step.policy && !entry.step.policy.allowed) {
-              <span class="text-rose-500"> (policy rejected: {{ entry.step.policy.reason }})</span>
-            }
+  @if (hasRun()) {
+    <section class="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
+      <h2 class="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Workflow summary</h2>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Status</p>
+          <span
+            class="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
+            [class]="statusBadgeClasses(workService.status().status)"
+          >
+            {{ workService.status().status }}
+          </span>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Input samples</p>
+          <p class="text-xl font-semibold">{{ workService.status().input_samples }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Prep ready</p>
+          <p class="text-xl font-semibold">{{ workService.status().preparation_ready }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Verified</p>
+          <p class="text-xl font-semibold">{{ workService.status().verification_passed }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Inference</p>
+          <p class="text-xl font-semibold">{{ workService.status().inference_attempted }}</p>
+        </div>
+        <div class="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950">
+          <p class="text-xs text-emerald-700 dark:text-emerald-300">Accepted</p>
+          <p class="text-xl font-semibold text-emerald-700 dark:text-emerald-300">
+            {{ workService.status().accepted }}
           </p>
-        } @else {
-          <p class="mb-2 text-rose-500">{{ entry.message }}</p>
+        </div>
+        <div class="rounded-xl bg-amber-50 p-3 dark:bg-amber-950">
+          <p class="text-xs text-amber-700 dark:text-amber-300">Review required</p>
+          <p class="text-xl font-semibold text-amber-700 dark:text-amber-300">
+            {{ workService.status().review_required }}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex min-h-64 flex-1 flex-col rounded-2xl border border-slate-200 dark:border-slate-800">
+      <div class="flex items-center justify-between gap-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Execution log</h2>
+          @if (workService.running()) {
+            <span class="flex h-2 w-2 animate-pulse rounded-full bg-cyan-500" aria-hidden="true"></span>
+          }
+        </div>
+        @if (resultJson()) {
+          <button
+            type="button"
+            (click)="downloadResult()"
+            class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            Download result.json
+          </button>
         }
-      }
-      @if (workService.log().length === 0) {
-        <p class="text-slate-400 dark:text-slate-500">
-          State → Planner → Policy → Tool → State Update → Re-plan. Enable "Use real LLM Planner" to make the
-          next-action decision through OpenAI.
-        </p>
-      }
+      </div>
+      <div class="flex-1 space-y-2 overflow-y-auto p-4 text-sm">
+        @for (entry of workService.log(); track $index) {
+          @if (entry.kind === 'log') {
+            <p class="rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+              {{ entry.text }}
+            </p>
+          } @else if (entry.kind === 'plan_step') {
+            <div class="rounded-lg border-l-2 border-cyan-500 bg-cyan-50/50 px-3 py-2 dark:bg-cyan-950/20">
+              <p class="text-xs font-medium text-cyan-700 dark:text-cyan-300">
+                Step {{ entry.step.plan_version }} · {{ entry.step.decision }}
+                <span class="font-normal text-slate-400">({{ entry.step.planner_source }})</span>
+              </p>
+              <p class="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{{ entry.step.reason }}</p>
+              @if (entry.step.policy && !entry.step.policy.allowed) {
+                <p class="mt-0.5 text-xs text-rose-500">Policy rejected: {{ entry.step.policy.reason }}</p>
+              }
+            </div>
+          } @else {
+            <p class="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+              {{ entry.message }}
+            </p>
+          }
+        }
+      </div>
+    </section>
+  } @else {
+    <div class="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-center">
+      <span class="text-2xl" aria-hidden="true">🔬</span>
+      <p class="text-sm text-slate-500 dark:text-slate-400">
+        Add a dataset and inspection XML above, then run a step to see live progress here.
+      </p>
     </div>
-  </section>
+  }
+  </div>
 </div>

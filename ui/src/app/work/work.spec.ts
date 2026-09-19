@@ -66,7 +66,7 @@ describe('Work', () => {
 
   function runButton(): HTMLButtonElement {
     return Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Run Agentic Workflow'),
+      (btn as HTMLButtonElement).textContent?.includes('Run agentic workflow'),
     ) as HTMLButtonElement;
   }
 
@@ -113,13 +113,22 @@ describe('Work', () => {
   });
 
   it('clear log delegates to the work service only, no upload/run call', () => {
+    // The Clear log button only renders once there's something to clear.
+    fake.log.set([{ kind: 'log', text: 'hello' }]);
+    fixture.detectChanges();
+
     const clearButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Clear Log'),
+      (btn as HTMLButtonElement).textContent?.includes('Clear log'),
     ) as HTMLButtonElement;
 
     clearButton.click();
 
     expect(fake.clearLog).toHaveBeenCalled();
     expect(fake.run).not.toHaveBeenCalled();
+  });
+
+  it('shows the idle empty state before any run has started', () => {
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('run a step to see live progress');
   });
 });

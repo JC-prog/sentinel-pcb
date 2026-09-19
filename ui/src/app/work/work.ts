@@ -3,6 +3,20 @@ import { FormsModule } from '@angular/forms';
 import { OrchestratorRunMode } from '../models/orchestrator.models';
 import { WorkService } from '../work.service';
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
 /** The Work tab: a web recreation of orchestrator-agent/adc_agentic_project's tkinter
  * ADCApplication (ui.py) - dataset/XML/image-root inputs, policy + LLM planner controls, the
  * three run buttons, a live Workflow Summary, and an Execution Log. Never reachable from the Chat
@@ -24,12 +38,25 @@ export class Work {
   protected readonly llmModel = signal('');
   protected readonly llmFallback = signal(true);
 
+  protected readonly showAdvanced = signal(false);
+
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
 
   protected readonly canRun: Signal<boolean> = computed(
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
+
+  protected readonly hasRun: Signal<boolean> = computed(() => this.workService.log().length > 0);
+
+  protected readonly imageRootSummary: Signal<string | null> = computed(() => {
+    const files = this.imageRootFiles();
+    if (files.length === 0) {
+      return null;
+    }
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    return `${files.length} file${files.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`;
+  });
 
   protected readonly resultJson: Signal<string | null> = computed(() => {
     const result = this.workService.result();
@@ -49,6 +76,40 @@ export class Work {
   onImageRootFilesChange(event: Event): void {
     const files = (event.target as HTMLInputElement).files;
     this.imageRootFiles.set(files ? Array.from(files) : []);
+  }
+
+  removeDatasetFile(input: HTMLInputElement): void {
+    this.datasetFile.set(null);
+    input.value = '';
+  }
+
+  removeXmlFile(input: HTMLInputElement): void {
+    this.xmlFile.set(null);
+    input.value = '';
+  }
+
+  removeImageRootFiles(input: HTMLInputElement): void {
+    this.imageRootFiles.set([]);
+    input.value = '';
+  }
+
+  toggleAdvanced(): void {
+    this.showAdvanced.update((value) => !value);
+  }
+
+  statusBadgeClasses(status: string): string {
+    switch (status) {
+      case 'RUNNING':
+        return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300';
+      case 'COMPLETED':
+        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300';
+      case 'REVIEW_REQUIRED':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
+      case 'ABORTED':
+        return 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300';
+      default:
+        return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+    }
   }
 
   async prepare(): Promise<void> {
@@ -78,7 +139,10 @@ export class Work {
     link.href = url;
     link.download = 'result.json';
     link.click();
-    URL.revokeObjectURL(url);
+    // Revoking on the same tick races the browser actually starting the download - some
+    // browsers haven't read the blob yet, so the save can silently fail or produce a truncated
+    // file. Deferring a tick gives the download a chance to begin first.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   private async runMode(mode: OrchestratorRunMode): Promise<void> {
