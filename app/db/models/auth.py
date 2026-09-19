@@ -11,13 +11,15 @@ from app.db.base import Base
 
 
 class UserRole(StrEnum):
-    """Stored as a plain string column, not a native Postgres enum, so adding a role later is a
-    code change, not a schema migration. QA is the primary user of this app; Operator and Admin
-    are the other two roles this manufacturing site's workflow needs - see DEVELOPMENT.md.
+    """Stored as a plain string column, not a native Postgres enum, so adding or removing a role
+    is a code change, not a schema migration (as this one was, when Operator/Engineer were folded
+    into QA/Admin). QA is the one operating the app day to day (inspecting, reviewing, flagging);
+    Admin is a superset of QA plus configuration-only actions (registering golden images,
+    infra/monitoring visibility) - see DEVELOPMENT.md and app/agents/access.py for what each role
+    can actually call.
     """
 
     QA = "qa"
-    OPERATOR = "operator"
     ADMIN = "admin"
 
 
