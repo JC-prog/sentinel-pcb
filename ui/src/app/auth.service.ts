@@ -60,11 +60,23 @@ export class AuthService {
 
   constructor(private readonly router: Router) {}
 
+  /**
+   * Failures here must never leave currentUser stuck at `undefined` - authGuard awaits this
+   * exact call to decide whether to redirect to /login, and an unhandled rejection propagating
+   * out of an async CanActivateFn makes the router silently cancel navigation instead of
+   * redirecting, so the page can appear to just hang. A thrown fetch (backend unreachable - e.g.
+   * still starting up on a fresh `docker compose up`, or a dropped connection) is treated the
+   * same as "not logged in": there's no session to trust either way.
+   */
   async fetchCurrentUser(): Promise<void> {
-    const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`, {
-      credentials: 'include',
-    });
-    this.currentUser.set(response.ok ? toAuthUser(await response.json()) : null);
+    try {
+      const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`, {
+        credentials: 'include',
+      });
+      this.currentUser.set(response.ok ? toAuthUser(await response.json()) : null);
+    } catch {
+      this.currentUser.set(null);
+    }
   }
 
   async register(input: RegisterInput): Promise<void> {

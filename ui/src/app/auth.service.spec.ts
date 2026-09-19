@@ -54,6 +54,16 @@ describe('AuthService', () => {
     expect(service.currentUser()).toBeNull();
   });
 
+  it('fetchCurrentUser sets null (not left undefined) when the backend is unreachable', async () => {
+    // A thrown fetch (e.g. the backend still starting up on a fresh setup) must resolve
+    // currentUser one way or the other - authGuard awaits this to decide whether to redirect to
+    // /login, and leaving it undefined (or letting the rejection propagate) makes the guard's
+    // promise reject instead of producing a redirect, so navigation just silently cancels.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(service.fetchCurrentUser()).resolves.toBeUndefined();
+    expect(service.currentUser()).toBeNull();
+  });
+
   it('login sets the current user and throws with the server message on failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(USER_BODY)));
     await service.login('jane-qa', 'correct-horse-battery-staple');
