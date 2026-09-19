@@ -64,6 +64,54 @@ describe('AuthService', () => {
     expect(service.currentUser()).toBeNull();
   });
 
+  it('register throws with the server message on a plain-string conflict error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ detail: 'username already registered' }, false, 409)),
+    );
+
+    await expect(
+      service.register({
+        username: 'jane-qa',
+        email: 'jane@example.com',
+        password: 'correct-horse-battery-staple',
+        employeeId: 'EMP-042',
+        departmentShift: 'QA Day Shift',
+        role: 'qa',
+      }),
+    ).rejects.toThrow('username already registered');
+  });
+
+  it('register throws a readable message (not "[object Object]") on a validation error', async () => {
+    // FastAPI/Pydantic's own 422 shape: detail is a list of {loc, msg, type}, not a string - see
+    // formatErrorDetail's docstring for why this needs special handling.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            detail: [
+              { loc: ['body', 'email'], msg: 'value is not a valid email address', type: 'value_error' },
+            ],
+          },
+          false,
+          422,
+        ),
+      ),
+    );
+
+    await expect(
+      service.register({
+        username: 'jane-qa',
+        email: 'not-an-email',
+        password: 'correct-horse-battery-staple',
+        employeeId: 'EMP-042',
+        departmentShift: 'QA Day Shift',
+        role: 'qa',
+      }),
+    ).rejects.toThrow('value is not a valid email address');
+  });
+
   it('login sets the current user and throws with the server message on failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(USER_BODY)));
     await service.login('jane-qa', 'correct-horse-battery-staple');
