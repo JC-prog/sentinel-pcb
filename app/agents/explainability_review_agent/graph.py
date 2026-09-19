@@ -80,8 +80,17 @@ class PCBInspectionState(TypedDict):
     board_id: str
     component_ref: str
     issue_symptom: str
+    # None when no inspection XML is available (a bare chat upload) - mcp_client.get_measurements()
+    # falls back to its hardcoded mock in that case. package/feature narrow the XML feature match
+    # the same way they do for adc_inspection_agent's validate_measurements node.
+    inspection_xml_bytes: bytes | None
+    package: str | None
+    feature: str | None
     historical_context: str
     reference_standards: str
+    # The raw ranked list search_historical() returns, not just historical_context's folded
+    # string - lets the outer chat LLM answer "which case is similar to this?" with specifics.
+    similar_cases: list[dict[str, Any]]
     visual_bounding_boxes: list[dict[str, Any]]
     visual_description: str
     measurements: dict[str, Any]
@@ -140,6 +149,51 @@ Output strictly as a valid JSON object:
 """
 
 
+def _heuristic_self_check(state: PCBInspectionState) -> dict[str, Any]:
+    """Ported from pcb_agentic_inspector's Agent 2 _heuristic_self_check - a deterministic,
+    physics-based fallback used when the LLM reasoning call fails (registry.reasoning_llm.query()
+    raises). Reads the same flat telemetry keys mcp_client.get_measurements() always produces
+    regardless of which of its two sources (real XML or the hardcoded mock) supplied them, so this
+    works the same way whether or not an inspection XML was attached."""
+
+    measurements = state.get("measurements") or {}
+    laser_height = measurements.get("laser_profile_height_um")
+    overhang = measurements.get("side_overhang_percent")
+
+    if isinstance(laser_height, int | float) and laser_height < 5.0:
+        return {
+            "defect_category": "missing part",
+            "explanation": (
+                f"Heuristic fallback (LLM reasoning unavailable): laser profile height "
+                f"({laser_height}um) is near zero, consistent with a missing or fully detached "
+                "component."
+            ),
+            "confidence_score": 0.6,
+            "self_check_passed": True,
+        }
+
+    if isinstance(overhang, int | float) and overhang > 50.0:
+        return {
+            "defect_category": "shifted",
+            "explanation": (
+                f"Heuristic fallback (LLM reasoning unavailable): side overhang ({overhang}%) "
+                "exceeds 50% of component width, consistent with a shifted placement."
+            ),
+            "confidence_score": 0.6,
+            "self_check_passed": True,
+        }
+
+    return {
+        "defect_category": "unknown",
+        "explanation": (
+            "Heuristic fallback (LLM reasoning unavailable): no measurement clearly indicates a "
+            "specific defect category."
+        ),
+        "confidence_score": 0.3,
+        "self_check_passed": False,
+    }
+
+
 def _format_similar_cases(similar: list[dict[str, Any]]) -> str:
     if not similar:
         return "No visually similar historical cases found in Qdrant."
@@ -160,12 +214,13 @@ def build_graph(
     called once per pipeline invocation since `registry` carries a request-scoped OpenAI key."""
 
     def tool1_context_retrieval_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 1: Calls MCP client for Qdrant search & IPC standards."""
+        """Tool 1: Calls MCP client for a real Qdrant embedding similarity search & IPC standards."""
         logger.info("Tool 1 [MCP]: Gathering Context for %s", state["component_ref"])
         errors = state.get("errors", [])
         try:
-            similar_cases = mcp_client.search_historical(state["component_ref"])
+            similar_cases = mcp_client.search_historical(state["image"], state["component_ref"])
             standards_data = mcp_client.get_standards(state["component_ref"])
+            state["similar_cases"] = similar_cases
             state["historical_context"] = _format_similar_cases(similar_cases)
             state["reference_standards"] = standards_data.get(
                 "standard_id", "Standard not defined."
@@ -192,34 +247,49 @@ def build_graph(
         return state
 
     def tool3_measurement_evidence_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 3: Retrieves ICT & 3D AOI telemetry, falling back to mcp_client.get_measurements."""
+        """Tool 3: Retrieves ICT & 3D AOI telemetry. A case's own attached inspection XML (real
+        measurements) takes priority over the pre-generated telemetry_by_image.json lookup table,
+        which in turn takes priority over mcp_client.get_measurements()'s hardcoded mock."""
         logger.info("Tool 3: Gathering Electrical & Laser Height Telemetry")
         errors = state.get("errors", [])
         telemetry = None
+        board_id = state.get("board_id")
+        comp_ref = state.get("component_ref")
 
         try:
-            db = _get_telemetry_database()
-            image_name = state.get("image_name")
-            board_id = state.get("board_id")
-            comp_ref = state.get("component_ref")
+            if state.get("inspection_xml_bytes") is not None:
+                telemetry = mcp_client.get_measurements(
+                    board_id,
+                    comp_ref,
+                    inspection_xml_bytes=state["inspection_xml_bytes"],
+                    package=state.get("package"),
+                    feature=state.get("feature"),
+                )
+                logger.info("Matched telemetry via attached inspection XML.")
+            else:
+                db = _get_telemetry_database()
+                image_name = state.get("image_name")
 
-            if image_name and image_name in db:
-                telemetry = db[image_name]
-                logger.info("Matched telemetry via image_name: %s", image_name)
-            elif db:
-                for item in db.values():
-                    if item.get("board_id") == board_id and item.get("component_ref") == comp_ref:
-                        telemetry = item
-                        logger.info(
-                            "Matched telemetry via board_id (%s) & comp_ref (%s)",
-                            board_id,
-                            comp_ref,
-                        )
-                        break
+                if image_name and image_name in db:
+                    telemetry = db[image_name]
+                    logger.info("Matched telemetry via image_name: %s", image_name)
+                elif db:
+                    for item in db.values():
+                        if (
+                            item.get("board_id") == board_id
+                            and item.get("component_ref") == comp_ref
+                        ):
+                            telemetry = item
+                            logger.info(
+                                "Matched telemetry via board_id (%s) & comp_ref (%s)",
+                                board_id,
+                                comp_ref,
+                            )
+                            break
 
-            if not telemetry:
-                logger.warning("No pre-generated record found. Falling back to mcp_client.")
-                telemetry = mcp_client.get_measurements(board_id, comp_ref)
+                if not telemetry:
+                    logger.warning("No pre-generated record found. Falling back to mcp_client.")
+                    telemetry = mcp_client.get_measurements(board_id, comp_ref)
 
             state["measurements"] = telemetry
         except Exception as exc:
@@ -274,11 +344,14 @@ def build_graph(
             state["grounding_confidence"] = float(response_data.get("confidence_score", 0.0))
             state["self_check_passed"] = bool(response_data.get("self_check_passed", False))
         except Exception as exc:
-            logger.exception("Reasoning failed.")
+            logger.exception("Reasoning failed - falling back to the heuristic self-check.")
             errors.append(f"ReasoningGrounding: {exc}")
-            state["final_defect_category"] = "unknown"
+            fallback = _heuristic_self_check(state)
+            state["final_defect_category"] = fallback["defect_category"]
             state["defect_location"] = None
-            state["self_check_passed"] = False
+            state["final_diagnosis_text"] = fallback["explanation"]
+            state["grounding_confidence"] = fallback["confidence_score"]
+            state["self_check_passed"] = fallback["self_check_passed"]
 
         state["errors"] = errors
         return state

@@ -55,7 +55,7 @@ def _mock_pipeline_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
             return state  # type: ignore[return-value]
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tool.get_pipeline",
+        "app.agents.explainability_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(),
     )
 
@@ -120,5 +120,6 @@ def test_happy_path(authenticated_client: TestClient, monkeypatch: pytest.Monkey
         "explanation": "Looks fine.",
         "confidence_score": 0.95,
         "self_check_passed": True,
+        "similar_cases": [],
         "errors": [],
     }
