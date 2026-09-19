@@ -4,6 +4,7 @@ infra/development/docker-compose.yml up -d db`) and skip cleanly if it's unreach
 
 from collections.abc import AsyncGenerator, Generator
 
+import asyncpg  # type: ignore[import-untyped]
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -65,6 +66,23 @@ async def db_session() -> AsyncGenerator[None, None]:
         pytest.skip(
             f"Postgres not reachable at settings.database_url ({exc!r}) - start it via "
             "`docker compose -f infra/development/docker-compose.yml up -d db`"
+        )
+    except asyncpg.exceptions.InvalidAuthorizationSpecificationError as exc:
+        # Distinct from "not reachable" above: Postgres is up and responding, it's just
+        # rejecting these credentials - almost always a "db" volume that was initialized by an
+        # earlier run with different values than the current .env/docker-compose.yml (setup-dev
+        # scripts self-heal this on a fresh run, but do nothing for a volume that already went
+        # stale under a developer who's just running pytest directly). SQLAlchemy doesn't wrap
+        # this as OperationalError, so it needs its own branch - left uncaught, this fails every
+        # single DB-backed test individually with the same cryptic traceback instead of stopping
+        # the whole run once with the actual fix.
+        pytest.exit(
+            f"Postgres rejected settings.database_url's credentials ({exc!r}) - its \"db\" "
+            "volume most likely predates the current credentials. Reset it:\n"
+            "    docker compose -f infra/development/docker-compose.yml --env-file .env down -v\n"
+            "    docker compose -f infra/development/docker-compose.yml --env-file .env "
+            "up -d --wait db qdrant litellm",
+            returncode=1,
         )
 
     yield
