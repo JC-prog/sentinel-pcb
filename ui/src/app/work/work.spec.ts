@@ -66,7 +66,7 @@ describe('Work', () => {
 
   function runButton(): HTMLButtonElement {
     return Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Run agentic workflow'),
+      (btn as HTMLButtonElement).textContent?.includes('Run Agentic Workflow'),
     ) as HTMLButtonElement;
   }
 
@@ -113,12 +113,10 @@ describe('Work', () => {
   });
 
   it('clear log delegates to the work service only, no upload/run call', () => {
-    // The Clear log button only renders once there's something to clear.
-    fake.log.set([{ kind: 'log', text: 'hello' }]);
-    fixture.detectChanges();
-
+    // Unlike the run buttons, Clear Log is always available - matches the tkinter source app,
+    // where it wasn't gated on anything having run yet either.
     const clearButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Clear log'),
+      (btn as HTMLButtonElement).textContent?.includes('Clear Log'),
     ) as HTMLButtonElement;
 
     clearButton.click();
@@ -129,6 +127,17 @@ describe('Work', () => {
 
   it('shows the idle empty state before any run has started', () => {
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).toContain('run a step to see live progress');
+    expect(text).toContain('State → Planner → Policy → Tool → State Update → Re-plan');
+  });
+
+  it('defaults the output filename to result.json and uses it for the download label/name', () => {
+    fake.result.set({ status: 'PREPARATION_COMPLETED' });
+    fixture.detectChanges();
+
+    const downloadButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
+      (btn as HTMLButtonElement).textContent?.includes('Download'),
+    ) as HTMLButtonElement;
+
+    expect(downloadButton.textContent).toContain('Download result.json');
   });
 });
