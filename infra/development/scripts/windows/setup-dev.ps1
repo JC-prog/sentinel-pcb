@@ -59,6 +59,30 @@ Write-Host "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose
 docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# pg_isready (what --wait's healthcheck uses above) only confirms Postgres is accepting
+# connections, not that these specific credentials work - a "db" volume left over from an
+# earlier run (different credentials, or a same-named volume from an unrelated project on this
+# machine) reports healthy, but every real connection then fails with
+# asyncpg.exceptions.InvalidPasswordError, and every DB-backed test with it. Checking via `docker
+# compose exec` would give a false pass here - this image's pg_hba.conf trusts any connection
+# that looks like it originates from the container's own loopback interface, so a check run
+# *inside* the container never actually exercises password auth. Connect the exact way the app
+# does instead: asyncpg, over TCP, from the host, through the published port.
+# The volume name below follows Compose's <project>_<name> convention for this file's own
+# `name: sentinelchat` + the "sentinelchat-db-data" volume key - if either changes, update this.
+Write-Host "==> Verifying Postgres credentials"
+uv run python -c "
+import asyncio, asyncpg
+asyncio.run(asyncpg.connect('postgresql://sentinelchat:sentinelchat@localhost:5433/sentinelchat', timeout=5))
+" > $null 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "    Existing Postgres data doesn't match these credentials - resetting its volume."
+    docker compose -f infra/development/docker-compose.yml --env-file .env rm -sf db
+    docker volume rm sentinelchat_sentinelchat-db-data > $null 2>&1
+    docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 Write-Host "==> Checking for Ollama (http://localhost:11434) - optional"
 try {
     Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:11434" -TimeoutSec 2 | Out-Null
