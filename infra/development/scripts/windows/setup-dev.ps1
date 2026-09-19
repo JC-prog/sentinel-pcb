@@ -3,11 +3,17 @@
 # Usage: powershell -File infra\development\scripts\windows\setup-dev.ps1
 
 $ErrorActionPreference = "Stop"
-# PowerShell 7.3+ treats any stderr line from a native command as an error by default, which -
-# combined with "Stop" above - would abort this script on a harmless warning (e.g. Docker
-# Desktop/WSL2's "No blkio throttle.read_bps_device support") even though the command itself
-# exited 0. Every native call below already checks $LASTEXITCODE for real failures, so disable
-# this. No-op on Windows PowerShell 5.1, which doesn't have this variable.
+# Two separate PowerShell behaviors would otherwise abort this script on a harmless stderr
+# warning (e.g. Docker Desktop/WSL2's "No blkio throttle.read_bps_device support") even though
+# the command itself exited 0:
+# 1. Redirecting a native command's stderr with 2>&1 merges it into the success stream, which
+#    wraps each line as an ErrorRecord - combined with "Stop" above, that becomes a terminating
+#    error. Every such redirect below uses 2>$null instead (send stderr straight to null, no
+#    merge) specifically to avoid this.
+# 2. PowerShell 7.3+ separately treats a native command's non-zero exit code as an error by
+#    default, subject to $ErrorActionPreference too. Every native call below already checks
+#    $LASTEXITCODE itself for real failures, so this is disabled - a no-op on Windows PowerShell
+#    5.1, which doesn't have this variable.
 $PSNativeCommandUseErrorActionPreference = $false
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")
@@ -48,7 +54,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: docker not found. Install Docker Desktop for Windows: https://docs.docker.com/desktop/install/windows-install/"
     exit 1
 }
-docker info > $null 2>&1
+docker info > $null 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Docker daemon is not running."
     Write-Host "       Start Docker Desktop and wait for it to finish starting, then retry."
@@ -74,11 +80,11 @@ Write-Host "==> Verifying Postgres credentials"
 uv run python -c "
 import asyncio, asyncpg
 asyncio.run(asyncpg.connect('postgresql://sentinelchat:sentinelchat@localhost:5433/sentinelchat', timeout=5))
-" > $null 2>&1
+" > $null 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "    Existing Postgres data doesn't match these credentials - resetting its volume."
     docker compose -f infra/development/docker-compose.yml --env-file .env rm -sf db
-    docker volume rm sentinelchat_sentinelchat-db-data > $null 2>&1
+    docker volume rm sentinelchat_sentinelchat-db-data > $null 2>$null
     docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
