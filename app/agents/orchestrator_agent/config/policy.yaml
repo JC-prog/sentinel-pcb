@@ -1,0 +1,13 @@
+# Ported for parity from orchestrator-agent/adc_agentic_project's config/policy.yaml. Not wired
+# up to any code here, same as in the source project - thresholds/alignment pixels are passed as
+# constructor/request arguments instead (see orchestrator.py, OrchestratorRunRequest in
+# schemas.py). Kept as documentation of the intended policy, not active configuration.
+policy:
+  require_all_samples_verified: false
+  feature_confidence_threshold: 0.70
+  defect_confidence_threshold: 0.70
+  require_feature_agreement: false
+  alignment:
+    enabled: true
+    warning_shift_pixels: 12
+    fail_shift_pixels: 35
