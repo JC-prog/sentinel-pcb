@@ -2,21 +2,17 @@
 #
 # Usage: powershell -File infra\development\scripts\windows\setup-dev.ps1
 
-$ErrorActionPreference = "Stop"
-# Two separate PowerShell behaviors would otherwise abort this script on a harmless stderr
-# warning (e.g. Docker Desktop/WSL2's "No blkio throttle.read_bps_device support") even though
-# the command itself exited 0:
-# 1. Redirecting a native command's stderr with 2>&1 merges it into the success stream, which
-#    wraps each line as an ErrorRecord - combined with "Stop" above, that becomes a terminating
-#    error. Every such redirect below uses 2>$null instead (send stderr straight to null, no
-#    merge) specifically to avoid this.
-# 2. PowerShell 7.3+ separately treats a native command's non-zero exit code as an error by
-#    default, subject to $ErrorActionPreference too. Every native call below already checks
-#    $LASTEXITCODE itself for real failures, so this is disabled - a no-op on Windows PowerShell
-#    5.1, which doesn't have this variable.
-$PSNativeCommandUseErrorActionPreference = $false
+# Deliberately NOT "Stop": PowerShell surfaces a native command's stderr output as an error
+# regardless of how (or whether) that stream is redirected - 2>&1, 2>$null, tried both - so
+# $ErrorActionPreference = "Stop" turns any harmless warning a tool prints (e.g. Docker
+# Desktop/WSL2's "No blkio throttle.read_bps_device support") into a script-terminating
+# exception, even though the command itself exits 0. Every native command below already checks
+# $LASTEXITCODE for real failures, which is the correct way to detect those - so this script
+# relies on that instead of PowerShell's exception-based error handling for native commands. The
+# handful of cmdlets that should still hard-stop on failure pass -ErrorAction Stop explicitly.
+$ErrorActionPreference = "Continue"
 
-$RootDir = Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")
+$RootDir = Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..") -ErrorAction Stop
 Set-Location $RootDir
 
 Write-Host "==> Backend: installing Python dependencies (uv sync)"
@@ -30,20 +26,21 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (-not (Test-Path ".env")) {
     Write-Host "==> Creating .env from .env.example"
-    Copy-Item ".env.example" ".env"
+    Copy-Item ".env.example" ".env" -ErrorAction Stop
 } else {
     Write-Host "==> .env already exists, leaving it alone"
 }
 
 # Fill in a JWT_SECRET_KEY if it's still blank - the app refuses to issue usable tokens without
 # one, and there's no reason to make every developer do this by hand.
-if (Select-String -Path ".env" -Pattern '^JWT_SECRET_KEY=$' -Quiet) {
+if (Select-String -Path ".env" -Pattern '^JWT_SECRET_KEY=$' -Quiet -ErrorAction Stop) {
     Write-Host "==> Generating JWT_SECRET_KEY in .env"
     $secret = (uv run python -c "import secrets; print(secrets.token_hex(32))").Trim()
-    (Get-Content ".env") -replace '^JWT_SECRET_KEY=$', "JWT_SECRET_KEY=$secret" | Set-Content ".env"
+    (Get-Content ".env" -ErrorAction Stop) -replace '^JWT_SECRET_KEY=$', "JWT_SECRET_KEY=$secret" |
+        Set-Content ".env" -ErrorAction Stop
 }
 
-if (Select-String -Path ".env" -Pattern '^LITELLM_OPENAI_API_KEY=$' -Quiet) {
+if (Select-String -Path ".env" -Pattern '^LITELLM_OPENAI_API_KEY=$' -Quiet -ErrorAction Stop) {
     Write-Host "    Note: put your own OpenAI key in LITELLM_OPENAI_API_KEY in .env for the OpenAI"
     Write-Host "    features - only your local LiteLLM proxy container sees it. Ollama-only? Leave"
     Write-Host "    it blank. Using a shared team proxy instead? See infra/litellm/README.md."
