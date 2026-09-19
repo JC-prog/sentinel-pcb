@@ -29,6 +29,7 @@ async def test_classify_intent_picks_a_confident_tool(monkeypatch: pytest.Monkey
 
     decision = await classify_intent("what's the weather in Tokyo?", has_image=False, candidate_tools=_TOOLS)
 
+    assert decision is not None
     assert decision.target_tool == "get_weather"
     assert decision.confidence == 0.95
     assert decision.clarifying_question is None
@@ -49,6 +50,7 @@ async def test_classify_intent_asks_for_clarification_when_ambiguous(
 
     decision = await classify_intent("tell me about Tokyo", has_image=False, candidate_tools=_TOOLS)
 
+    assert decision is not None
     assert decision.confidence < settings.intent_router_confidence_threshold
     assert decision.clarifying_question == "Do you want the weather or the current time?"
 
@@ -64,6 +66,7 @@ async def test_classify_intent_rejects_a_hallucinated_tool_name(
 
     decision = await classify_intent("do something", has_image=False, candidate_tools=_TOOLS)
 
+    assert decision is not None
     assert decision.target_tool is None
 
 
