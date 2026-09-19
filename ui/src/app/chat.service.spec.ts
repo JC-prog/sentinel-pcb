@@ -108,8 +108,8 @@ describe('ChatService', () => {
     const id = streamingService.send(null, 'check this board', []);
     expect(streamingService.toolCallLabel(id)()).toBeNull();
 
-    chunks.next({ type: 'toolCall', label: 'Orchestrator Agent' });
-    expect(streamingService.toolCallLabel(id)()).toBe('Orchestrator Agent');
+    chunks.next({ type: 'toolCall', label: 'ADC Inspection Agent' });
+    expect(streamingService.toolCallLabel(id)()).toBe('ADC Inspection Agent');
 
     chunks.next({ type: 'delta', text: 'Logged as CASE-000001.' });
     expect(streamingService.toolCallLabel(id)()).toBeNull();
