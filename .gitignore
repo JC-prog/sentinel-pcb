@@ -18,6 +18,10 @@ __pycache__/
 # Uploaded chat images (app.settings.chat_upload_dir) - runtime data, not source.
 /data/uploads/
 
+# Work tab uploads (dataset CSVs, inspection XMLs, image-root folders - settings.orchestrator_data_dir)
+# - runtime data, not source. Deliberately its own directory, not shared with /data/uploads/ above.
+/data/orchestrator/
+
 # Rotating log files (settings.log_to_file / settings.log_dir) - runtime output, not source.
 /data/logs/
 
