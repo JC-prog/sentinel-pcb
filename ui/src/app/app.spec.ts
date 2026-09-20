@@ -26,6 +26,7 @@ describe('App', () => {
           { path: 'login', component: StubComponent },
           { path: 'register', component: StubComponent },
           { path: 'work', component: StubComponent },
+          { path: 'models', component: StubComponent },
         ]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
         { provide: BackendStatusService, useValue: backendStatusStub },
@@ -54,6 +55,17 @@ describe('App', () => {
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('app-sidebar')).toBeFalsy();
+  });
+
+  it('hides the chat sidebar on the Models tab, but keeps the mode toggle', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/models');
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('app-sidebar')).toBeFalsy();
+    expect(compiled.querySelector('app-mode-toggle')).toBeTruthy();
   });
 
   it('hides the sidebar on the register route', async () => {

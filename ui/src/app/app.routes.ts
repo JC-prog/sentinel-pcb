@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './auth.guard';
 import { Chat } from './chat/chat';
 import { Login } from './login/login';
+import { Models } from './models/models';
 import { Register } from './register/register';
 import { Work } from './work/work';
 
@@ -16,4 +17,5 @@ export const routes: Routes = [
   { path: 'chat', component: Chat, canActivate: [authGuard] },
   { path: 'c/:id', component: Chat, canActivate: [authGuard] },
   { path: 'work', component: Work, canActivate: [authGuard] },
+  { path: 'models', component: Models, canActivate: [authGuard] },
 ];
