@@ -43,7 +43,7 @@ async def orchestrator_upload_xml(
     file: Annotated[UploadFile, File()],
     user: Annotated[User, Depends(get_current_user)],
 ) -> OrchestratorUploadRecord:
-    """Separate from POST /api/uploads/xml, which is only for create_case - keeps the two agents'
+    """Separate from POST /api/uploads/xml, which is only for inspect_image - keeps the two agents'
     upload domains decoupled."""
 
     if not settings.orchestrator_agent_enabled:

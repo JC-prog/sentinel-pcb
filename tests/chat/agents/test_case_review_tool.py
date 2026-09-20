@@ -2,9 +2,9 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.adc_inspection_agent import ListCasesTool, ReviewCaseTool
-from app.chat.agents.adc_inspection_agent.repository import create_case
+from app.chat.agents.case_agent import ListCasesTool, ReviewCaseTool
 from app.chat.db.models import Case, Conversation
+from app.chat.services.cases import create_case
 from app.shared.db.models import User, UserRole
 
 

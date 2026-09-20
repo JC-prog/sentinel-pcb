@@ -12,12 +12,19 @@ from app.shared.db.models import UserRole
 TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "current_time": frozenset(UserRole),
     "get_weather": frozenset(UserRole),
-    "create_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "inspect_image": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "get_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "review_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "find_similar_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "explainability_review": frozenset({UserRole.QA, UserRole.ADMIN}),
     "investigate_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "flag_case_for_retraining": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "report_model_drift": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "get_drift_summary": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Drafting only queues a plan as pending approval; approving it (and promoting a retrained
+    # model) are Admin-only actions in the Models tab, never chat tools.
+    "draft_retraining_plan": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Admin-only, not QA - infra/monitoring visibility is a configuration concern, not a QA
     # day-to-day action (unlike flag_case_for_retraining, which lives in the same agent folder but
     # is a QA judgment call about a specific case).

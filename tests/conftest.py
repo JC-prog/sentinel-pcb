@@ -113,7 +113,7 @@ def client(db_session: None) -> Generator[TestClient, None, None]:
 @pytest_asyncio.fixture
 async def db_async_session(db_session: None) -> AsyncGenerator[AsyncSession, None]:
     """A real AsyncSession against the same schema/truncation lifecycle as `client` - for tests
-    that call repository/agent functions directly (app/chat/agents/adc_inspection_agent/) rather than
+    that call repository/agent functions directly (app/chat/agents/inspection_agent/) rather than
     through the HTTP API, since those take a session as a parameter."""
 
     async with async_session_factory() as session:

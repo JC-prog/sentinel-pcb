@@ -3,10 +3,10 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.adc_inspection_agent.repository import create_case
-from app.chat.agents.monitoring_agent.tool import FlagCaseForRetrainingTool
-from app.chat.db.models import Conversation, RetrainingTicket
-from app.shared.db.models import User, UserRole
+from app.chat.agents.monitoring_agent import FlagCaseForRetrainingTool
+from app.chat.db.models import Conversation
+from app.chat.services.cases import create_case
+from app.shared.db.models import RetrainingTicket, User, UserRole
 
 
 async def _make_user(session: AsyncSession) -> User:

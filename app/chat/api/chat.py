@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 
 from app.chat.agents import call_tool
-from app.chat.agents.case_review_agent import (
+from app.chat.agents.case_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
 )

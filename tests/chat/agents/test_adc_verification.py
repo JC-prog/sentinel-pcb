@@ -2,7 +2,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from app.chat.agents.adc_inspection_agent.verification import estimate_translation, image_quality
+from app.chat.agents.inspection_agent.verification import estimate_translation, image_quality
 
 
 def _png_bytes(size: tuple[int, int] = (64, 64), color: tuple[int, int, int] = (120, 130, 140)) -> bytes:

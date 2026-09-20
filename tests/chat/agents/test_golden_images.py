@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.adc_inspection_agent.golden_images import find_golden_image, save_golden_image
+from app.chat.agents.inspection_agent.golden_images import find_golden_image, save_golden_image
 from app.shared.db.models import User, UserRole
 
 
