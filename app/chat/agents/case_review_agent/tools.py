@@ -1,7 +1,7 @@
 """ExplainabilityReviewTool wraps the ported LangGraph pipeline (graph.py) behind the app's Tool
 protocol (app/chat/core/tools.py), so it's invoked through app/chat/agents/registry.py's
 ToolRegistry/call_tool() the same way any future tool would be - even though today it's also
-called directly by a route (POST /api/agents/explainability-review in app/main.py) and, in-process,
+called directly by a route (POST /api/agents/explainability-review in app/chat/api/chat.py) and, in-process,
 by app/chat/agents/adc_inspection_agent/graph.py's escalate_review node.
 
 InvestigateCaseTool is the same pipeline, entered from a case number instead of a raw image_id -
@@ -11,7 +11,7 @@ directly rather than having main.py resolve an upload id in advance the way ever
 the id it needs lives in a DB row this tool must query first, not in the request. Deliberate,
 first-of-its-kind exception to that pattern, not one to copy elsewhere without the same reason.
 
-`parameters` describes each tool's public, LLM-facing surface - the caller (app/main.py's
+`parameters` describes each tool's public, LLM-facing surface - the caller (app/chat/services/streaming.py's
 _run_tool_call) is responsible for resolving image ids to actual PIL.Image objects and for
 supplying openai_api_key/session before calling run(), neither of which should ever be something
 an LLM is prompted to supply itself.

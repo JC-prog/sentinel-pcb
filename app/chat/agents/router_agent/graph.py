@@ -1,6 +1,6 @@
 """A one-node LangGraph pipeline for the intent router: given the user's message and the tools
 currently on offer (app/chat/agents/registry.py's ToolRegistry.specs(), already filtered by
-app/main.py's _available_tool_specs), ask the LLM to either pick the single best-matching tool
+app/chat/services/streaming.py's _available_tool_specs), ask the LLM to either pick the single best-matching tool
 (or `null` for "no tool needed, this is just conversation") with a confidence score, or supply a
 clarifying question when nothing is a confident fit.
 
@@ -13,7 +13,7 @@ real step here.
 
 Never raises: any failure (bad JSON, no key, upstream error) becomes state["error"], which the
 caller treats as "couldn't route - fall back to offering every tool with no clarification" (see
-app/main.py), same fail-open stance as every other kill-switchable agent.
+app/chat/services/streaming.py), same fail-open stance as every other kill-switchable agent.
 """
 
 import json

@@ -110,7 +110,7 @@ async def remember_explicit(
     fact: str,
     provider: LlmProvider,
 ) -> str:
-    """Backs the `/remember <text>` escape hatch (app/main.py) - stores fact verbatim, bypassing
+    """Backs the `/remember <text>` escape hatch (app/chat/services/streaming.py) - stores fact verbatim, bypassing
     the LLM-extraction heuristic, for when a user wants a guaranteed memory rather than hoping
     the implicit extraction picks it up."""
 
@@ -136,7 +136,7 @@ async def remember_explicit(
 
 
 async def build_memory_preamble(user_id: str, query_text: str, provider: LlmProvider) -> str | None:
-    """Only called for a brand-new conversation (app/main.py) - retrieval is scoped solely by
+    """Only called for a brand-new conversation (app/chat/services/streaming.py) - retrieval is scoped solely by
     user_id, never by conversation, since surfacing facts from OTHER conversations is the entire
     point of long-term memory. Never raises - a broken retrieval should degrade to "no memory
     this time", not break the chat request."""

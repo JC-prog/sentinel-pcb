@@ -2,7 +2,7 @@
 dataset plan/policy/inference workflow (agents/orchestrator.py). Deliberately NOT a chat Tool -
 this package is never imported by app/chat/agents/__init__.py, app/chat/agents/registry.py, or
 app/chat/agents/access.py, so it is structurally unreachable from the chat tool-calling loop. It is
-invoked only via the dedicated /api/orchestrator/* routes in app/main.py.
+invoked only via the dedicated /api/orchestrator/* routes in app/workflow/api/orchestrator.py.
 
 Distinct from app/chat/agents/adc_inspection_agent/ (whose internal state type is named
 OrchestratorState) - that agent runs one image at a time from chat; this one runs a whole CSV

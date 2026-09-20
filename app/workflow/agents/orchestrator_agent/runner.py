@@ -1,5 +1,5 @@
 """Dispatches one Work-tab run (a "prepare", "prepare_verify", or "run_full" mode - mirroring the
-source project's three tkinter buttons) to an async event stream that app/main.py's
+source project's three tkinter buttons) to an async event stream that app/workflow/api/orchestrator.py's
 /api/orchestrator/run/stream route turns into SSE frames.
 
 "prepare" and "prepare_verify" call the dataset services directly (there's no planner/policy loop

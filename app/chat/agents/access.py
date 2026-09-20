@@ -1,4 +1,4 @@
-"""Which chat tools each UserRole may call - enforced in app/main.py both when building the
+"""Which chat tools each UserRole may call - enforced in app/chat/services/streaming.py both when building the
 `tools` offered to the LLM (_available_tool_specs) and, as defense in depth, again right before
 dispatch (_run_tool_call), so a client can't reach a tool merely by naming it in a tool-call
 request that was never actually offered.

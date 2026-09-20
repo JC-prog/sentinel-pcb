@@ -28,7 +28,7 @@ class ToolCallRequest(BaseModel):
 
 class ChatMessage(BaseModel):
     """A richer message than ChatTurn - only used within one chat turn's tool-calling round
-    trips (app/main.py's _chat_sse), never persisted. ChatTurn/Message rows still only ever
+    trips (app/chat/services/streaming.py's chat_sse), never persisted. ChatTurn/Message rows still only ever
     record the user's message and the final assistant reply, exactly as before this existed."""
 
     role: Literal["system", "user", "assistant", "tool"]

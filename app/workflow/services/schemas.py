@@ -1,4 +1,4 @@
-"""Request/response schemas for the /api/orchestrator/* routes in app/main.py."""
+"""Request/response schemas for the /api/orchestrator/* routes in app/workflow/api/orchestrator.py."""
 
 from pydantic import BaseModel
 

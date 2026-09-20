@@ -1,6 +1,6 @@
 """The golden reference image bank - looked up automatically by graph.py's lookup_golden_image
 node so a flagging QA/Admin user never has to supply a golden image by hand, and registered by
-Admin users through POST /api/admin/golden-images (app/main.py)."""
+Admin users through POST /api/admin/golden-images (app/chat/api/admin.py)."""
 
 import uuid
 from pathlib import Path

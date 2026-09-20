@@ -11,9 +11,9 @@
 - route() is the policy layer: it calls classify_intent() and applies
   settings.intent_router_confidence_threshold - either Clarify (stop the turn, show this
   question) or Proceed (continue with the tool list narrowed to the router's pick, or
-  unrestricted if routing didn't run or picked no tool). This is the piece app/main.py's
-  _chat_sse used to do inline; pulling it in here means the policy is unit-testable on its own
-  and main.py is just "call route(), branch on the result."
+  unrestricted if routing didn't run or picked no tool). This is the piece app/chat/services/streaming.py's
+  chat_sse used to do inline; pulling it in here means the policy is unit-testable on its own
+  and chat_sse is just "call route(), branch on the result."
 """
 
 import asyncio

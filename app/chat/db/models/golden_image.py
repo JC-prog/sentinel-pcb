@@ -1,7 +1,7 @@
 """A minimal admin-curated bank of golden (reference, non-defective) images, looked up by
 app/chat/agents/adc_inspection_agent/golden_images.py when a QA user flags an ambiguous image and no
 golden reference was supplied by hand. Registered one at a time via POST /api/admin/golden-images
-(app/main.py) - not a bulk import.
+(app/chat/api/admin.py) - not a bulk import.
 """
 
 import uuid

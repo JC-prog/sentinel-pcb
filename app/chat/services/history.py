@@ -1,5 +1,5 @@
 """Business logic for per-conversation memory: turning persisted Message rows into the history a
-ChatService needs, and persisting new turns as they happen. Route-facing (app/main.py); DB access
+ChatService needs, and persisting new turns as they happen. Route-facing (app/chat/api/chat.py); DB access
 itself lives in app/chat/services/repository.py, mirroring app/shared/auth/service.py's split from
 app/shared/auth/repository.py.
 """

@@ -1,6 +1,8 @@
 """Client for the internal ONNX classification service (inference/, infra/production/inference.tf).
 
-Used by app/chat/agents/adc_inspection_agent/graph.py for the two-stage PCB defect classifier.
+Used by both feature modules: app/chat/agents/adc_inspection_agent/graph.py (one image at a
+time) and app/workflow/agents/orchestrator_agent/services/ (whole datasets) for the two-stage PCB
+defect classifier.
 Configured via settings.inference_base_url.
 """
 

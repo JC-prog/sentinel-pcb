@@ -5,7 +5,7 @@ non-persisting `adc_inspection` tool (deleted; see graph.py's docstring for why)
 former case_agent's persisting behavior. Named tools.py (plural), unlike a single-tool agent's
 tool.py, since this agent exposes three tools.
 
-`parameters` on each describes the public, LLM-facing surface - the caller (app/main.py's
+`parameters` on each describes the public, LLM-facing surface - the caller (app/chat/services/streaming.py's
 _run_tool_call) is responsible for resolving image/xml ids to bytes, and for injecting `session`/
 `username`/`user_id`/`conversation_id`, none of which should ever be something an LLM is prompted
 to supply itself.
