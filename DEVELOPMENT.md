@@ -42,17 +42,24 @@ cd ui && npx ng test --watch=false && npx ng build
 
 ## 3. Architecture at a glance
 
-- **Module layout** (`app/`): two independent feature modules plus shared infrastructure, each
+- **Module layout** (`app/`): three independent feature modules plus shared infrastructure, each
   with its own `api/` (routes only), `agents/`, `services/`, `core/` and `db/` where it needs them:
   - `app/shared/` - auth, config/settings/logging, the DB `Base` + engine/session + auth models
-    (`User`, `RefreshToken`), the inference-service client, and the auth/health routes.
+    (`User`, `RefreshToken`) + the model-operations tables (model versions, drift reports,
+    retraining jobs and tickets, with their rules in `app/shared/modelops/`), the
+    inference-service client, and the auth/health routes.
   - `app/chat/` - the chat SSE stream, the tool-calling agents (`app/chat/agents/`), long-term
-    memory, chat uploads, and every chat-owned table (conversations, cases, golden images,
-    retraining tickets - `app/chat/db/`).
+    memory, chat uploads, and every chat-owned table (conversations, cases, golden images -
+    `app/chat/db/`).
   - `app/workflow/` - the Work tab: `orchestrator_agent` and `explainability_review_agent`
     (`app/workflow/agents/`), plus the run-streaming/upload glue (`app/workflow/services/`).
     Owns no tables.
-  - `app/main.py` is only the composition root: it mounts `shared`, `chat` and `workflow`'s
+  - `app/modelops/` - the Models tab's API (`/api/models/*`): model versions, drift reports and the
+    retraining queue (QA/Admin can read; only an Admin can approve or cancel a retraining job,
+    promote a model version or roll back). It syncs versions and job progress from the inference
+    service each time the tab loads and degrades to last-known data if the service is down
+    (`MODELOPS_ENABLED` is the kill switch). Owns no tables.
+  - `app/main.py` is only the composition root: it mounts `shared`, `chat`, `workflow` and `modelops`'s
     routers and imports each module's models so `create_all` sees them.
 
   **Rule: `chat` and `workflow` never import each other, and `shared` imports neither** -
@@ -92,11 +99,12 @@ cd ui && npx ng test --watch=false && npx ng build
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
   `tools` field at all, identical to the pre-tool-calling request shape. Tools registered:
-  `current_time` and `get_weather` (generic, every role); `create_case` and `explainability_review`
+  `current_time` and `get_weather` (generic, every role); `inspect_image` and `explainability_review`
   (both below, only offered when the chat message has an attached image, since the model has no
-  way to reference a real upload id itself); `investigate_case`, `list_cases`, `review_case`, and
-  `flag_case_for_retraining` (all below, need no image attached - they resolve an existing Case by
-  number instead); `monitoring_status` (Admin only). Just before each tool call actually
+  way to reference a real upload id itself); `find_similar_cases`, `get_case`, `investigate_case`,
+  `list_cases`, `review_case`, `flag_case_for_retraining`, `report_model_drift`,
+  `get_drift_summary` and `draft_retraining_plan` (all below, need no image attached - they work
+  from a case number or the conversation's latest case); `monitoring_status` (Admin only). Just before each tool call actually
   dispatches, `chat_sse` emits an `event: tool_call` SSE frame (`{name, label}`, `_TOOL_DISPLAY_LABELS`)
   purely so the UI can show "Calling Orchestrator Agent…" instead of a generic "Thinking…" -
   never persisted to conversation history.
@@ -114,7 +122,7 @@ cd ui && npx ng test --watch=false && npx ng build
   `tests/conftest.py` disables this by default across the whole suite (it makes its own sync
   OpenAI call that the usual `httpx.AsyncClient` mocking doesn't catch); re-enabled explicitly in
   `tests/agents/test_router_agent.py`.
-- **Case Review Agent** (`app/chat/agents/case_review_agent/`, formerly `explainability_review_agent/`):
+- **Case Review Agent** (`app/chat/agents/case_agent/`, formerly `explainability_review_agent/`):
   a LangGraph pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning)
   that diagnoses a PCB defect from an inspection image, ported from a teammate's standalone
   prototype into the app's `Tool`/`ToolRegistry` pattern (`app/chat/core/tools.py`,
@@ -128,7 +136,7 @@ cd ui && npx ng test --watch=false && npx ng build
   `search_historical()`) is a real CLIP embedding similarity search against the embedded Qdrant
   collection (seeded by `scripts/explainability_agent/populate_qdrant.py`); AOI/ICT telemetry
   (`get_measurements()`) reads a case's actual attached inspection-XML measurements when available
-  (reusing `app/chat/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a
+  (reusing `app/chat/agents/inspection_agent/xml_measurements.py`'s parsing), falling back to a
   hardcoded mock only when no XML is attached at all; and the reasoning step falls back to a
   deterministic, physics-based self-check (laser-height/side-overhang thresholds, `graph.py`'s
   `_heuristic_self_check`) when the OpenAI reasoning call itself fails. The CLIP embedding model
@@ -178,7 +186,10 @@ cd ui && npx ng test --watch=false && npx ng build
   portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
   has the system IANA database and works without it, but the Python docs recommend it explicitly
   since not every environment does (Windows, some minimal/Alpine images).
-- **ADC inspection agent** (`app/chat/agents/adc_inspection_agent/`, chat side): the `create_case` tool runs a
+- **Inspection agent** (`app/chat/agents/inspection_agent/`, chat side): the `inspect_image` tool first
+  runs an LLM-driven ReAct pass (`react.py` - the inspection steps as tools, each guarded by the
+  `PolicyEngine`, ending in a short summary; skipped without an OpenAI key or with
+  `INSPECTION_AGENT_LLM_ENABLED` off) and then a
   cyclic LangGraph pipeline that reproduces `orchestrator-agent/adc_agentic_project`'s
   Planner -> PolicyEngine -> execute -> replan loop for exactly one case, rather than a batch of
   dataset rows - `planner.py`'s `Planner` proposes the next step (deterministic only; a single
@@ -192,11 +203,14 @@ cd ui && npx ng test --watch=false && npx ng build
   `verification/{image_alignment,image_quality}.py`, using numpy's FFT rather than adding an
   OpenCV dependency for two narrow checks) -> classify region then the matching defect model for
   that region via the `inference/` microservice (`app.shared.inference.client.classify()`, see
-  `inference/models.toml`'s four `pcb_*` models) -> finalize a verdict -> if REVIEW_REQUIRED,
-  escalate to the Case Review Agent in-process and attach its diagnosis (never blocks
-  persistence if escalation fails - see `graph.py`'s `escalate_review` node) -> persist the result
-  as a `Case` row (`repository.py`), always, whether ACCEPTED or REVIEW_REQUIRED. `list_cases` and
-  `review_case` list and resolve (approve/override) reviewable cases. `ADC_INSPECTION_AGENT_ENABLED`
+  `inference/models.toml`'s four `pcb_*` models) -> finalize a verdict (always from these fixed
+  rules, never from the LLM; the pipeline also completes any step the LLM skipped) -> persist the
+  result as a `Case` row (`app/chat/services/cases.py`) stamped with the model versions that
+  answered, always, whether ACCEPTED or REVIEW_REQUIRED. REVIEW_REQUIRED is terminal: no other
+  agent is called. The Case Agent's `list_cases` and `review_case` list and resolve
+  (approve/override) reviewable cases, and `find_similar_cases` ranks earlier cases by shared
+  defect, region, component, package and board (the latest case in the conversation if no case
+  number is given). `ADC_INSPECTION_AGENT_ENABLED`
   is its kill switch; `ADC_REGION_CONFIDENCE_THRESHOLD`/`ADC_DEFECT_CONFIDENCE_THRESHOLD`/
   `ADC_ALIGNMENT_WARNING_SHIFT_PX`/`ADC_ALIGNMENT_FAIL_SHIFT_PX` tune its gates. The full
   batch/dataset ingestion mode from the source prototype (a CSV of many samples joined against an
@@ -214,12 +228,17 @@ cd ui && npx ng test --watch=false && npx ng build
   close port kept unformatted and untyped on purpose so diffs against upstream stay legible - both
   are excluded from ruff and have mypy `ignore_errors` in `pyproject.toml`; don't "fix" them.
   Inspection-model calls go through the shared `app/shared/inference/` client.
-- **Monitoring agent** (`app/chat/agents/monitoring_agent/`): `monitoring_status` remains an Admin-only
-  placeholder with no real logic yet (model/dataset performance, drift detection - future work).
-  `flag_case_for_retraining` (QA/Admin) is real, if intentionally small: a single DB write queuing
-  a `RetrainingTicket` for a Case a reviewer believes the model got wrong, requiring a reason.
-  Actual model retraining happens on the separate inference server, never here - this only queues
-  the request. `MONITORING_AGENT_ENABLED` is the kill switch for both tools.
+- **Monitoring agent** (`app/chat/agents/monitoring_agent/`): the model-health tools.
+  `flag_case_for_retraining` (QA/Admin) queues a `RetrainingTicket` for a Case a reviewer believes
+  the model got wrong, requiring a reason (it records the model version that made the call and,
+  optionally, the correct label). `get_drift_summary` compares a model's recent window with the one
+  before (review rate, reviewer override rate, low-confidence share, mean confidence, per model
+  version - `app/chat/services/drift.py`); `report_model_drift` files a drift report with that
+  snapshot; `draft_retraining_plan` turns the model's open tickets into a `RetrainingJob` in
+  `pending_approval`. Nothing here retrains or promotes: an Admin approves a job (and promotes its
+  result) in the Models tab, and the job runs on the separate inference server.
+  `monitoring_status` is the Admin-only read-only overview. `MONITORING_AGENT_ENABLED` is the kill
+  switch for all of them; `MODELOPS_ENABLED` additionally gates everything but flagging.
 - **Logging** (`app/shared/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local

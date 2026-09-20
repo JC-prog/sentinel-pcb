@@ -9,6 +9,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- New **Models** tab beside Chat and Work: the live version of each model and its version history,
+  drift reports people have filed (with the numbers behind them), and the retraining queue with each
+  job's progress and the cases it was drafted from. Admins can approve or cancel a retraining plan,
+  make a version live, roll back and resolve drift reports; QA can read everything and withdraw a
+  plan they drafted. It refreshes while a job is running and says so when the inference service
+  can't be reached. A run of the placeholder trainer is labelled as simulated.
+- Backend for a new Models tab (`/api/models/*`): what version of each model is live (and its
+  history), drift reports people have filed, and the retraining queue with each job's progress. QA
+  and Admin can read it; only an Admin can approve a retraining job (which sends it to the inference
+  service), cancel one, promote a model version, or roll back - a QA user can also withdraw a plan
+  they drafted while it is still pending. It syncs with the inference service each time it is read
+  and shows last-known data, flagged, if the service is down. Disable with `MODELOPS_ENABLED=False`.
+- Chat: ask about what an uploaded image shows and the inspection agent now works through the steps
+  with an LLM (and writes a short summary), falling back to the fixed pipeline if no OpenAI key is
+  set or the LLM fails - the ACCEPTED/REVIEW_REQUIRED verdict is always decided by the same fixed
+  rules. Board and component are no longer required to inspect an image. Disable just the LLM part
+  with `INSPECTION_AGENT_LLM_ENABLED=False`.
+- Chat: ask for cases similar to the current defect (`find_similar_cases` - ranked by shared defect,
+  region, component, package and board, using the latest case in the conversation by default) and
+  look up a full case record (`get_case`).
+- Chat: report that a model has drifted (`report_model_drift`), check drift indicators
+  (`get_drift_summary`), flag cases with the correct label, and draft a retraining plan
+  (`draft_retraining_plan`) that waits for an Admin's approval. `monitoring_status` (Admin) now
+  reports live model versions, open drift reports and tickets, and the retraining queue.
+- Model operations groundwork: the app now keeps a registry of model versions (one live per model,
+  enforced by the database), drift reports, and a retraining-job queue with an approval step - an
+  Admin must approve a drafted job before anything is sent for retraining. Every new Case records
+  which model versions produced its region and defect verdicts, and retraining tickets record the
+  version and (optionally) the correct label. Adds the `modelops_enabled` setting and a database
+  migration - on a database created before migrations were used, run
+  `uv run alembic stamp ea8ea3053c3c` once, then `uv run alembic upgrade head`.
+- Inference service: every model now reports a `version` (`<repo_id>@<revision>`), `/classify`
+  returns the `model_version` that produced each verdict, and a new version can be hot-swapped in
+  (`POST /models/{name}/activate`) or rolled back (`.../rollback`) without rebuilding the image.
+  It also accepts retraining jobs (`POST /jobs`, `GET /jobs/{id}`, `.../cancel`) behind a pluggable
+  trainer; only a simulated stub trainer ships so far - it exercises the queue end to end but
+  produces no new model.
 - Angular chat UI in the style of ChatGPT: a left history panel and a main chat panel, with text
   messages, image attachments, and a light/dark theme toggle that persists per browser. The theme
   toggle sits in the top-right corner of every page, including the login and registration pages.
@@ -158,6 +195,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The chat tool `create_case` is now `inspect_image` (its board/component arguments are optional),
+  and `list_cases` / `review_case` moved to the case agent. The tool-call label shown in the chat
+  is now "Inspection Agent" / "Case Agent" / "Monitoring Agent".
+- Chat agents are now mutually independent. The inspection agent no longer hands REVIEW_REQUIRED
+  cases to the case review agent automatically (the case is persisted with the classifier verdict;
+  ask for a deeper diagnosis by case number), and the case lookup / inspection-XML helpers moved
+  out of the inspection agent into `app/chat/services/`. Internal packages were renamed to
+  `inspection_agent` and `case_agent`. A new test fails if one chat agent imports another.
 - Internal restructure, no user-visible change: the backend is split into independent `app/chat/`
   and `app/workflow/` (Work tab) modules over shared code in `app/shared/`, each with its own
   routes, agents, services, and (for chat) DB models. `chat` and `workflow` may no longer import

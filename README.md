@@ -74,9 +74,10 @@ and known gotchas before you start changing things.
 
 ```
 app/                  # FastAPI backend, as independent feature modules over shared code:
-├── shared/             #   auth, config, DB base/session, inference client (both modules use this)
+├── shared/             #   auth, config, DB base/session, model-ops tables + rules, inference client (every module uses this)
 ├── chat/               #   chat SSE, tool-calling agents, long-term memory (chat/memory/ is Qdrant-backed)
-└── workflow/           #   the Work tab's orchestrator + explainability-review agents
+├── workflow/           #   the Work tab's orchestrator + explainability-review agents
+└── modelops/           #   the Models tab's API: model versions, drift reports, retraining queue
 alembic/              # Postgres schema migrations (users, conversations, messages)
 ui/                   # Angular frontend
 infra/
@@ -84,7 +85,7 @@ infra/
 ├── development/         # Docker Compose + per-OS setup scripts, for local dev
 ├── litellm/            # LiteLLM proxy configs (dev + prod), shared by both - see its README
 └── production/           # Terraform (AWS: ECS Fargate, RDS, S3 + CloudFront) - see its README
-tests/                 # backend tests (pytest), mirroring app/: tests/shared, tests/chat, tests/workflow
+tests/                 # backend tests (pytest), mirroring app/: tests/shared, tests/chat, tests/workflow, tests/modelops
 ```
 
 ## Commands
