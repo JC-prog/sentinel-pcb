@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
-import { ChatService } from '../chat.service';
-import { Conversation } from '../models/chat.models';
+import { ChatService } from './chat.service';
+import { Conversation } from './models/chat.models';
 
 interface PendingImage {
   file: File;

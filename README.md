@@ -52,10 +52,10 @@ Ollama-only. Free host ports needed: 8000, 4200, 4000, 5433, 6333, 6334.
 |---|---|---|
 | [Docker](https://docs.docker.com/get-docker/) | Yes | Runs local Postgres, Qdrant, and the LiteLLM proxy via Compose; the setup script starts them for you. |
 | Postgres | Auto (Docker) | User accounts, auth, and per-conversation chat history (Alembic-migrated - see `alembic/`). |
-| Qdrant | Auto (Docker) | Long-term, cross-conversation memory (`app/memory/`). Can be turned off entirely with `MEMORY_ENABLED=False` in `.env`. Ships its own web dashboard at [localhost:6333/dashboard](http://localhost:6333/dashboard) - no extra setup, useful for browsing collections/points directly. |
+| Qdrant | Auto (Docker) | Long-term, cross-conversation memory (`app/chat/memory/`). Can be turned off entirely with `MEMORY_ENABLED=False` in `.env`. Ships its own web dashboard at [localhost:6333/dashboard](http://localhost:6333/dashboard) - no extra setup, useful for browsing collections/points directly. |
 | [Ollama](https://ollama.com) | Optional | Needed for the Local LLM option in Settings. **Not installed or pulled automatically** - install it, then pull the models you intend to use: `ollama pull llama3.2` (default chat model) and `ollama pull nomic-embed-text` (default long-term-memory embedding model). Without the embedding model pulled, long-term memory silently no-ops instead of erroring. |
 | OpenAI access | Optional | The OpenAI provider in Settings and the Case Review Agent's (`POST /api/agents/explainability-review`) GPT-4o calls go through a LiteLLM proxy (`OPENAI_BASE_URL`), not `api.openai.com` directly. The proxy runs in Docker as part of the dev stack; put **your own** OpenAI key in `LITELLM_OPENAI_API_KEY` in `.env` (only that container sees it), or leave it blank for Ollama-only. See `infra/litellm/README.md`. No per-request bring-your-own-key - never entered in the browser. |
-| LangFuse | Optional (Docker profile) | Self-hosted LLM observability/tracing for the LangGraph agent pipelines (`app/config/langfuse.py`). Off by default (`LANGFUSE_ENABLED=False`); `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait` brings it up at [localhost:3000](http://localhost:3000), auto-provisioning an org/project/API key that match `.env`'s `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` - no manual UI setup. |
+| LangFuse | Optional (Docker profile) | Self-hosted LLM observability/tracing for the LangGraph agent pipelines (`app/shared/config/langfuse.py`). Off by default (`LANGFUSE_ENABLED=False`); `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait` brings it up at [localhost:3000](http://localhost:3000), auto-provisioning an org/project/API key that match `.env`'s `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` - no manual UI setup. |
 
 If you only plan to use the OpenAI option, Ollama can be skipped entirely.
 
@@ -73,7 +73,10 @@ and known gotchas before you start changing things.
 ## Repo layout
 
 ```
-app/                  # FastAPI backend (app/memory/ is the Qdrant-backed long-term chat memory)
+app/                  # FastAPI backend, as independent feature modules over shared code:
+├── shared/             #   auth, config, DB base/session, inference client (both modules use this)
+├── chat/               #   chat SSE, tool-calling agents, long-term memory (chat/memory/ is Qdrant-backed)
+└── workflow/           #   the Work tab's orchestrator + explainability-review agents
 alembic/              # Postgres schema migrations (users, conversations, messages)
 ui/                   # Angular frontend
 infra/
@@ -81,7 +84,7 @@ infra/
 ├── development/         # Docker Compose + per-OS setup scripts, for local dev
 ├── litellm/            # LiteLLM proxy configs (dev + prod), shared by both - see its README
 └── production/           # Terraform (AWS: ECS Fargate, RDS, S3 + CloudFront) - see its README
-tests/                 # backend tests (pytest)
+tests/                 # backend tests (pytest), mirroring app/: tests/shared, tests/chat, tests/workflow
 ```
 
 ## Commands

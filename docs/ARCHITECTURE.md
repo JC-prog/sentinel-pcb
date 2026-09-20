@@ -68,9 +68,9 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 | Component | Tech | Responsibility |
 |---|---|---|
 | **UI** (`ui/`) | Angular, standalone components, signals | Chat interface, login/register, settings, image attach (paperclip or drag-drop), light/dark theme. Streams the assistant reply chunk by chunk. |
-| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | The core service: auth, chat SSE streaming, conversation persistence, image uploads, tool-calling loop, the Case Review Agent, and a client for the inference service. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
+| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | One service, organised as two independent feature modules over shared infrastructure - `app/chat/` (chat SSE streaming, conversation persistence, image uploads, the tool-calling loop and its agents, long-term memory), `app/workflow/` (the Work tab's bulk orchestrator and explainability-review agents) and `app/shared/` (auth, config, DB base/session, the inference-service client). See "Module boundaries" below. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
 | **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
-| **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/inference/`. |
+| **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/shared/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
 | **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. |
 | **Embedded Qdrant** | file-based Qdrant under `data/images/qdrant_db/` | Historical PCB defect cases the Case Review Agent retrieves against. Separate from the Qdrant above; loaded lazily on first agent use. |
@@ -92,7 +92,7 @@ safety net (`scripts/create_admin_user.py` can also promote one). Chat requires 
 1. UI sends `POST /api/chat/stream` with the message, any uploaded image ids, and the chosen
    provider.
 2. The backend loads recent turns for that conversation from Postgres
-   (`app/chat/history.py`, bounded by `CHAT_HISTORY_MAX_TURNS`) and, for a brand-new
+   (`app/chat/services/history.py`, bounded by `CHAT_HISTORY_MAX_TURNS`) and, for a brand-new
    conversation, up to `MEMORY_RETRIEVAL_TOP_K` long-term memories into the system prompt.
 3. It calls the selected provider (`get_chat_service()` factory -> `OllamaChatService` or
    `OpenAiChatService`) and relays the reply to the UI over Server-Sent Events
@@ -102,13 +102,17 @@ safety net (`scripts/create_admin_user.py` can also promote one). Chat requires 
 ### Tool calling (within a chat turn)
 
 When `CHAT_TOOL_CALLING_ENABLED` is on, the backend builds the registered tool specs
-(`app/agents/registry.py`), filtered by `_available_tool_specs()`. Registered tools:
+(`app/chat/agents/registry.py`), filtered by `_available_tool_specs()` (`app/chat/services/streaming.py`) and by role (`app/chat/agents/access.py`). Registered tools:
 
 - `current_time` - the Time Agent below.
 - `get_weather` - the Weather Agent below.
-- `explainability_review` - the agent below; only offered when the message has an attached
-  image, since the model cannot reference a real upload id on its own.
-- `adc_inspection` - the ADC Inspection Agent below; same image-attached gating.
+- `explainability_review` - the Case Review Agent below; only offered when the message has an
+  attached image, since the model cannot reference a real upload id on its own.
+- `create_case` - the ADC Inspection Agent below; same image-attached gating.
+- `investigate_case`, `list_cases`, `review_case`, `flag_case_for_retraining` - resolve an existing
+  Case by number, so no image is needed; `monitoring_status` is Admin-only.
+
+The Work tab's agents are deliberately **not** among these - see "Work tab" below.
 
 Disabling the kill switch sends no `tools` field at all, byte-identical to the pre-tool request.
 
@@ -127,14 +131,14 @@ final answer.
 Two tiers, both server-side and per account:
 
 - **Short-term**: `Conversation` / `Message` rows in Postgres, replayed into context each reply.
-- **Long-term**: every `MEMORY_EXTRACTION_INTERVAL_TURNS` assistant turns, `app/memory/service.py`
+- **Long-term**: every `MEMORY_EXTRACTION_INTERVAL_TURNS` assistant turns, `app/chat/memory/service.py`
   runs an extra LLM call to pull durable facts out of the conversation and upserts them to
   Qdrant with an embedding. A new conversation retrieves the top matches back into its system
   prompt. `/remember <text>` saves one explicitly. `MEMORY_ENABLED` is a kill switch.
 
 ### Case Review Agent
 
-A LangGraph pipeline (`app/agents/case_review_agent/`, formerly `explainability_review_agent/`),
+A LangGraph pipeline (`app/chat/agents/case_review_agent/`, formerly `explainability_review_agent/`),
 callable directly via `POST /api/agents/explainability-review` or as a chat tool:
 
 ```
@@ -152,7 +156,7 @@ agent below that took it instead.
 
 ### Explainability Review Agent
 
-A different LangGraph pipeline (`app/agents/explainability_review_agent/`), ported as-is from a
+A different LangGraph pipeline (`app/workflow/agents/explainability_review_agent/`), ported as-is from a
 separate standalone prototype (`pcb_agentic_inspector`'s "Agent 2") and unrelated to the Case
 Review Agent above despite the similar name. Never a chat tool - called in-process only by the
 Work tab's `orchestrator_agent` for REVIEW_REQUIRED samples:
@@ -164,13 +168,13 @@ retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_s
 ```
 
 Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
-`app/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
+`app/shared/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
 `settings.openai_api_key`/LiteLLM-proxy convention - a deliberate exception, since it was ported
 unchanged rather than adapted. `explainability_review_agent_enabled` is its kill switch.
 
 ### Weather Agent
 
-A smaller LangGraph pipeline (`app/agents/weather_agent/`), exposed only as the `get_weather`
+A smaller LangGraph pipeline (`app/chat/agents/weather_agent/`), exposed only as the `get_weather`
 chat tool:
 
 ```
@@ -188,7 +192,7 @@ is configured, or the LLM call fails.
 
 ### Time Agent
 
-The smallest LangGraph pipeline (`app/agents/time_agent/`), exposed only as the `current_time`
+The smallest LangGraph pipeline (`app/chat/agents/time_agent/`), exposed only as the `current_time`
 chat tool:
 
 ```
@@ -205,23 +209,41 @@ besides latency and cost.
 
 ### ADC Inspection Agent
 
-A small LangGraph pipeline (`app/agents/adc_inspection_agent/`), exposed only as the
-`adc_inspection` chat tool:
+A cyclic LangGraph pipeline (`app/chat/agents/adc_inspection_agent/`), exposed as the
+`create_case` chat tool (plus `list_cases` / `review_case`), that inspects **one image** per call:
 
 ```
-classify_region  ->  (routed?) --yes-->  classify_defect  --> END
-                                \--no --->  END
+verify image -> golden-image lookup -> validate inspection XML -> alignment/quality check
+   -> classify_region -> classify_defect -> verdict -> (REVIEW_REQUIRED? escalate to Case Review Agent)
+   -> persist a Case
 ```
 
-`classify_region` calls the inference service's `pcb_region` model to pick the component region
-(Body/Lead/Text); `classify_defect` then calls whichever of `pcb_body_defect`/`pcb_lead_defect`/
-`pcb_text_defect` matches. Unlike the Case Review Agent, this is a raw two-stage
-classifier verdict with confidence scores, no LLM-written narrative. `ADC_INSPECTION_AGENT_ENABLED`
-is its kill switch.
+A deterministic Planner proposes each next step and a PolicyEngine validates it before dispatch;
+a rejection aborts rather than looping. Region and defect classification call the inference
+service (`pcb_region`, then `pcb_body_defect` / `pcb_lead_defect` / `pcb_text_defect`). Every run
+is persisted as a `Case` (ACCEPTED or REVIEW_REQUIRED). `ADC_INSPECTION_AGENT_ENABLED` is its
+kill switch. Not to be confused with the Work tab's bulk `orchestrator_agent` below.
+
+### Work tab (`app/workflow/`)
+
+The Work tab's agents live in their own module and are unreachable from the chat tool-calling
+loop: `app/workflow/` never imports `app/chat/`, and nothing in chat imports it.
+
+- **Orchestrator agent** (`agents/orchestrator_agent/`): a port of
+  `orchestrator-agent/adc_agentic_project`'s *bulk* workflow - a CSV dataset plus inspection XML
+  and an optional image root, in three modes (`prepare`, `prepare_verify`, `run_full`). `run_full`
+  runs a Planner -> PolicyEngine -> execute -> replan loop over every sample and streams progress.
+  Served at `POST /api/orchestrator/run/stream` (SSE) with its own `/api/orchestrator/uploads/*`
+  endpoints, QA/Admin only; `ORCHESTRATOR_AGENT_ENABLED` is its kill switch.
+- **Explainability Review Agent** (`agents/explainability_review_agent/`): described above; called
+  in-process for REVIEW_REQUIRED samples.
+- `services/` holds the app-side glue (SSE run streaming, upload storage, request schemas). Both
+  agents are close ports of external projects, kept unformatted and untyped on purpose (excluded
+  from ruff, mypy `ignore_errors`).
 
 ### Intent Router
 
-A one-node LangGraph pipeline (`app/agents/router_agent/`) that runs ahead of the tool-calling
+A one-node LangGraph pipeline (`app/chat/agents/router_agent/`) that runs ahead of the tool-calling
 loop described above - not itself a registered tool, since it decides which tools (if any) get
 offered in the first place rather than being one the model can call. One LLM call picks the
 single best-matching tool by name (or `null` for "just answer, no tool needed") with a confidence
@@ -232,7 +254,7 @@ no clarification" rather than blocking the turn.
 
 ### Inference service
 
-Called by the ADC Inspection Agent above. A caller `POST`s an image and a model name to the
+Called by both the ADC Inspection Agent (chat) and the Work tab's orchestrator agent. A caller `POST`s an image and a model name to the
 service; it runs that ONNX classifier and returns label + score. It holds no state and has no
 database.
 
@@ -304,11 +326,16 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 
 - **Stateless backend.** Horizontal scaling is a config change, not a rewrite. The one
   exception (chat image uploads on local disk) is a tracked gap.
-- **Pure core interfaces + factories.** `app/core/` holds IO-free `Protocol`s
-  (`ChatService`, `MemoryStore`, `Tool`, ...); a single factory constructs each concrete
+- **Module boundaries.** `app/chat/` and `app/workflow/` are independent; both may import
+  `app/shared/`, and neither may import the other (`tests/test_module_boundaries.py` enforces it,
+  including lazy imports). Each module owns its own `api/`, `agents/`, `services/`, `core/` and
+  `db/`; anything both need moves to `shared`. `app/main.py` is the only place that knows all three.
+- **Pure core interfaces + factories.** `app/chat/core/` holds IO-free `Protocol`s
+  (`ChatService`, `MemoryStore`, `Tool`); a single factory constructs each concrete
   implementation. Swapping a provider or a vector store touches one file.
 - **Kill switches over redeploys.** `MEMORY_ENABLED`, `CHAT_TOOL_CALLING_ENABLED`,
-  `EXPLAINABILITY_AGENT_ENABLED`, `ADC_INSPECTION_AGENT_ENABLED`, `INTENT_ROUTER_ENABLED` each
+  `EXPLAINABILITY_AGENT_ENABLED`, `ADC_INSPECTION_AGENT_ENABLED`, `ORCHESTRATOR_AGENT_ENABLED`,
+  `INTENT_ROUTER_ENABLED` each
   turn a subsystem off without a code change.
 - **Keys isolated to a gateway.** The app process never holds a real OpenAI key.
 - **One HTTPS origin in production.** CloudFront fronts both UI and API.
@@ -324,10 +351,9 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 - The Case Review Agent's object-detection node is a stub, and its telemetry is synthetic -
   `JcProg/PCBInspect-AI` (object detection, on the same HF org as the ADC classifiers) is a
   plausible real replacement, not yet wired in.
-- The ADC Inspection Agent's batch/dataset workflow (`orchestrator-agent/adc_agentic_project`'s
-  full planner/policy loop over a CSV + inspection XML) was deliberately not ported - only the
-  single-image two-stage classification maps onto one chat-turn tool call. If the batch workflow
-  is still wanted, it belongs behind its own CLI/admin route, not the chat tool-calling path.
+- The batch/dataset workflow is not a chat tool by design: it lives in the Work tab's
+  `orchestrator_agent` behind its own routes. The chat-side ADC Inspection Agent only handles one
+  image (plus optional XML) per call.
 - No custom domain or TLS certificate - CloudFront and the ALB use default AWS domains.
 - LiteLLM auth is master-key-only (no per-consumer virtual keys or budgets yet).
 - No autoscaling on any ECS service; each runs a single task.

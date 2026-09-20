@@ -4,8 +4,8 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { Chat } from './chat';
 import { AuthService, AuthUser } from '../auth.service';
-import { CHAT_RESPONDER } from '../chat-responder';
-import { ChatService } from '../chat.service';
+import { CHAT_RESPONDER } from './chat-responder';
+import { ChatService } from './chat.service';
 
 class FakeActivatedRoute {
   readonly paramMap;

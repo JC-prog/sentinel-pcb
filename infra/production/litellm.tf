@@ -1,5 +1,5 @@
 # LiteLLM proxy - the OpenAI-compatible endpoint the backend calls instead of api.openai.com, so
-# the real provider key never lands in the backend task (see infra/litellm/README.md, app/config/
+# the real provider key never lands in the backend task (see infra/litellm/README.md, app/shared/config/
 # settings.py's openai_base_url). A third Fargate service in the same cluster, reachable only
 # from the backend over Cloud Map DNS (service_discovery.tf) - no ALB, no CloudFront behavior.
 #

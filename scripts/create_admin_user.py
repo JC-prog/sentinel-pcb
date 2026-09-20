@@ -17,11 +17,11 @@ import argparse
 import asyncio
 import getpass
 
-from app.auth import repository
-from app.auth.security import hash_password
-from app.db.base import Base
-from app.db.models import User, UserRole
-from app.db.session import async_session_factory, engine
+from app.shared.auth import repository
+from app.shared.auth.security import hash_password
+from app.shared.db.base import Base
+from app.shared.db.models import User, UserRole
+from app.shared.db.session import async_session_factory, engine
 
 
 async def create_or_promote_admin(

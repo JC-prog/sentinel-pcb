@@ -42,12 +42,28 @@ cd ui && npx ng test --watch=false && npx ng build
 
 ## 3. Architecture at a glance
 
+- **Module layout** (`app/`): two independent feature modules plus shared infrastructure, each
+  with its own `api/` (routes only), `agents/`, `services/`, `core/` and `db/` where it needs them:
+  - `app/shared/` - auth, config/settings/logging, the DB `Base` + engine/session + auth models
+    (`User`, `RefreshToken`), the inference-service client, and the auth/health routes.
+  - `app/chat/` - the chat SSE stream, the tool-calling agents (`app/chat/agents/`), long-term
+    memory, chat uploads, and every chat-owned table (conversations, cases, golden images,
+    retraining tickets - `app/chat/db/`).
+  - `app/workflow/` - the Work tab: `orchestrator_agent` and `explainability_review_agent`
+    (`app/workflow/agents/`), plus the run-streaming/upload glue (`app/workflow/services/`).
+    Owns no tables.
+  - `app/main.py` is only the composition root: it mounts `shared`, `chat` and `workflow`'s
+    routers and imports each module's models so `create_all` sees them.
+
+  **Rule: `chat` and `workflow` never import each other, and `shared` imports neither** -
+  enforced by `tests/test_module_boundaries.py`, which also scans lazy in-function imports. Code
+  both sides need goes in `shared`. `tests/` mirrors this layout (`tests/shared|chat|workflow/`).
 - **Backend** (`app/`): FastAPI. `POST /api/chat/stream` streams the assistant's reply over
   Server-Sent Events (`event: delta` / `error` / `done`); `POST`/`GET /api/uploads` handles chat
   image uploads. Stateless by design - no per-request state is shared across instances, which
   matters once this runs as more than one ECS task.
-- **LLM providers** (`app/chat/providers/`): `OllamaChatService` and `OpenAiChatService`, both
-  behind the `get_chat_service()` factory in `app/chat/service.py` - that factory is the swap
+- **LLM providers** (`app/chat/services/providers/`): `OllamaChatService` and `OpenAiChatService`, both
+  behind the `get_chat_service()` factory in `app/chat/services/service.py` - that factory is the swap
   point for adding another provider later. OpenAI uses a single server-side key
   (`settings.openai_api_key`, set via `OPENAI_API_KEY`) - no per-request bring-your-own-key; the
   UI's Settings panel only lets a user pick Ollama vs OpenAI, not supply a key. Every
@@ -64,14 +80,14 @@ cd ui && npx ng test --watch=false && npx ng build
   send) needs to know which one was used. `app.html`'s root wrapper guards against a drop that
   misses the chat window (e.g. lands on the sidebar) navigating the browser away from the SPA.
 - **Memory**: two tiers, both server-side and scoped per account. Short-term (per-conversation)
-  memory is `Conversation`/`Message` rows in Postgres (`app/db/models/chat.py`), assembled back
-  into context for each reply by `app/chat/history.py`. Long-term (cross-conversation) memory
-  lives in Qdrant behind the `MemoryStore` interface (`app/core/memory.py`) - `app/memory/`
+  memory is `Conversation`/`Message` rows in Postgres (`app/chat/db/models/chat.py`), assembled back
+  into context for each reply by `app/chat/services/history.py`. Long-term (cross-conversation) memory
+  lives in Qdrant behind the `MemoryStore` interface (`app/chat/core/memory.py`) - `app/chat/memory/`
   extracts durable facts from a conversation and retrieves them for a new one; `MEMORY_ENABLED`
-  is a kill switch, and `app/memory/qdrant_store.py` is the only file that knows it's Qdrant, so
+  is a kill switch, and `app/chat/memory/qdrant_store.py` is the only file that knows it's Qdrant, so
   swapping the store later doesn't touch the rest of the app.
-- **Agent tool-calling in chat**: `app/agents/registry.py`'s `Tool`/`ToolRegistry` scaffold now
-  has a real, live caller - `POST /api/chat/stream`'s `_chat_sse` (`app/main.py`) sends
+- **Agent tool-calling in chat**: `app/chat/agents/registry.py`'s `Tool`/`ToolRegistry` scaffold now
+  has a real, live caller - `POST /api/chat/stream`'s `chat_sse` (`app/chat/services/streaming.py`) sends
   `tool_registry.specs()` as `tools` to whichever provider is selected, and loops (bounded by
   `CHAT_TOOL_MAX_ROUNDS`) executing any tool calls the model requests via `call_tool()` before
   streaming a final answer. `CHAT_TOOL_CALLING_ENABLED` is the kill switch - disabling it sends no
@@ -81,14 +97,14 @@ cd ui && npx ng test --watch=false && npx ng build
   way to reference a real upload id itself); `investigate_case`, `list_cases`, `review_case`, and
   `flag_case_for_retraining` (all below, need no image attached - they resolve an existing Case by
   number instead); `monitoring_status` (Admin only). Just before each tool call actually
-  dispatches, `_chat_sse` emits an `event: tool_call` SSE frame (`{name, label}`, `_TOOL_DISPLAY_LABELS`)
+  dispatches, `chat_sse` emits an `event: tool_call` SSE frame (`{name, label}`, `_TOOL_DISPLAY_LABELS`)
   purely so the UI can show "Calling Orchestrator Agent…" instead of a generic "Thinking…" -
   never persisted to conversation history.
-  `ChatService.stream_with_tools()` (`app/core/chat.py`) is the tool-aware method both providers
+  `ChatService.stream_with_tools()` (`app/chat/core/chat.py`) is the tool-aware method both providers
   implement, translating a provider-agnostic `ChatMessage` list to/from each API's own
   tool-calling wire format; the older `stream_reply()` is untouched and still used by
-  `app/memory/service.py`'s fact extraction, which never needs tools.
-- **Intent router** (`app/agents/router_agent/`): runs ahead of the tool-calling loop above, when
+  `app/chat/memory/service.py`'s fact extraction, which never needs tools.
+- **Intent router** (`app/chat/agents/router_agent/`): runs ahead of the tool-calling loop above, when
   `INTENT_ROUTER_ENABLED` is on and at least one tool is on offer. A one-node LangGraph pipeline
   makes one LLM call to pick the single best-matching tool (or decide none is needed) with a
   confidence score; below `INTENT_ROUTER_CONFIDENCE_THRESHOLD` it short-circuits the turn with a
@@ -98,11 +114,11 @@ cd ui && npx ng test --watch=false && npx ng build
   `tests/conftest.py` disables this by default across the whole suite (it makes its own sync
   OpenAI call that the usual `httpx.AsyncClient` mocking doesn't catch); re-enabled explicitly in
   `tests/agents/test_router_agent.py`.
-- **Case Review Agent** (`app/agents/case_review_agent/`, formerly `explainability_review_agent/`):
+- **Case Review Agent** (`app/chat/agents/case_review_agent/`, formerly `explainability_review_agent/`):
   a LangGraph pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning)
   that diagnoses a PCB defect from an inspection image, ported from a teammate's standalone
-  prototype into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`,
-  `app/agents/registry.py`). Two entry points: `explainability_review` (chat, or
+  prototype into the app's `Tool`/`ToolRegistry` pattern (`app/chat/core/tools.py`,
+  `app/chat/agents/registry.py`). Two entry points: `explainability_review` (chat, or
   `POST /api/agents/explainability-review`) takes a raw uploaded image; `investigate_case` (chat
   only) takes a case number instead and resolves that Case's stored image/inspection XML/board/
   component fields itself - no re-upload needed. Also called in-process (not a chat tool call) by
@@ -112,7 +128,7 @@ cd ui && npx ng test --watch=false && npx ng build
   `search_historical()`) is a real CLIP embedding similarity search against the embedded Qdrant
   collection (seeded by `scripts/explainability_agent/populate_qdrant.py`); AOI/ICT telemetry
   (`get_measurements()`) reads a case's actual attached inspection-XML measurements when available
-  (reusing `app/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a
+  (reusing `app/chat/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a
   hardcoded mock only when no XML is attached at all; and the reasoning step falls back to a
   deterministic, physics-based self-check (laser-height/side-overhang thresholds, `graph.py`'s
   `_heuristic_self_check`) when the OpenAI reasoning call itself fails. The CLIP embedding model
@@ -122,7 +138,7 @@ cd ui && npx ng test --watch=false && npx ng build
   `explainability_review_agent` when a second, unrelated "explainability and review" agent (below)
   was ported in and took that name instead - this one is the chat-facing agent, that one is
   Work-tab-only.
-- **Explainability Review Agent** (`app/agents/explainability_review_agent/`, Work-tab-only): ported
+- **Explainability Review Agent** (`app/workflow/agents/explainability_review_agent/`, Work-tab-only): ported
   as-is from a teammate's separate standalone prototype, `pcb_agentic_inspector`'s "Agent 2"
   (`src/agent2_explainability/pipeline/review_graph.py`) - a different LangGraph pipeline
   (`retrieve_precedents` -> `extract_telemetry` -> `inspect_visuals` -> `grounding_self_check`)
@@ -141,7 +157,7 @@ cd ui && npx ng test --watch=false && npx ng build
   missing key, same graceful-degradation shape as the Case Review Agent. Its precedent-retrieval
   node is a hardcoded mock in the source and was left that way - not this change's job to wire up
   real retrieval.
-- **Weather agent** (`app/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
+- **Weather agent** (`app/chat/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
   fetch current conditions plus a short forecast -> an LLM-synthesized advisory - exposed to
   chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
   change). The advisory step is a real branch, not just a label: a deterministic check (severe
@@ -151,7 +167,7 @@ cd ui && npx ng test --watch=false && npx ng build
   key at all, and the advisory step itself degrades to a templated summary - never an error -
   when `WEATHER_ADVISORY_ENABLED` is off or no key is configured, same graceful-degradation
   stance as the rest of this codebase's agents.
-- **Time agent** (`app/agents/time_agent/`): a small LangGraph pipeline - resolve an optional
+- **Time agent** (`app/chat/agents/time_agent/`): a small LangGraph pipeline - resolve an optional
   location to a timezone (same Open-Meteo geocoding endpoint the Weather Agent uses; UTC if no
   location is given) -> compute the current time there -> a deterministic business-hours branch
   - exposed as the single `current_time` tool. Unlike the other two agents, this one has **no
@@ -162,7 +178,7 @@ cd ui && npx ng test --watch=false && npx ng build
   portability safety net for `zoneinfo` - `python:3.12-slim` (this repo's Docker base) already
   has the system IANA database and works without it, but the Python docs recommend it explicitly
   since not every environment does (Windows, some minimal/Alpine images).
-- **Orchestrator agent** (`app/agents/adc_inspection_agent/`): the `create_case` tool runs a
+- **ADC inspection agent** (`app/chat/agents/adc_inspection_agent/`, chat side): the `create_case` tool runs a
   cyclic LangGraph pipeline that reproduces `orchestrator-agent/adc_agentic_project`'s
   Planner -> PolicyEngine -> execute -> replan loop for exactly one case, rather than a batch of
   dataset rows - `planner.py`'s `Planner` proposes the next step (deterministic only; a single
@@ -175,7 +191,7 @@ cd ui && npx ng test --watch=false && npx ng build
   the golden reference, if one was found (`verification.py`, ported from `orchestrator-agent`'s
   `verification/{image_alignment,image_quality}.py`, using numpy's FFT rather than adding an
   OpenCV dependency for two narrow checks) -> classify region then the matching defect model for
-  that region via the `inference/` microservice (`app.inference.client.classify()`, see
+  that region via the `inference/` microservice (`app.shared.inference.client.classify()`, see
   `inference/models.toml`'s four `pcb_*` models) -> finalize a verdict -> if REVIEW_REQUIRED,
   escalate to the Case Review Agent in-process and attach its diagnosis (never blocks
   persistence if escalation fails - see `graph.py`'s `escalate_review` node) -> persist the result
@@ -186,13 +202,25 @@ cd ui && npx ng test --watch=false && npx ng build
   batch/dataset ingestion mode from the source prototype (a CSV of many samples joined against an
   AOI machine's inspection XML) was deliberately not ported - there's no CSV row for a chat
   upload, and nothing in this app currently ingests one.
-- **Monitoring agent** (`app/agents/monitoring_agent/`): `monitoring_status` remains an Admin-only
+- **Orchestrator agent, Work tab** (`app/workflow/agents/orchestrator_agent/`): the *bulk* counterpart
+  to the ADC inspection agent above, and unrelated to it despite the shared origin - a port of
+  `orchestrator-agent/adc_agentic_project`'s dataset workflow (CSV + inspection XML + image root; modes
+  `prepare`, `prepare_verify`, `run_full`). Never a chat tool: `app/workflow/` has no route into
+  the chat tool-calling loop, and `app/chat/` cannot import it. Served by
+  `app/workflow/api/orchestrator.py` (QA/Admin only) as SSE at `POST /api/orchestrator/run/stream`,
+  with its own uploads under `/api/orchestrator/uploads/*` (`ORCHESTRATOR_DATA_DIR`,
+  `ORCHESTRATOR_AGENT_ENABLED` kill switch). `run()` is an async generator; the sync planner and
+  pandas/opencv work is wrapped in `asyncio.to_thread`. Like `explainability_review_agent`, it is a
+  close port kept unformatted and untyped on purpose so diffs against upstream stay legible - both
+  are excluded from ruff and have mypy `ignore_errors` in `pyproject.toml`; don't "fix" them.
+  Inspection-model calls go through the shared `app/shared/inference/` client.
+- **Monitoring agent** (`app/chat/agents/monitoring_agent/`): `monitoring_status` remains an Admin-only
   placeholder with no real logic yet (model/dataset performance, drift detection - future work).
   `flag_case_for_retraining` (QA/Admin) is real, if intentionally small: a single DB write queuing
   a `RetrainingTicket` for a Case a reviewer believes the model got wrong, requiring a reason.
   Actual model retraining happens on the separate inference server, never here - this only queues
   the request. `MONITORING_AGENT_ENABLED` is the kill switch for both tools.
-- **Logging** (`app/config/logging_config.py`): `configure_logging()` runs once at import
+- **Logging** (`app/shared/config/logging_config.py`): `configure_logging()` runs once at import
   (`app/main.py`), configuring the root logger so every `logging.getLogger(__name__)` call
   app-wide is formatted consistently - `LOG_FORMAT=console` (default) for a readable local
   terminal, or `LOG_FORMAT=json` for one parseable object per line in production. Both write to
@@ -202,22 +230,22 @@ cd ui && npx ng test --watch=false && npx ng build
   `extra=`, which the JSON formatter surfaces as its own keys generically - any future
   `logger.info(..., extra={...})` call gets the same treatment, not just this one. `LOG_LEVEL=DEBUG`
   additionally logs every API request/response body (`password` redacted) and every LLM
-  request/response payload (`app/chat/providers/`, including the `tools` array and tool-call
+  request/response payload (`app/chat/services/providers/`, including the `tools` array and tool-call
   results) - gated behind an `isEnabledFor()` check so there's zero extra buffering when it's off
   (default `INFO`). `/api/chat/stream`'s response is never buffered for this even at `DEBUG` -
   logging it there would delay the live SSE stream - it's logged separately, at the point
-  `_chat_sse` already assembles the final reply. `LOG_TO_FILE=True` additionally writes the same
+  `chat_sse` already assembles the final reply. `LOG_TO_FILE=True` additionally writes the same
   lines to a rotating file (`LOG_DIR/app.log`, default `data/logs/`, 10 MiB x 5 backups) - off by
   default, and only host-visible for bare `uv run uvicorn` (the containerized `app` service
   doesn't volume-mount `data/`, same caveat as `chat_upload_dir`).
 - **Migrations**: `alembic/` - `uv run alembic revision --autogenerate -m "..."` after changing a
-  model, then `uv run alembic upgrade head`. `app/db/session.py`'s `create_all` still runs at
+  model, then `uv run alembic upgrade head`. `app/shared/db/session.py`'s `create_all` still runs at
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
   (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `litellm` (a
   local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui`, `inference`, and
-  `langfuse` (self-hosted LLM tracing - `app/config/langfuse.py`) are opt-in via
+  `langfuse` (self-hosted LLM tracing - `app/shared/config/langfuse.py`) are opt-in via
   `--profile <name>` so you only build/run your slice.
 
 ## 4. Known gotchas
@@ -238,14 +266,14 @@ cd ui && npx ng test --watch=false && npx ng build
   enough. `OLLAMA_MODEL` (default `llama3.2`) needs `ollama pull llama3.2` before the Local LLM
   chat option works at all, and separately `OLLAMA_EMBEDDING_MODEL` (default `nomic-embed-text`)
   needs `ollama pull nomic-embed-text` before long-term memory works - without it,
-  extraction/retrieval silently no-ops (logged, not raised - see `app/memory/service.py`) rather
+  extraction/retrieval silently no-ops (logged, not raised - see `app/chat/memory/service.py`) rather
   than erroring, which can look like "memory just isn't doing anything" with no obvious cause.
 - **Chat tool-calling needs a tool-capable Ollama model**: `OLLAMA_MODEL`'s default (`llama3.2`)
   supports tool-calling, but not every Ollama model does - check for a "tools" tag on
   ollama.com's model library before swapping models, or chat will silently never call a tool
   (Ollama just answers directly, no error). Ollama also doesn't deliver tool-call data
   incrementally even with `stream: true` - the full `message.tool_calls` list only shows up on
-  the final chunk - `app/chat/providers/ollama.py`'s `stream_with_tools()` accounts for this
+  the final chunk - `app/chat/services/providers/ollama.py`'s `stream_with_tools()` accounts for this
   already, but it's worth knowing if you're debugging a hang-then-burst pattern. `CHAT_TOOL_MAX_ROUNDS`
   (default 4) caps how many tool-call round trips one message can trigger before the loop gives
   up and answers with what it has, in case a model keeps calling tools without ever finishing.

@@ -1,7 +1,7 @@
 import { Component, Signal, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { OrchestratorRunMode } from '../models/orchestrator.models';
-import { WorkService } from '../work.service';
+import { OrchestratorRunMode } from './models/orchestrator.models';
+import { WorkService } from './work.service';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {

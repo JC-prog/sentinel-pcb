@@ -11,9 +11,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config.settings import settings
-from app.db.base import Base
-from app.db.session import async_session_factory, engine
+from app.chat.db import models as _chat_models
+from app.shared.config.settings import settings
+from app.shared.db.base import Base
+from app.shared.db.session import async_session_factory, engine
+
+# The shared db package can't import chat's models, so anything that runs create_all before
+# app.main is imported (db_session below) registers them here.
+_REGISTERED_MODEL_PACKAGES = (_chat_models,)
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +32,7 @@ def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Long-term memory (app/memory/) makes its own embedding/LLM calls through the same
+    """Long-term memory (app/chat/memory/) makes its own embedding/LLM calls through the same
     httpx.AsyncClient chat tests mock - left enabled, those calls would interleave with (and
     break assertions on) the mocked chat-provider requests most tests actually care about.
     Disabled here by default; tests/test_memory.py re-enables it explicitly."""
@@ -47,7 +52,7 @@ def _log_to_file_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _intent_router_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The intent router (app/agents/router_agent/) makes its own sync OpenAI call - via the
+    """The intent router (app/chat/agents/router_agent/) makes its own sync OpenAI call - via the
     `openai` SDK's own httpx.Client, not the httpx.AsyncClient chat tests mock - whenever
     settings.openai_api_key is set and a tool is on offer. Left enabled, that call would hit a
     real network endpoint in any test that configures an OpenAI key (e.g. to exercise the OpenAI
@@ -108,7 +113,7 @@ def client(db_session: None) -> Generator[TestClient, None, None]:
 @pytest_asyncio.fixture
 async def db_async_session(db_session: None) -> AsyncGenerator[AsyncSession, None]:
     """A real AsyncSession against the same schema/truncation lifecycle as `client` - for tests
-    that call repository/agent functions directly (app/agents/adc_inspection_agent/) rather than
+    that call repository/agent functions directly (app/chat/agents/adc_inspection_agent/) rather than
     through the HTTP API, since those take a session as a parameter."""
 
     async with async_session_factory() as session:
@@ -152,7 +157,7 @@ def other_authenticated_client(db_session: None) -> Generator[TestClient, None, 
     so the two sessions don't share cookies.
 
     Registers with role "qa", but that only sticks if a user already exists in this test's DB -
-    app/auth/service.py auto-promotes the *first* registered user to ADMIN regardless of requested
+    app/shared/auth/service.py auto-promotes the *first* registered user to ADMIN regardless of requested
     role. Request `authenticated_client` in the same test (it doesn't need to be used) to
     guarantee this one lands second and keeps its requested role."""
 

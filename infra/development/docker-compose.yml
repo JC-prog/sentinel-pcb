@@ -148,10 +148,10 @@ services:
       REQUIRE_MODELS_ON_STARTUP: "false"
 
   # Self-hosted LangFuse (LLM observability/tracing for the LangGraph pipelines - see
-  # app/config/langfuse.py). Opt-in like ui/inference above - `--profile langfuse` or
+  # app/shared/config/langfuse.py). Opt-in like ui/inference above - `--profile langfuse` or
   # `--profile full`. LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY in .env are used twice: to seed
   # langfuse-web's headless init below (LANGFUSE_INIT_PROJECT_*) so a dev never has to click
-  # through the web UI to get an API key, and by the app itself (app/config/settings.py) to
+  # through the web UI to get an API key, and by the app itself (app/shared/config/settings.py) to
   # authenticate the CallbackHandler - set them once, both sides just work. Every other secret
   # below is a fixed, committed dev-only default (same pattern as litellm's LITELLM_MASTER_KEY) -
   # never reuse these values for anything but local dev.
