@@ -14,8 +14,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from PIL import Image
 
-from app.agents.explainability_review_agent.mcp_client import PCBMCPClient
-from app.agents.explainability_review_agent.models import ModelRegistry
+from app.agents.case_review_agent.mcp_client import PCBMCPClient
+from app.agents.case_review_agent.models import ModelRegistry
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)

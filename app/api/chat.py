@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 
 from app.agents import call_tool
-from app.agents.explainability_review_agent import (
+from app.agents.case_review_agent import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
 )

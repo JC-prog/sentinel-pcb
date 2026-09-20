@@ -52,7 +52,7 @@ class Case(Base):
     )
     conversation_id: Mapped[str] = mapped_column(String, ForeignKey("conversations.id"), nullable=False)
 
-    # Identifying fields - same names as explainability_review_agent/schemas.py's
+    # Identifying fields - same names as case_review_agent/schemas.py's
     # ExplainabilityReviewRequest (board_id, component_ref); package/feature are additional,
     # needed to key the golden-image bank unambiguously.
     board_id: Mapped[str] = mapped_column(String, nullable=False)

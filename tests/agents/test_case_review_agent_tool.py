@@ -4,8 +4,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from app.agents.explainability_review_agent import ExplainabilityReviewTool
-from app.agents.explainability_review_agent.graph import PCBInspectionState
+from app.agents.case_review_agent import ExplainabilityReviewTool
+from app.agents.case_review_agent.graph import PCBInspectionState
 
 
 def _final_state(**overrides: Any) -> PCBInspectionState:
@@ -57,7 +57,7 @@ def test_tool_metadata_shape() -> None:
 
 async def test_run_returns_diagnosis_from_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tools.get_pipeline",
+        "app.agents.case_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(_final_state()),
     )
 
@@ -86,7 +86,7 @@ async def test_run_normalizes_unrecognized_category_to_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tools.get_pipeline",
+        "app.agents.case_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(_final_state(final_defect_category="not_a_real_category")),
     )
 
@@ -109,7 +109,7 @@ async def test_run_defaults_issue_symptom_when_omitted(monkeypatch: pytest.Monke
             return _final_state()
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tools.get_pipeline",
+        "app.agents.case_review_agent.tools.get_pipeline",
         lambda api_key: _CapturingPipeline(),
     )
 

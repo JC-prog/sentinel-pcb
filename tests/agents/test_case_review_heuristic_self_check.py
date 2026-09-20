@@ -2,7 +2,7 @@ from typing import Any
 
 from PIL import Image
 
-from app.agents.explainability_review_agent.graph import (
+from app.agents.case_review_agent.graph import (
     PCBInspectionState,
     _heuristic_self_check,
     build_graph,

@@ -399,7 +399,7 @@ def build_graph(session: AsyncSession) -> CompiledStateGraph[OrchestratorState, 
             return state
 
         try:
-            from app.agents.explainability_review_agent.graph import (
+            from app.agents.case_review_agent.graph import (
                 PCBInspectionState,
                 get_pipeline,
             )

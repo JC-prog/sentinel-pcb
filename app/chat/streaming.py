@@ -25,7 +25,7 @@ from app.agents import (
     call_tool,
 )
 from app.agents.access import allowed_tool_names
-from app.agents.explainability_review_agent import ExplainabilityReviewTool
+from app.agents.case_review_agent import ExplainabilityReviewTool
 from app.agents.router_agent import Clarify, route
 from app.auth.dependencies import SessionDep
 from app.chat import get_chat_service, history
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
-# app/agents/explainability_review_agent/graph.py's get_mcp_client()). Exposed to app/api/chat.py
+# app/agents/case_review_agent/graph.py's get_mcp_client()). Exposed to app/api/chat.py
 # for its own direct-invocation explainability-review route.
 tool_registry = ToolRegistry(
     [
@@ -66,8 +66,8 @@ tool_registry = ToolRegistry(
 # listed here, so a future tool never goes unlabeled.
 _TOOL_DISPLAY_LABELS: dict[str, str] = {
     "create_case": "ADC Inspection Agent",
-    "explainability_review": "Explainability Agent",
-    "investigate_case": "Explainability Agent",
+    "explainability_review": "Case Review Agent",
+    "investigate_case": "Case Review Agent",
     "list_cases": "Case Lookup",
     "review_case": "Case Review",
     "flag_case_for_retraining": "Monitoring Agent",
@@ -123,7 +123,7 @@ async def _run_tool_call(
 ) -> str:
     """Executes one model-requested tool call. Never raises - any failure becomes a
     {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
-    instead of ending the whole SSE stream (mirrors app/agents/explainability_review_agent/
+    instead of ending the whole SSE stream (mirrors app/agents/case_review_agent/
     mcp_client.py's own graceful-degradation pattern).
 
     Defense in depth: re-checks role access even though _available_tool_specs already filtered
@@ -222,7 +222,7 @@ async def chat_sse(
     The reply itself may take several tool-call round trips (app/agents/registry.py) before the
     model produces a final answer - see the loop below. Only the final round's text is persisted
     as the assistant's message; intermediate tool-call rounds' text (usually empty) is discarded.
-    `tool_call` events are purely a UI progress indicator ("Calling Explainability Agent...") -
+    `tool_call` events are purely a UI progress indicator ("Calling Case Review Agent...") -
     they're never persisted to history either.
     """
 

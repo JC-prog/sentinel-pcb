@@ -1,8 +1,8 @@
-from app.agents.explainability_review_agent.schemas import (
+from app.agents.case_review_agent.schemas import (
     ExplainabilityReviewRequest,
     ExplainabilityReviewResponse,
 )
-from app.agents.explainability_review_agent.tools import (
+from app.agents.case_review_agent.tools import (
     ExplainabilityReviewTool,
     InvestigateCaseTool,
 )
