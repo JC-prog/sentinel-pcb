@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     chat_history_max_turns: int = 20
 
     # Postgres (infra/development/docker-compose.yml's "db" service, infra/production/rds.tf) -
-    # now used by app/db/ for authentication (app/shared/auth/).
+    # now used by app/shared/db/ for authentication (app/shared/auth/).
     database_url: str = ""
 
     # Vector store (infra/development/docker-compose.yml's "qdrant" service) for long-term,

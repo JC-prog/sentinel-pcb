@@ -158,6 +158,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Internal restructure, no user-visible change: the backend is split into independent `app/chat/`
+  and `app/workflow/` (Work tab) modules over shared code in `app/shared/`, each with its own
+  routes, agents, services, and (for chat) DB models. `chat` and `workflow` may no longer import
+  each other, enforced by a new test. API routes, environment variables, and database tables are
+  unchanged. The Angular UI's chat and work files are grouped into `ui/src/app/chat/` and
+  `ui/src/app/work/` the same way, and `tests/` mirrors the new layout.
 - The chat-facing Explainability & Review Agent is renamed to Case Review Agent
   (`app/agents/case_review_agent/`, was `explainability_review_agent/`) to free up that name for
   the new Work-tab agent above - its tools (`explainability_review`, `investigate_case`), routes,

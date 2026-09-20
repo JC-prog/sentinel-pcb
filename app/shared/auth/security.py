@@ -40,7 +40,7 @@ def decode_access_token(token: str) -> AccessTokenPayload:
 
 def new_refresh_token() -> tuple[str, str, datetime]:
     """Returns (raw_token, token_hash, expires_at). The raw token is what goes in the cookie and
-    is never stored; only its hash is persisted (app.db.models.RefreshToken) - same reasoning as
+    is never stored; only its hash is persisted (app.shared.db.models.RefreshToken) - same reasoning as
     never storing a plaintext password."""
 
     raw_token = secrets.token_urlsafe(32)
