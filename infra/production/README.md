@@ -99,6 +99,6 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
 - **Inference service has no autoscaling and `desired_count = 1`.** Add target-tracking on CPU,
   or a queue in front, once classification traffic justifies it.
 - **Nothing in the backend calls the inference service yet.** `app/inference/` is the client;
-  wiring it into the Explainability & Review Agent is the next step.
+  wiring it into the Case Review Agent is the next step.
 - **RDS is provisioned but unused.** No schema, no migrations, no app code touches it yet -
   that's the future multi-user/auth feature's job.
