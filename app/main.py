@@ -1,6 +1,7 @@
-"""Composition root: creates the app, wires up middleware/lifespan, and mounts every route
-module under app/api/. Carries no route declarations of its own - see app/api/'s own docstring
-for how routes are organized and where to add a new one.
+"""Composition root: creates the app, wires up middleware/lifespan, and mounts each module's
+routes (app/shared/api/, app/chat/api/, app/workflow/api/). Carries no route declarations of its
+own. app/chat/ and app/workflow/ are independent feature modules that only share app/shared/ -
+this file is the one place that knows about all three.
 """
 
 import json
@@ -14,19 +15,29 @@ import jwt
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, chat, health, orchestrator, uploads
-from app.api.auth import ACCESS_TOKEN_COOKIE
-from app.auth.security import decode_access_token
-from app.config.logging_config import configure_logging
-from app.config.settings import settings
-from app.db import init_models
+from app.chat.api import STREAMING_PATHS as _CHAT_STREAMING_PATHS
+from app.chat.api import router as chat_router
+from app.chat.db import models as _chat_models  # registers chat tables on Base.metadata
+from app.shared.api import STREAMING_PATHS as _SHARED_STREAMING_PATHS
+from app.shared.api import router as shared_router
+from app.shared.api.auth import ACCESS_TOKEN_COOKIE
+from app.shared.auth.security import decode_access_token
+from app.shared.config.logging_config import configure_logging
+from app.shared.config.settings import settings
+from app.shared.db import init_models
+from app.workflow.api import STREAMING_PATHS as _WORKFLOW_STREAMING_PATHS
+from app.workflow.api import router as workflow_router
+
+# create_all (init_models) only creates tables whose models have been imported; the shared db
+# package can't import chat's models itself, so the composition root does it for every module.
+_REGISTERED_MODEL_PACKAGES = (_chat_models,)
 
 _access_logger = logging.getLogger("app.access")
 logger = logging.getLogger(__name__)
 
-# Configured at import time (like each app/api/ module's own module-level setup) rather than
+# Configured at import time rather than
 # inside lifespan, so anything logged before the app finishes starting up - or by a standalone
-# script that imports app.main - still gets the right format. See app/config/logging_config.py.
+# script that imports app.main - still gets the right format. See app/shared/config/logging_config.py.
 configure_logging()
 
 
@@ -46,14 +57,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Every API surface the app exposes, one module per domain - see app/api/'s docstring. Adding a
-# new endpoint means adding (or extending) a module under app/api/, not this file.
-app.include_router(health.router)
-app.include_router(auth.router)
-app.include_router(uploads.router)
-app.include_router(admin.router)
-app.include_router(chat.router)
-app.include_router(orchestrator.router)
+# Every API surface the app exposes, one router per module. Adding a new endpoint means adding (or
+# extending) a route module under that module's api/ package, not this file.
+app.include_router(shared_router)
+app.include_router(chat_router)
+app.include_router(workflow_router)
 
 
 def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
@@ -72,7 +80,9 @@ def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
     return data
 
 
-_STREAMING_RESPONSE_PATHS = frozenset({"/api/chat/stream", "/api/orchestrator/run/stream"})
+_STREAMING_RESPONSE_PATHS = (
+    _SHARED_STREAMING_PATHS | _CHAT_STREAMING_PATHS | _WORKFLOW_STREAMING_PATHS
+)
 
 
 @app.middleware("http")
@@ -81,7 +91,7 @@ async def _log_requests(
 ) -> Response:
     """One structured INFO line per request (method, path, status, duration, and the caller's
     user id when authenticated) - Uvicorn's own access log already prints a plain-text line per
-    request, but doesn't attach these as separate, queryable fields the way app/config/logging_config.py's
+    request, but doesn't attach these as separate, queryable fields the way app/shared/config/logging_config.py's
     JSON formatter can. Decodes the access_token cookie directly (JWT only, no DB round trip) just
     to attribute the log line - any failure (missing/expired/invalid token) just means an
     unauthenticated-looking log line, not a 401; auth itself is still enforced by
@@ -99,7 +109,7 @@ async def _log_requests(
     ordinary quick JSON responses, but draining a streaming route's body_iterator here would
     buffer the *entire* SSE stream before any of it reaches the browser - so those routes are
     explicitly skipped (_STREAMING_RESPONSE_PATHS) and log their own request/response content at
-    the source instead (app/chat/streaming.py's chat_sse, app/agents/orchestrator_agent/streaming.py's
+    the source instead (app/chat/services/streaming.py's chat_sse, app/workflow/services/streaming.py's
     orchestrator_sse)."""
 
     debug_enabled = _access_logger.isEnabledFor(logging.DEBUG)

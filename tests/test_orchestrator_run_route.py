@@ -12,7 +12,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 _INSPECTION_XML = """<?xml version="1.0"?>
 <Boards>

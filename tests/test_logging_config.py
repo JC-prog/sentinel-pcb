@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.config.logging_config import configure_logging
-from app.config.settings import settings
+from app.shared.config.logging_config import configure_logging
+from app.shared.config.settings import settings
 
 
 @pytest.fixture(autouse=True)

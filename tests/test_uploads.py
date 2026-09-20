@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 
 def _png_bytes() -> bytes:

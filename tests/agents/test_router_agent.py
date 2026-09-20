@@ -1,9 +1,9 @@
 import pytest
 
-from app.agents import router_agent
-from app.agents.router_agent import Clarify, Proceed, RouterDecision, classify_intent, route
-from app.agents.router_agent import graph as router_graph
-from app.config.settings import settings
+from app.chat.agents import router_agent
+from app.chat.agents.router_agent import Clarify, Proceed, RouterDecision, classify_intent, route
+from app.chat.agents.router_agent import graph as router_graph
+from app.shared.config.settings import settings
 
 _TOOLS = [
     {"name": "get_weather", "description": "Gets the weather for a location."},

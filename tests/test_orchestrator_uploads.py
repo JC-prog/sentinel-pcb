@@ -1,5 +1,5 @@
 """Covers the three /api/orchestrator/uploads/* routes (app/main.py) - the web equivalent of the
-tkinter source app's file/folder pickers. See app/agents/orchestrator_agent/uploads.py for the
+tkinter source app's file/folder pickers. See app/workflow/services/uploads.py for the
 storage layer these exercise."""
 
 import shutil
@@ -8,7 +8,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 
 @pytest.fixture(autouse=True)

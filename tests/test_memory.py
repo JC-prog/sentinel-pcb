@@ -16,9 +16,9 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from qdrant_client import AsyncQdrantClient
 
-from app.config.settings import settings
-from app.core.memory import MemoryRecord
-from app.memory import service as memory_service
+from app.chat.core.memory import MemoryRecord
+from app.chat.memory import service as memory_service
+from app.shared.config.settings import settings
 
 _TEST_COLLECTION_PREFIX = "test_chat_memories"
 
@@ -92,7 +92,7 @@ def _ollama_embed_response(input_texts: list[str]) -> httpx.Response:
 
 def _chat_llm_handler(fact_json: str, reply_text: str) -> Callable[[httpx.Request], httpx.Response]:
     """Routes a mocked httpx call to the right canned response by URL/content: embeddings go to
-    /api/embed, and /api/chat is either the real reply or app/memory/service.py's fact-extraction
+    /api/embed, and /api/chat is either the real reply or app/chat/memory/service.py's fact-extraction
     pass (distinguished by its system prompt, since both hit the same Ollama endpoint)."""
 
     def handler(request: httpx.Request) -> httpx.Response:

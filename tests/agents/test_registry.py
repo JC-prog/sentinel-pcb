@@ -1,7 +1,7 @@
 import pytest
 
-from app.agents.registry import ToolNotFound, ToolRegistry, call_tool
-from app.agents.time_agent import CurrentTimeAgentTool
+from app.chat.agents.registry import ToolNotFound, ToolRegistry, call_tool
+from app.chat.agents.time_agent import CurrentTimeAgentTool
 
 
 def test_registry_get_returns_registered_tool() -> None:

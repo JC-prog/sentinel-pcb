@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 _RealAsyncClient = httpx.AsyncClient
 
@@ -79,7 +79,7 @@ def test_tools_field_sent_by_default_excluding_explainability(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """authenticated_client is the first user registered in a fresh DB, which
-    app/auth/service.py auto-promotes to ADMIN regardless of the requested role - see
+    app/shared/auth/service.py auto-promotes to ADMIN regardless of the requested role - see
     tests/test_role_gated_tools.py for the full role -> tool-visibility matrix."""
 
     requests: list[dict[str, Any]] = []

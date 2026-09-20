@@ -1,12 +1,12 @@
 """Unit tests for explainability_review_agent's pure, dependency-free graph nodes (ported as-is
-from pcb_agentic_inspector's Agent 2 - see app/agents/explainability_review_agent/graph.py).
+from pcb_agentic_inspector's Agent 2 - see app/workflow/agents/explainability_review_agent/graph.py).
 Only the nodes that need no Ollama/OpenAI call are covered here; inspect_visuals_node and
 grounding_self_check_node need network/LLM mocking and are exercised at the pipeline level
 elsewhere."""
 
 from typing import Any
 
-from app.agents.explainability_review_agent.graph import (
+from app.workflow.agents.explainability_review_agent.graph import (
     ReviewState,
     _heuristic_self_check,
     extract_telemetry_node,

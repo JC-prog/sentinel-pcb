@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from app.agents.case_review_agent.mcp_client import PCBMCPClient
+from app.chat.agents.case_review_agent.mcp_client import PCBMCPClient
 
 _XML_WITH_HEIGHT_AND_OVERHANG = b"""
 <Boards>
@@ -53,10 +53,10 @@ def mcp_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> PCBMCPClient:
     doesn't exercise either."""
 
     monkeypatch.setattr(
-        "app.agents.case_review_agent.mcp_client.QdrantClient", lambda **kwargs: object()
+        "app.chat.agents.case_review_agent.mcp_client.QdrantClient", lambda **kwargs: object()
     )
     monkeypatch.setattr(
-        "app.agents.case_review_agent.mcp_client.SentenceTransformer",
+        "app.chat.agents.case_review_agent.mcp_client.SentenceTransformer",
         lambda *args, **kwargs: object(),
     )
     return PCBMCPClient(qdrant_path=str(tmp_path))

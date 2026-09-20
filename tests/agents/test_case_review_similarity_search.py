@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from app.agents.case_review_agent.mcp_client import PCBMCPClient
+from app.chat.agents.case_review_agent.mcp_client import PCBMCPClient
 
 
 class _FakePoint:
@@ -40,10 +40,10 @@ def _build_client(
             return query_points_impl(**kwargs)
 
     monkeypatch.setattr(
-        "app.agents.case_review_agent.mcp_client.QdrantClient", _FakeQdrantClient
+        "app.chat.agents.case_review_agent.mcp_client.QdrantClient", _FakeQdrantClient
     )
     monkeypatch.setattr(
-        "app.agents.case_review_agent.mcp_client.SentenceTransformer",
+        "app.chat.agents.case_review_agent.mcp_client.SentenceTransformer",
         lambda *args, **kwargs: _FakeEncoder(),
     )
     return PCBMCPClient(qdrant_path=str(tmp_path))

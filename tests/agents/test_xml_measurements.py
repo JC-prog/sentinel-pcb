@@ -1,6 +1,6 @@
 from xml.etree import ElementTree as ET
 
-from app.agents.adc_inspection_agent.xml_measurements import (
+from app.chat.agents.adc_inspection_agent.xml_measurements import (
     extract_all_failed_measurements,
     find_failed_feature,
     validate_measurements,

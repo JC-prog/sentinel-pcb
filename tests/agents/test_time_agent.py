@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from app.agents.time_agent import CurrentTimeAgentTool
-from app.agents.time_agent import graph as time_graph
+from app.chat.agents.time_agent import CurrentTimeAgentTool
+from app.chat.agents.time_agent import graph as time_graph
 
 _RealClient = httpx.Client
 

@@ -1,7 +1,7 @@
 from typing import Any
 
-from app.agents.adc_inspection_agent.policy_engine import PolicyEngine
-from app.agents.adc_inspection_agent.workflow_state import OrchestratorState
+from app.chat.agents.adc_inspection_agent.policy_engine import PolicyEngine
+from app.chat.agents.adc_inspection_agent.workflow_state import OrchestratorState
 
 
 def _blank_state(**overrides: Any) -> OrchestratorState:

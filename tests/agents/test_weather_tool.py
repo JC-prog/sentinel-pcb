@@ -5,9 +5,9 @@ from typing import Any
 import httpx
 import pytest
 
-from app.agents.weather_agent import WeatherAgentTool
-from app.agents.weather_agent import graph as weather_graph
-from app.config.settings import settings
+from app.chat.agents.weather_agent import WeatherAgentTool
+from app.chat.agents.weather_agent import graph as weather_graph
+from app.shared.config.settings import settings
 
 _RealClient = httpx.Client
 

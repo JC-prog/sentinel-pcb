@@ -1,7 +1,7 @@
 import jwt as pyjwt
 import pytest
 
-from app.auth.security import (
+from app.shared.auth.security import (
     create_access_token,
     decode_access_token,
     hash_password,
@@ -9,7 +9,7 @@ from app.auth.security import (
     new_refresh_token,
     verify_password,
 )
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 
 def test_hash_password_round_trip() -> None:

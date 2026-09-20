@@ -1,7 +1,7 @@
-"""Role -> tool-visibility matrix (app/agents/access.py), exercised through /api/chat/stream, plus
+"""Role -> tool-visibility matrix (app/chat/agents/access.py), exercised through /api/chat/stream, plus
 a defense-in-depth check that a tool merely not being offered also can't be dispatched.
 
-Every fixture here registers a *second* user in the test's DB - app/auth/service.py auto-promotes
+Every fixture here registers a *second* user in the test's DB - app/shared/auth/service.py auto-promotes
 the first registered user in an empty DB to ADMIN regardless of requested role (see
 tests/conftest.py's qa_authenticated_client docstring), so `authenticated_client` itself is used
 as the ADMIN case rather than a dedicated fixture.

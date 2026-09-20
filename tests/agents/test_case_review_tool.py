@@ -2,9 +2,10 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.adc_inspection_agent import ListCasesTool, ReviewCaseTool
-from app.agents.adc_inspection_agent.repository import create_case
-from app.db.models import Case, Conversation, User, UserRole
+from app.chat.agents.adc_inspection_agent import ListCasesTool, ReviewCaseTool
+from app.chat.agents.adc_inspection_agent.repository import create_case
+from app.chat.db.models import Case, Conversation
+from app.shared.db.models import User, UserRole
 
 
 async def _make_user(session: AsyncSession) -> User:

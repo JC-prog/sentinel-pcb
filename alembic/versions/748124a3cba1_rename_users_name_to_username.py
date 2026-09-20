@@ -1,7 +1,7 @@
 """rename users name to username
 
-users.name becomes users.username, now the field used to log in (app/auth/service.py's
-authenticate_user) instead of email - see app/db/models/auth.py. Existing values carry over via
+users.name becomes users.username, now the field used to log in (app/shared/auth/service.py's
+authenticate_user) instead of email - see app/shared/db/models/auth.py. Existing values carry over via
 the rename itself (no data loss), but the new unique index means this will fail if any two rows
 already share the same name - unlike the baseline migration, this one's upgrade() actually runs
 against real databases, so that's a real caveat for any deployment with duplicate names, not just

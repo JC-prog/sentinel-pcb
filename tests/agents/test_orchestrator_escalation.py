@@ -1,6 +1,6 @@
 """Tests for orchestrator_agent's escalation hand-off to explainability_review_agent (the
 Work-tab-only agent ported as-is from pcb_agentic_inspector's Agent 2) - added to
-OrchestratorAgent._execute_inference/_escalate_review in app/agents/orchestrator_agent/orchestrator.py.
+OrchestratorAgent._execute_inference/_escalate_review in app/workflow/agents/orchestrator_agent/orchestrator.py.
 Mirrors adc_inspection_agent's equivalent escalation to case_review_agent for the chat pipeline."""
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from app.agents.orchestrator_agent.orchestrator import OrchestratorAgent
-from app.agents.orchestrator_agent.services.common import ServiceResult
-from app.config.settings import settings
+from app.shared.config.settings import settings
+from app.workflow.agents.orchestrator_agent.orchestrator import OrchestratorAgent
+from app.workflow.agents.orchestrator_agent.services.common import ServiceResult
 
 # orchestrator_agent/ is excluded from strict typing (pyproject.toml) as a close, deliberately
 # unannotated port - calling into it from this typed test file needs no-untyped-call silenced at
@@ -62,7 +62,7 @@ async def test_escalate_review_maps_sample_fields_and_result(monkeypatch: pytest
         }
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.execute_explainability_review", _fake_execute
+        "app.workflow.agents.explainability_review_agent.execute_explainability_review", _fake_execute
     )
 
     payload = {
@@ -92,7 +92,7 @@ async def test_escalate_review_reads_classification_from_details_on_recoverable_
     monkeypatch.setattr(settings, "explainability_review_agent_enabled", True)
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.execute_explainability_review",
+        "app.workflow.agents.explainability_review_agent.execute_explainability_review",
         lambda input_data: captured.update(input_data) or {},
     )
 
@@ -114,7 +114,7 @@ async def test_escalate_review_skipped_on_pipeline_exception(monkeypatch: pytest
         raise RuntimeError("Ollama unreachable")
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.execute_explainability_review", _raise
+        "app.workflow.agents.explainability_review_agent.execute_explainability_review", _raise
     )
 
     result = await _agent()._escalate_review(_sample(), {})  # type: ignore[no-untyped-call]

@@ -1,6 +1,6 @@
 import json
 
-from app.agents.monitoring_agent import MonitoringAgentTool
+from app.chat.agents.monitoring_agent import MonitoringAgentTool
 
 
 async def test_run_returns_not_implemented_placeholder() -> None:

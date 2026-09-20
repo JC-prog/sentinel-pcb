@@ -9,15 +9,16 @@ import pytest
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.adc_inspection_agent import CreateCaseTool
-from app.agents.adc_inspection_agent.golden_images import save_golden_image
-from app.agents.adc_inspection_agent.repository import (
+from app.chat.agents.adc_inspection_agent import CreateCaseTool
+from app.chat.agents.adc_inspection_agent.golden_images import save_golden_image
+from app.chat.agents.adc_inspection_agent.repository import (
     get_case_by_sequence_number,
     list_cases,
     parse_case_number,
 )
-from app.config.settings import settings
-from app.db.models import Case, Conversation, User, UserRole
+from app.chat.db.models import Case, Conversation
+from app.shared.config.settings import settings
+from app.shared.db.models import User, UserRole
 
 _RealAsyncClient = httpx.AsyncClient
 
@@ -287,7 +288,7 @@ async def test_create_case_downgrades_on_alignment_failure(
 
     _mock_async_client(monkeypatch, _confident_handler)
     monkeypatch.setattr(
-        "app.agents.adc_inspection_agent.verification.estimate_translation",
+        "app.chat.agents.adc_inspection_agent.verification.estimate_translation",
         lambda golden_bytes, defect_bytes: {
             "dx": 40.0,
             "dy": 0.0,
@@ -377,7 +378,7 @@ async def test_create_case_escalates_to_explainability_on_review_required(
 
     monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     monkeypatch.setattr(
-        "app.agents.case_review_agent.graph.get_pipeline",
+        "app.chat.agents.case_review_agent.graph.get_pipeline",
         lambda api_key: _FakeExplainabilityPipeline(),
     )
     _mock_async_client(monkeypatch, _uncertain_region_handler)

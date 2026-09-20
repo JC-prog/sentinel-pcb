@@ -1,6 +1,6 @@
 """Confirms the LLM provider request/response debug logging added alongside the API
 request/response body logging (tests/test_request_logging_middleware.py) - both are gated behind
-settings.log_level == "DEBUG", see app/config/logging_config.py.
+settings.log_level == "DEBUG", see app/shared/config/logging_config.py.
 """
 
 import json
@@ -29,7 +29,7 @@ def test_ollama_provider_logs_request_and_response_payload_at_debug(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger="app.chat.providers.ollama")
+    caplog.set_level(logging.DEBUG, logger="app.chat.services.providers.ollama")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.dumps({"message": {"content": "Hello from Ollama"}, "done": True})
@@ -45,7 +45,7 @@ def test_ollama_provider_logs_request_and_response_payload_at_debug(
         response.read()
     assert response.status_code == 200
 
-    records = [r for r in caplog.records if r.name == "app.chat.providers.ollama"]
+    records = [r for r in caplog.records if r.name == "app.chat.services.providers.ollama"]
     request_records = [r for r in records if hasattr(r, "payload")]
     response_records = [r for r in records if hasattr(r, "content")]
 
@@ -61,7 +61,7 @@ def test_no_llm_debug_logs_at_default_info_level(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="app.chat.providers.ollama")
+    caplog.set_level(logging.INFO, logger="app.chat.services.providers.ollama")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.dumps({"message": {"content": "ack"}, "done": True})
@@ -76,4 +76,4 @@ def test_no_llm_debug_logs_at_default_info_level(
     ) as response:
         response.read()
 
-    assert [r for r in caplog.records if r.name == "app.chat.providers.ollama"] == []
+    assert [r for r in caplog.records if r.name == "app.chat.services.providers.ollama"] == []

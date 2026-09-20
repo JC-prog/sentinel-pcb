@@ -3,8 +3,8 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from app.config.settings import settings
-from app.inference import Classification, InferenceError, InferenceNotConfigured, classify
+from app.shared.config.settings import settings
+from app.shared.inference import Classification, InferenceError, InferenceNotConfigured, classify
 
 _RealAsyncClient = httpx.AsyncClient
 

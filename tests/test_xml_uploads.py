@@ -4,7 +4,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config.settings import settings
+from app.shared.config.settings import settings
 
 _XML_BYTES = b"<Boards><Board Name='BOARD-1'></Board></Boards>"
 
