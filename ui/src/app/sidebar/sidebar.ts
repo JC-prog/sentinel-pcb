@@ -37,7 +37,7 @@ export class Sidebar {
     const wasActive = this.isActive(id);
     this.chatService.delete(id);
     if (wasActive) {
-      this.router.navigateByUrl('/');
+      this.router.navigateByUrl('/chat');
     }
   }
 }

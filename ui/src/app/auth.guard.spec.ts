@@ -55,4 +55,16 @@ describe('authGuard', () => {
     const result = await runGuard();
     expect(router.serializeUrl(result as never)).toBe('/login');
   });
+
+  it('redirects to /login (not stuck) when the backend is unreachable, e.g. first setup', async () => {
+    // Exercises the real fetchCurrentUser (not mocked, unlike the tests above) so this catches a
+    // regression where a thrown fetch propagates out of the guard instead of resolving to a
+    // clean redirect.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const result = await runGuard();
+    expect(router.serializeUrl(result as never)).toBe('/login');
+
+    vi.unstubAllGlobals();
+  });
 });

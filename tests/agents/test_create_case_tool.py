@@ -377,7 +377,7 @@ async def test_create_case_escalates_to_explainability_on_review_required(
 
     monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.graph.get_pipeline",
+        "app.agents.case_review_agent.graph.get_pipeline",
         lambda api_key: _FakeExplainabilityPipeline(),
     )
     _mock_async_client(monkeypatch, _uncertain_region_handler)

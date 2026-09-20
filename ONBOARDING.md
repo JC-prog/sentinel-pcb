@@ -71,7 +71,7 @@ need to set by hand:
 
 | Key | Set it when | Value |
 |---|---|---|
-| `LITELLM_OPENAI_API_KEY` | your work touches the OpenAI provider, the Explainability & Review Agent, or OpenAI embeddings | your **own** OpenAI API key. Only your local `litellm` container reads it, and `.env` is git-ignored. Leave blank to work Ollama-only (OpenAI calls just 401). |
+| `LITELLM_OPENAI_API_KEY` | your work touches the OpenAI provider, the Case Review Agent, or OpenAI embeddings | your **own** OpenAI API key. Only your local `litellm` container reads it, and `.env` is git-ignored. Leave blank to work Ollama-only (OpenAI calls just 401). |
 
 Leave these alone - they already point at the local containers:
 `OPENAI_BASE_URL`, `OPENAI_API_KEY` (the proxy's dev master key), `DATABASE_URL`, `QDRANT_URL`,
@@ -128,7 +128,7 @@ needs it:
 | Backend / chat / memory / agents | nothing - the default stack covers it |
 | UI | `npm start` is the real loop; `docker compose ... --profile ui up -d` only for a container smoke test |
 | Inference service (`inference/`) | fill in real Hugging Face repos in `inference/models.toml`, then `docker compose -f infra/development/docker-compose.yml --env-file .env --profile inference up -d`, or work in `inference/` with its own README |
-| Explainability & Review Agent data | seed its embedded Qdrant with `scripts/explainability_agent/generate_telemetry.py` and `scripts/explainability_agent/populate_qdrant.py` - see [`DEVELOPMENT.md`](DEVELOPMENT.md) |
+| Case Review Agent data | seed its embedded Qdrant with `scripts/explainability_agent/generate_telemetry.py` and `scripts/explainability_agent/populate_qdrant.py` - see [`DEVELOPMENT.md`](DEVELOPMENT.md) |
 | LangFuse tracing for the agent pipelines | `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait`, then set `LANGFUSE_ENABLED=True` in `.env` and restart the backend. Auto-provisions an org/project/API key on first boot - log in at http://localhost:3000 with `dev@sentinelchat.local` / `sentinelchat-dev-password`. |
 
 `docker compose ... --profile full up -d` runs everything.
@@ -157,7 +157,7 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 | OpenAI chat returns a 401 / auth error | Set `LITELLM_OPENAI_API_KEY` in `.env` and `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --force-recreate litellm`. |
 | Ran a `docker compose` command by hand and litellm still 401s | You likely dropped `--env-file .env` from the command. Without it, Compose can't find the repo-root `.env` for this file's `${...}` substitutions and silently treats the key as blank - always include `--env-file .env` (run from the repo root) with any `docker compose -f infra/development/docker-compose.yml ...` command. |
 | Long-term memory silently does nothing | Using Ollama embeddings? Run `ollama pull nomic-embed-text`. Or disable it with `MEMORY_ENABLED=False` in `.env`. |
-| First Explainability Agent request is very slow | Expected - its CLIP image model (~350 MB, pulls `torch`) downloads on first use, not at install. |
+| First Case Review Agent request is very slow | Expected - its CLIP image model (~350 MB, pulls `torch`) downloads on first use, not at install. |
 | Anything half-installed | The script is idempotent - just run it again. |
 
 ---

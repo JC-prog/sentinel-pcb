@@ -58,7 +58,7 @@ describe('HttpChatResponder', () => {
 
   it('emits a toolCall event for a tool_call frame', async () => {
     const body =
-      'event: tool_call\ndata: {"name":"create_case","label":"Orchestrator Agent"}\n\n' +
+      'event: tool_call\ndata: {"name":"create_case","label":"ADC Inspection Agent"}\n\n' +
       'event: delta\ndata: {"text":"Done."}\n\n' +
       'event: done\ndata: {}\n\n';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
@@ -68,7 +68,7 @@ describe('HttpChatResponder', () => {
     );
 
     expect(events).toEqual([
-      { type: 'toolCall', label: 'Orchestrator Agent' },
+      { type: 'toolCall', label: 'ADC Inspection Agent' },
       { type: 'delta', text: 'Done.' },
     ]);
   });

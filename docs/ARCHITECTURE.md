@@ -15,7 +15,7 @@ diagnose **PCB (printed circuit board) inspection defects** from an attached ima
 - a per-conversation choice of LLM provider (a local Ollama model, or OpenAI through a gateway),
 - user accounts with roles, short-term (per-conversation) and long-term (cross-conversation) memory,
 - mid-conversation tool calling (current time, weather, and PCB defect diagnosis),
-- an **Explainability & Review Agent** - a multi-step LangGraph pipeline that grounds a defect
+- a **Case Review Agent** - a multi-step LangGraph pipeline that grounds a defect
   call in retrieved history, visual evidence, and measurement telemetry,
 - a standalone **inference service** that runs ONNX image classifiers.
 
@@ -68,12 +68,12 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 | Component | Tech | Responsibility |
 |---|---|---|
 | **UI** (`ui/`) | Angular, standalone components, signals | Chat interface, login/register, settings, image attach (paperclip or drag-drop), light/dark theme. Streams the assistant reply chunk by chunk. |
-| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | The core service: auth, chat SSE streaming, conversation persistence, image uploads, tool-calling loop, the Explainability Agent, and a client for the inference service. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
+| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | The core service: auth, chat SSE streaming, conversation persistence, image uploads, tool-calling loop, the Case Review Agent, and a client for the inference service. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
 | **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
 | **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
 | **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. |
-| **Embedded Qdrant** | file-based Qdrant under `data/images/qdrant_db/` | Historical PCB defect cases the Explainability Agent retrieves against. Separate from the Qdrant above; loaded lazily on first agent use. |
+| **Embedded Qdrant** | file-based Qdrant under `data/images/qdrant_db/` | Historical PCB defect cases the Case Review Agent retrieves against. Separate from the Qdrant above; loaded lazily on first agent use. |
 
 ---
 
@@ -132,10 +132,10 @@ Two tiers, both server-side and per account:
   Qdrant with an embedding. A new conversation retrieves the top matches back into its system
   prompt. `/remember <text>` saves one explicitly. `MEMORY_ENABLED` is a kill switch.
 
-### Explainability & Review Agent
+### Case Review Agent
 
-A LangGraph pipeline (`app/agents/explainability_review_agent/`), callable directly via
-`POST /api/agents/explainability-review` or as a chat tool:
+A LangGraph pipeline (`app/agents/case_review_agent/`, formerly `explainability_review_agent/`),
+callable directly via `POST /api/agents/explainability-review` or as a chat tool:
 
 ```
 context_retrieval  ->  visual_evidence  ->  measurement_evidence  ->  reasoning
@@ -147,7 +147,26 @@ It returns a defect category, a diagnosis, a grounding-confidence score, and whe
 self-check passed. The CLIP embedding model and the embedded Qdrant collection load lazily on
 first use to keep startup and tests fast. `EXPLAINABILITY_AGENT_ENABLED` is its kill switch.
 The `pcb_detector` node is a hardcoded stub carried over from the original prototype, not a real
-object detector.
+object detector. Renamed to free up the "explainability and review" name for a second, unrelated
+agent below that took it instead.
+
+### Explainability Review Agent
+
+A different LangGraph pipeline (`app/agents/explainability_review_agent/`), ported as-is from a
+separate standalone prototype (`pcb_agentic_inspector`'s "Agent 2") and unrelated to the Case
+Review Agent above despite the similar name. Never a chat tool - called in-process only by the
+Work tab's `orchestrator_agent` for REVIEW_REQUIRED samples:
+
+```
+retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_self_check
+  (hardcoded mock         (AOI measurement       (local Ollama          (GPT-4o reasoning,
+   IPC precedents)         flattening)             LLaVA VLM)            heuristic fallback)
+```
+
+Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
+`app/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
+`settings.openai_api_key`/LiteLLM-proxy convention - a deliberate exception, since it was ported
+unchanged rather than adapted. `explainability_review_agent_enabled` is its kill switch.
 
 ### Weather Agent
 
@@ -196,7 +215,7 @@ classify_region  ->  (routed?) --yes-->  classify_defect  --> END
 
 `classify_region` calls the inference service's `pcb_region` model to pick the component region
 (Body/Lead/Text); `classify_defect` then calls whichever of `pcb_body_defect`/`pcb_lead_defect`/
-`pcb_text_defect` matches. Unlike the Explainability & Review Agent, this is a raw two-stage
+`pcb_text_defect` matches. Unlike the Case Review Agent, this is a raw two-stage
 classifier verdict with confidence scores, no LLM-written narrative. `ADC_INSPECTION_AGENT_ENABLED`
 is its kill switch.
 
@@ -302,7 +321,7 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 
 - Chat image uploads are on local container disk, not S3 - blocks running more than one backend
   task.
-- The Explainability Agent's object-detection node is a stub, and its telemetry is synthetic -
+- The Case Review Agent's object-detection node is a stub, and its telemetry is synthetic -
   `JcProg/PCBInspect-AI` (object detection, on the same HF org as the ADC classifiers) is a
   plausible real replacement, not yet wired in.
 - The ADC Inspection Agent's batch/dataset workflow (`orchestrator-agent/adc_agentic_project`'s

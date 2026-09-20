@@ -142,14 +142,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   explanation of what looked wrong. Only queues the request - actual model retraining happens on
   the separate inference server, never in this app.
 - The chat UI now shows which agent is currently running (e.g. "Calling Orchestrator Agent…",
-  "Calling Explainability Agent…") instead of a generic "Thinking…" while a tool call is in
+  "Calling Case Review Agent…") instead of a generic "Thinking…" while a tool call is in
   flight, via a new `event: tool_call` SSE frame - purely a progress indicator, never persisted
   to conversation history.
 - [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md): a practical guide to what to type/attach in chat to
   trigger each capability (submitting an image, getting a diagnosis, investigating a case,
   reviewing, flagging for retraining), linked from `README.md`.
+- New Explainability Review Agent (`app/agents/explainability_review_agent/`, Work-tab-only):
+  ported as-is from a teammate's standalone `pcb_agentic_inspector` prototype's Agent 2 pipeline
+  (`retrieve_precedents -> extract_telemetry -> inspect_visuals -> grounding_self_check`; local
+  Ollama LLaVA for visual evidence, GPT-4o for grounding with a deterministic heuristic fallback).
+  Never a chat tool - the Work tab's `orchestrator_agent` now escalates any REVIEW_REQUIRED sample
+  to it in-process, attaching its diagnosis to that sample's result under `explainability_result`.
+  `explainability_review_agent_enabled` is its kill switch.
 
 ### Changed
+
+- The chat-facing Explainability & Review Agent is renamed to Case Review Agent
+  (`app/agents/case_review_agent/`, was `explainability_review_agent/`) to free up that name for
+  the new Work-tab agent above - its tools (`explainability_review`, `investigate_case`), routes,
+  and behavior are unchanged.
 
 - `ONBOARDING.md`: a step-by-step dev environment setup guide (prerequisites, the setup script,
   the one `.env` value to set, verification, per-section extras, troubleshooting, ports).

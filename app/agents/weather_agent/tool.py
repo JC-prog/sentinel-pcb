@@ -7,7 +7,7 @@ app/agents/registry.py's ToolRegistry/call_tool() the same way.
 Never raises: a bad location, an upstream failure, or a failed advisory call all degrade to a
 usable result (an {"error": ...} tool result, or a templated advisory) rather than killing the
 whole chat turn - same pattern as before this was a graph, and as
-app/agents/explainability_review_agent/mcp_client.py's own graceful-degradation.
+app/agents/case_review_agent/mcp_client.py's own graceful-degradation.
 """
 
 import asyncio
@@ -56,7 +56,7 @@ class WeatherAgentTool:
         pipeline = get_pipeline()
         # Node bodies do blocking HTTP/OpenAI calls - run off the event loop rather than
         # stalling every other in-flight request, same reasoning as
-        # app/agents/explainability_review_agent/tool.py.
+        # app/agents/case_review_agent/tool.py.
         config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
         final_state = await asyncio.to_thread(pipeline.invoke, initial_state, config=config)
 

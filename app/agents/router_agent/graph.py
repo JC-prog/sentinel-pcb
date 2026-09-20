@@ -56,7 +56,7 @@ class RouterState(TypedDict):
 
 def _query_router_llm(user_prompt: str) -> dict[str, Any]:
     # Routed through the LiteLLM gateway like every other OpenAI-compatible call in the app
-    # (app/agents/weather_agent/graph.py, app/agents/explainability_review_agent/models.py) -
+    # (app/agents/weather_agent/graph.py, app/agents/case_review_agent/models.py) -
     # never api.openai.com directly.
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
     response = client.chat.completions.create(

@@ -1,381 +1,366 @@
-"""Ported from Kenny's Explainability_Review_Agent/agent.py - node logic, prompts, and graph
-structure (context_retrieval -> visual_evidence -> measurement_evidence -> reasoning) are
-unchanged. Restructured so nodes close over a `registry`/`mcp_client` pair instead of importing
-module-level globals, since `registry` now carries a per-request OpenAI key (see tool.py) rather
-than reading a single server-wide OPENAI_API_KEY at import time.
+"""
+LangGraph Review & Explainability State Machine for Agent 2.
+Reconciles baseline predictions, local VLM observations, and physical telemetry against IPC-A-610 standards.
+
+Ported as-is from a teammate's standalone pcb_agentic_inspector prototype
+(src/agent2_explainability/pipeline/review_graph.py) - node logic, config loading (this
+package's own config/agent2_config.yaml, relative to cwd, same convention as this app's other
+cwd-relative paths), and the OPENAI_API_KEY env var read are all unchanged. Never a chat tool -
+called in-process only by app/agents/orchestrator_agent/orchestrator.py's escalation hook
+(_execute_inference) for REVIEW_REQUIRED samples, via execute_explainability_review() below,
+gated by settings.explainability_review_agent_enabled.
 """
 
+from __future__ import annotations
+
+import base64
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
-from PIL import Image
+import re
+import requests
+import yaml
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, START, END
 
-from app.agents.explainability_review_agent.mcp_client import PCBMCPClient
-from app.agents.explainability_review_agent.models import ModelRegistry
-from app.config.settings import settings
-
-logger = logging.getLogger(__name__)
-
-DATA_DIR = Path(settings.explainability_agent_data_dir)
-_QDRANT_DB_DIR = DATA_DIR / "qdrant_db"
-_TELEMETRY_FILE = DATA_DIR / "outputs" / "telemetry_by_image.json"
-
-_mcp_client: PCBMCPClient | None = None
+logger = logging.getLogger("agent2.review_graph")
 
 
-def get_mcp_client() -> PCBMCPClient:
-    """Lazy, process-wide singleton - PCBMCPClient.__init__ loads a real CLIP model, so this
-    must not run at import time (mirrors app/memory/qdrant_store.py's get_qdrant_client())."""
-
-    global _mcp_client
-    if _mcp_client is None:
-        _mcp_client = PCBMCPClient(qdrant_path=str(_QDRANT_DB_DIR))
-    return _mcp_client
-
-
-_telemetry_cache: dict[str, Any] | None = None
-
-
-def _get_telemetry_database() -> dict[str, Any]:
-    """Loads data/outputs/telemetry_by_image.json (produced by
-    scripts/explainability_agent/generate_telemetry.py), cached in-memory after first load."""
-
-    global _telemetry_cache
-    if _telemetry_cache is not None:
-        return _telemetry_cache
-
-    if _TELEMETRY_FILE.is_file():
-        try:
-            with open(_TELEMETRY_FILE, encoding="utf-8") as f:
-                _telemetry_cache = json.load(f)
-            logger.info("Loaded telemetry lookup table from: %s", _TELEMETRY_FILE)
-            return _telemetry_cache
-        except Exception:
-            logger.exception("Failed loading telemetry file %s", _TELEMETRY_FILE)
-
-    logger.warning("%s not found - falling back to mcp_client.get_measurements.", _TELEMETRY_FILE)
-    _telemetry_cache = {}
-    return _telemetry_cache
-
-
-DefectType = Literal[
-    "missing part",
-    "shifted",
-    "foreign material",
-    "tombstone",
-    "solder insufficient",
-    "wrong part",
-    "no defect",
-    "unknown",
-]
-
-
-class PCBInspectionState(TypedDict):
-    image: Image.Image
-    image_name: str | None
+# -----------------------------------------------------------------------------
+# Graph State Definition
+# -----------------------------------------------------------------------------
+class ReviewState(TypedDict):
+    # Inputs from A2A Task
     board_id: str
     component_ref: str
-    issue_symptom: str
-    # None when no inspection XML is available (a bare chat upload) - mcp_client.get_measurements()
-    # falls back to its hardcoded mock in that case. package/feature narrow the XML feature match
-    # the same way they do for adc_inspection_agent's validate_measurements node.
-    inspection_xml_bytes: bytes | None
-    package: str | None
-    feature: str | None
-    historical_context: str
-    reference_standards: str
-    # The raw ranked list search_historical() returns, not just historical_context's folded
-    # string - lets the outer chat LLM answer "which case is similar to this?" with specifics.
-    similar_cases: list[dict[str, Any]]
-    visual_bounding_boxes: list[dict[str, Any]]
-    visual_description: str
-    measurements: dict[str, Any]
-    defect_location: Any | None
-    final_defect_category: DefectType
-    final_diagnosis_text: str
-    grounding_confidence: float
+    defect_image_path: str
+    golden_image_path: Optional[str]
+    feature_type: Optional[str]
+    preliminary_defect: Optional[str]
+    baseline_confidence: float
+    aoi_measurements: Dict[str, Any]
+
+    # Node Intermediate Outputs
+    retrieved_precedents: List[Dict[str, Any]]
+    telemetry_data: Dict[str, Any]
+    visual_evidence: str
+
+    # Final Evaluation & Grounding
+    predicted_defect: str
+    final_confidence: float
+    diagnosis: str
+    contradiction_detected: bool
     self_check_passed: bool
-    errors: list[str]
+    ipc_citations: List[str]
+    errors: List[str]
 
 
-_VISUAL_QA_PROMPT = """
-Examine this Printed Circuit Board (PCB) Region of Interest (ROI) carefully.
-Perform a strict, step-by-step visual inspection:
-
-1. COMPONENT PRESENCE: Is the main electronic component (chip, resistor, capacitor) physically present on its pads? (Yes / No).
-2. VISUAL OBSERVATION:
-   - If No (missing), describe the bare pads or remaining solder paste, and DO NOT invent solder defects.
-   - If Yes (present), objectively describe any visual anomalies (e.g., component body overhang, solder void, lifted termination, unexpected debris).
-3. SPATIAL LOCALIZATION: Provide the bounding box of the specific observation in [ymin, xmin, ymax, xmax] normalized format (scale 0-1000). Pinpoint the exact location relative to features on the board (e.g., "entire land pattern", "left terminal").
-
-Do NOT classify the defect into a predefined category. Stick strictly to physical visual evidence.
-"""
-
-_OPENAI_REASONING_PROMPT = """
-Review the evidence gathered via MCP tools for component {component_ref} on board {board_id}.
-
-1. SYMPTOM: {issue_symptom}
-2. HISTORICAL CONTEXT: {historical_context}
-3. REFERENCE STANDARD: {reference_standards}
-4. VISUAL EVIDENCE (via VLM): {visual_evidence}
-5. MEASUREMENT EVIDENCE (via MCP ICT Telemetry): {measurement_evidence}
-
-CRITICAL REASONING RULES:
-- If MEASUREMENT EVIDENCE shows an OPEN circuit, infinite resistance, or ~0 capacitance, the part is either completely detached or MISSING. This overrides minor visual anomalies.
-- If VISUAL EVIDENCE explicitly states the component is not present, classify as "missing part".
-
-TASKS:
-A. DIAGNOSIS CATEGORY: Select exactly one from: ["missing part", "shifted", "foreign material", "tombstone", "solder insufficient", "wrong part", "no defect"].
-B. PHYSICAL EXPLANATION: Detail the root cause mechanism based on standards and physics.
-C. GROUNDING SELF-CHECK: Verify if visual observations match electrical measurements. If the VLM claims a solder defect but ICT shows an open circuit, flag the contradiction and fail the self-check.
-D. LOCATION: Report the exact defect location on the PCB, citing specific pad/lead landmarks and bounding coordinates [ymin, xmin, ymax, xmax].
-
-Output strictly as a valid JSON object:
-{{
-  "defect_category": string,
-  "defect_location": {{
-    "landmark": string,
-    "bounding_box": [ymin, xmin, ymax, xmax] or null
-  }},
-  "explanation": string,
-  "contradictions_found": string,
-  "confidence_score": float,
-  "self_check_passed": boolean
-}}
-"""
+# -----------------------------------------------------------------------------
+# Configuration Loader Helper
+# -----------------------------------------------------------------------------
+def load_agent2_config() -> Dict[str, Any]:
+    config_path = Path("config/agent2_config.yaml")
+    if not config_path.exists():
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 
-def _heuristic_self_check(state: PCBInspectionState) -> dict[str, Any]:
-    """Ported from pcb_agentic_inspector's Agent 2 _heuristic_self_check - a deterministic,
-    physics-based fallback used when the LLM reasoning call fails (registry.reasoning_llm.query()
-    raises). Reads the same flat telemetry keys mcp_client.get_measurements() always produces
-    regardless of which of its two sources (real XML or the hardcoded mock) supplied them, so this
-    works the same way whether or not an inspection XML was attached."""
+CONFIG = load_agent2_config()
 
-    measurements = state.get("measurements") or {}
-    laser_height = measurements.get("laser_profile_height_um")
-    overhang = measurements.get("side_overhang_percent")
 
-    if isinstance(laser_height, int | float) and laser_height < 5.0:
+# -----------------------------------------------------------------------------
+# Graph Nodes
+# -----------------------------------------------------------------------------
+def retrieve_precedents_node(state: ReviewState) -> Dict[str, Any]:
+    """Queries persistent Qdrant collection or local cache for IPC rules and precedents."""
+    precedents = []
+    component_type = state.get("feature_type", "Component")
+    defect = state.get("preliminary_defect", "General")
+
+    # In production, this hooks to qdrant_client. Search local mock/store if unavailable
+    precedents.append({
+        "ipc_clause": "IPC-A-610 Section 8.3.2",
+        "standard": "Class 2 / Class 3 SMT Placement & Fillet Requirements",
+        "rule": "Side overhang must not exceed 50% of component width for Class 2, or 25% for Class 3.",
+        "relevance": 0.92
+    })
+    precedents.append({
+        "ipc_clause": "IPC-A-610 Section 8.3.5",
+        "standard": "Solder Joint Integrity & Wetting",
+        "rule": "Evidence of wetting must be present across pad land pattern. Open circuit implies missing or tombstoned part.",
+        "relevance": 0.88
+    })
+    return {"retrieved_precedents": precedents}
+
+def normalize_label(label: str) -> str:
+    """Normalizes 'MissingPart', 'missing_part', 'missing part' -> 'missing part'."""
+    if not label:
+        return "no defect"
+    # Convert PascalCase/camelCase to spaces: MissingPart -> Missing Part
+    s = re.sub(r'(?<!^)(?=[A-Z])', ' ', label).lower()
+    return s.replace("_", " ").strip()
+
+def extract_telemetry_node(state: ReviewState) -> Dict[str, Any]:
+    """Recursively parses nested AOI inspection measurements and extracts physical metrics."""
+    aoi_data = state.get("aoi_measurements", {})
+    
+    # Flatten nested inspection blocks (e.g. {"BlobDetection": {"side_overhang_percent": 62.0}})
+    flat_measurements = {}
+    if isinstance(aoi_data, dict):
+        for k, v in aoi_data.items():
+            if isinstance(v, dict):
+                flat_measurements.update(v)
+            else:
+                flat_measurements[k] = v
+
+    # Extract metrics using multiple key aliases
+    laser_h = flat_measurements.get("laser_profile_height_um") or flat_measurements.get("height_um") or 45.0
+    overhang = flat_measurements.get("side_overhang_percent") or flat_measurements.get("side_overhang") or 0.0
+    coplanarity = flat_measurements.get("coplanarity_um") or flat_measurements.get("coplanarity") or 0.0
+
+    telemetry = {
+        "board_id": state.get("board_id"),
+        "component_ref": state.get("component_ref"),
+        "laser_profile_height_um": float(laser_h),
+        "side_overhang_percent": float(overhang),
+        "coplanarity_um": float(coplanarity),
+        "ict_status": "FAIL" if flat_measurements.get("status") == "Failed" and laser_h < 5.0 else "PASS"
+    }
+    return {"telemetry_data": telemetry}
+
+
+def locate_image(raw_path: Optional[str]) -> Optional[Path]:
+    """Locates an image even across different working directories or nested folders."""
+    if not raw_path:
+        return None
+        
+    p = Path(raw_path)
+    if p.is_file():
+        return p.resolve()
+        
+    filename = p.name
+    # Search common root folders relative to repository root
+    possible_roots = [
+        Path("."),
+        Path("inputs"),
+        Path("data/inputs"),
+        Path("sample_data"),
+        Path("../.."),
+        Path("../../inputs")
+    ]
+    for root in possible_roots:
+        if root.exists():
+            matches = list(root.rglob(filename))
+            if matches:
+                return matches[0].resolve()
+    return None
+
+
+def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
+    """Queries the local LLaVA VLM with robust image path resolution."""
+    raw_defect_path = state.get("defect_image_path")
+    defect_img_path = locate_image(raw_defect_path)
+
+    vlm_config = CONFIG.get("models", {}).get("vlm", {})
+    ollama_url = vlm_config.get("base_url", "http://localhost:11434")
+    model_name = vlm_config.get("model_name", "llava")
+
+    if not defect_img_path or not defect_img_path.is_file():
+        logger.warning(f"Could not locate image file for: {raw_defect_path}")
+        return {"visual_evidence": f"Defect image '{raw_defect_path}' missing or unreadable. Visual inspect skipped."}
+
+    try:
+        with open(defect_img_path, "rb") as img_f:
+            b64_img = base64.b64encode(img_f.read()).decode("utf-8")
+
+        prompt = (
+            f"You are inspecting PCB component {state.get('component_ref')} with preliminary label "
+            f"'{state.get('preliminary_defect')}'. Look at the pad, presence of component body, solder joints, "
+            f"and alignment. Is the part absent, shifted, rotated, or damaged? Describe in 2 concise sentences."
+        )
+
+        resp = requests.post(
+            f"{ollama_url}/api/generate",
+            json={
+                "model": model_name,
+                "prompt": prompt,
+                "images": [b64_img],
+                "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 128}
+            },
+            timeout=25.0
+        )
+        if resp.status_code == 200:
+            evidence = resp.json().get("response", "").strip()
+            return {"visual_evidence": evidence}
+        else:
+            logger.warning(f"Ollama returned HTTP {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.warning(f"Local Ollama VLM call failed: {e}. Falling back to default visual summary.")
+
+    return {"visual_evidence": f"Visual features confirm structural anomaly corresponding to {state.get('preliminary_defect', 'unknown')}."}
+
+
+def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
+    """
+    GPT-4o Grounding Self-Check: Reconciles baseline inference, visual evidence,
+    and physical measurements (ICT and 3D Laser) to detect contradictions.
+    """
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_key:
+        # Fallback heuristic if API key is not supplied
+        return _heuristic_self_check(state)
+
+    llm_cfg = CONFIG.get("models", {}).get("grounding_llm", {})
+    model = ChatOpenAI(
+        model=llm_cfg.get("model_name", "gpt-4o"),
+        temperature=0.0,
+        api_key=openai_key
+    )
+
+    system_prompt = (
+        "You are an industrial PCB QA diagnostic agent performing physics-grounded verification. "
+        "Your task is to reconcile preliminary classifier output, VLM visual descriptions, and physical telemetry "
+        "(3D laser height profile, coplanarity, ICT circuit readings) according to IPC-A-610 Class 2 standards.\n\n"
+        "PHYSICAL LAWS & CONTRADICTION RULES:\n"
+        "1. Missing Part: If ICT resistance is open circuit (>10 MΩ) and laser height <= 5 µm, it IS 'missing part', "
+        "regardless of discoloration that might visually look like a component.\n"
+        "2. Shifted: Component side overhang must be > 50% for Class 2 violation.\n"
+        "3. Tombstone: High laser height elevation + open ICT electrical circuit.\n\n"
+        "Return ONLY a valid JSON object matching this schema:\n"
+        "{\n"
+        '  "predicted_defect": "missing part | shifted | foreign material | tombstone | solder insufficient | wrong part | no defect",\n'
+        '  "confidence": float (0.0 to 1.0),\n'
+        '  "contradiction_detected": bool,\n'
+        '  "self_check_passed": bool,\n'
+        '  "diagnosis": "Detailed 2-sentence rationale.",\n'
+        '  "ipc_citations": ["IPC-A-610 clause"]\n'
+        "}"
+    )
+
+    context = {
+        "component_ref": state.get("component_ref"),
+        "board_id": state.get("board_id"),
+        "preliminary_defect": state.get("preliminary_defect"),
+        "baseline_confidence": state.get("baseline_confidence"),
+        "visual_evidence": state.get("visual_evidence"),
+        "physical_telemetry": state.get("telemetry_data"),
+        "ipc_precedents": state.get("retrieved_precedents")
+    }
+
+    try:
+        response = model.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Verify this case:\n{json.dumps(context, indent=2)}")
+        ])
+        raw_text = response.content.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        data = json.loads(raw_text)
+
         return {
-            "defect_category": "missing part",
-            "explanation": (
-                f"Heuristic fallback (LLM reasoning unavailable): laser profile height "
-                f"({laser_height}um) is near zero, consistent with a missing or fully detached "
-                "component."
-            ),
-            "confidence_score": 0.6,
+            "predicted_defect": data.get("predicted_defect", state.get("preliminary_defect")),
+            "final_confidence": float(data.get("confidence", 0.95)),
+            "contradiction_detected": bool(data.get("contradiction_detected", False)),
+            "self_check_passed": bool(data.get("self_check_passed", True)),
+            "diagnosis": data.get("diagnosis", "Grounding check completed successfully."),
+            "ipc_citations": data.get("ipc_citations", ["IPC-A-610 Class 2"])
+        }
+    except Exception as e:
+        logger.error(f"Grounding self-check LLM call failed: {e}")
+        return _heuristic_self_check(state)
+
+
+def _heuristic_self_check(state: ReviewState) -> Dict[str, Any]:
+    tel = state.get("telemetry_data", {})
+    laser_h = tel.get("laser_profile_height_um", 45.0)
+    overhang = tel.get("side_overhang_percent", 0.0)
+    ict_status = tel.get("ict_status", "PASS")
+    
+    prelim = normalize_label(state.get("preliminary_defect", ""))
+
+    # 1. Missing Part: Open circuit + near zero height
+    if ict_status == "FAIL" or laser_h < 5.0:
+        is_missing = prelim == "missing part"
+        return {
+            "predicted_defect": "missing part",
+            "final_confidence": 0.98,
+            "contradiction_detected": not is_missing,
             "self_check_passed": True,
+            "diagnosis": f"Physical open circuit (ICT FAIL) and laser height ({laser_h:.2f} µm) confirm missing part.",
+            "ipc_citations": ["IPC-A-610 Class 2 Section 8.3"]
         }
 
-    if isinstance(overhang, int | float) and overhang > 50.0:
+    # 2. Shifted: > 50% overhang
+    if overhang > 50.0:
+        is_shift = "shift" in prelim
         return {
-            "defect_category": "shifted",
-            "explanation": (
-                f"Heuristic fallback (LLM reasoning unavailable): side overhang ({overhang}%) "
-                "exceeds 50% of component width, consistent with a shifted placement."
-            ),
-            "confidence_score": 0.6,
+            "predicted_defect": "shifted",
+            "final_confidence": 0.95,
+            "contradiction_detected": not is_shift,
             "self_check_passed": True,
+            "diagnosis": f"Side overhang ({overhang:.1f}%) violates IPC-A-610 Class 2 maximum 50% threshold.",
+            "ipc_citations": ["IPC-A-610 Class 2 Section 8.3.2"]
         }
 
+    # 3. Nominal fallback
     return {
-        "defect_category": "unknown",
-        "explanation": (
-            "Heuristic fallback (LLM reasoning unavailable): no measurement clearly indicates a "
-            "specific defect category."
-        ),
-        "confidence_score": 0.3,
-        "self_check_passed": False,
+        "predicted_defect": prelim,
+        "final_confidence": state.get("baseline_confidence", 0.85),
+        "contradiction_detected": False,
+        "self_check_passed": True,
+        "diagnosis": "Telemetry aligns within nominal tolerances; no contradiction detected.",
+        "ipc_citations": ["IPC-A-610 Class 2"]
     }
 
 
-def _format_similar_cases(similar: list[dict[str, Any]]) -> str:
-    if not similar:
-        return "No visually similar historical cases found in Qdrant."
-    lines = []
-    for i, s in enumerate(similar[:3], 1):
-        lines.append(
-            f"CASE {i} (Score: {s.get('score', 0.0):.2f}): "
-            f"Category: {s.get('defect_category')} | Root Cause: {s.get('root_cause')}"
-        )
-    return "\n".join(lines)
+# -----------------------------------------------------------------------------
+# Graph Compilation
+# -----------------------------------------------------------------------------
+def build_review_graph():
+    builder = StateGraph(ReviewState)
+    builder.add_node("retrieve_precedents", retrieve_precedents_node)
+    builder.add_node("extract_telemetry", extract_telemetry_node)
+    builder.add_node("inspect_visuals", inspect_visuals_node)
+    builder.add_node("grounding_self_check", grounding_self_check_node)
+
+    builder.add_edge(START, "retrieve_precedents")
+    builder.add_edge("retrieve_precedents", "extract_telemetry")
+    builder.add_edge("extract_telemetry", "inspect_visuals")
+    builder.add_edge("inspect_visuals", "grounding_self_check")
+    builder.add_edge("grounding_self_check", END)
+
+    return builder.compile()
 
 
-def build_graph(
-    registry: ModelRegistry, mcp_client: PCBMCPClient
-) -> CompiledStateGraph[PCBInspectionState, Any, Any, Any]:
-    """Compiles a fresh graph whose nodes close over the given registry/mcp_client. Cheap (no
-    model loading happens here - that's already done by the time registry/mcp_client exist) -
-    called once per pipeline invocation since `registry` carries a request-scoped OpenAI key."""
-
-    def tool1_context_retrieval_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 1: Calls MCP client for a real Qdrant embedding similarity search & IPC standards."""
-        logger.info("Tool 1 [MCP]: Gathering Context for %s", state["component_ref"])
-        errors = state.get("errors", [])
-        try:
-            similar_cases = mcp_client.search_historical(state["image"], state["component_ref"])
-            standards_data = mcp_client.get_standards(state["component_ref"])
-            state["similar_cases"] = similar_cases
-            state["historical_context"] = _format_similar_cases(similar_cases)
-            state["reference_standards"] = standards_data.get(
-                "standard_id", "Standard not defined."
-            )
-        except Exception as exc:
-            logger.exception("Context Retrieval failed.")
-            errors.append(f"ContextRetrieval: {exc}")
-        state["errors"] = errors
-        return state
-
-    def tool2_visual_evidence_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 2: Extracts visual evidence via the (stub) detector + GPT-4o vision."""
-        logger.info("Tool 2: Gathering Visual Evidence")
-        errors = state.get("errors", [])
-        try:
-            det_result = registry.pcb_detector.detect(state["image"])
-            visual_desc = registry.llava.query(state["image"], _VISUAL_QA_PROMPT)
-            state["visual_bounding_boxes"] = det_result.get("defects", [])
-            state["visual_description"] = visual_desc
-        except Exception as exc:
-            logger.exception("Visual Evidence failed.")
-            errors.append(f"VisualEvidence: {exc}")
-        state["errors"] = errors
-        return state
-
-    def tool3_measurement_evidence_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 3: Retrieves ICT & 3D AOI telemetry. A case's own attached inspection XML (real
-        measurements) takes priority over the pre-generated telemetry_by_image.json lookup table,
-        which in turn takes priority over mcp_client.get_measurements()'s hardcoded mock."""
-        logger.info("Tool 3: Gathering Electrical & Laser Height Telemetry")
-        errors = state.get("errors", [])
-        telemetry = None
-        board_id = state.get("board_id")
-        comp_ref = state.get("component_ref")
-
-        try:
-            if state.get("inspection_xml_bytes") is not None:
-                telemetry = mcp_client.get_measurements(
-                    board_id,
-                    comp_ref,
-                    inspection_xml_bytes=state["inspection_xml_bytes"],
-                    package=state.get("package"),
-                    feature=state.get("feature"),
-                )
-                logger.info("Matched telemetry via attached inspection XML.")
-            else:
-                db = _get_telemetry_database()
-                image_name = state.get("image_name")
-
-                if image_name and image_name in db:
-                    telemetry = db[image_name]
-                    logger.info("Matched telemetry via image_name: %s", image_name)
-                elif db:
-                    for item in db.values():
-                        if (
-                            item.get("board_id") == board_id
-                            and item.get("component_ref") == comp_ref
-                        ):
-                            telemetry = item
-                            logger.info(
-                                "Matched telemetry via board_id (%s) & comp_ref (%s)",
-                                board_id,
-                                comp_ref,
-                            )
-                            break
-
-                if not telemetry:
-                    logger.warning("No pre-generated record found. Falling back to mcp_client.")
-                    telemetry = mcp_client.get_measurements(board_id, comp_ref)
-
-            state["measurements"] = telemetry
-        except Exception as exc:
-            logger.exception("Measurement extraction failed.")
-            errors.append(f"MeasurementEvidence: {exc}")
-            state["measurements"] = {}
-
-        state["errors"] = errors
-        return state
-
-    def tool4_reasoning_and_grounding_node(state: PCBInspectionState) -> PCBInspectionState:
-        """Tool 4: Synthesizes evidence using GPT-4o with a self-check."""
-        logger.info("Tool 4 [OpenAI]: Executing Reasoning & Self-Check")
-        errors = state.get("errors", [])
-        prompt = _OPENAI_REASONING_PROMPT.format(
-            component_ref=state.get("component_ref", "Unknown"),
-            board_id=state.get("board_id", "Unknown"),
-            issue_symptom=state.get("issue_symptom", "AOI anomaly review"),
-            historical_context=state.get("historical_context", ""),
-            reference_standards=state.get("reference_standards", ""),
-            visual_evidence=state.get("visual_description", ""),
-            measurement_evidence=json.dumps(state.get("measurements", {})),
-        )
-
-        try:
-            response_text = registry.reasoning_llm.query(prompt, require_json=True)
-
-            clean_text = response_text.strip()
-            if clean_text.startswith("```"):
-                clean_text = clean_text.split("```")[1]
-                clean_text = clean_text.removeprefix("json")
-                clean_text = clean_text.strip()
-
-            response_data = json.loads(clean_text)
-
-            extracted_category = response_data.get("defect_category", "unknown").lower()
-            valid_classes = [
-                "missing part",
-                "shifted",
-                "foreign material",
-                "tombstone",
-                "solder insufficient",
-                "wrong part",
-                "no defect",
-            ]
-
-            state["final_defect_category"] = (
-                extracted_category if extracted_category in valid_classes else "unknown"
-            )
-            state["defect_location"] = response_data.get("defect_location")
-            state["final_diagnosis_text"] = response_data.get("explanation", "")
-            state["grounding_confidence"] = float(response_data.get("confidence_score", 0.0))
-            state["self_check_passed"] = bool(response_data.get("self_check_passed", False))
-        except Exception as exc:
-            logger.exception("Reasoning failed - falling back to the heuristic self-check.")
-            errors.append(f"ReasoningGrounding: {exc}")
-            fallback = _heuristic_self_check(state)
-            state["final_defect_category"] = fallback["defect_category"]
-            state["defect_location"] = None
-            state["final_diagnosis_text"] = fallback["explanation"]
-            state["grounding_confidence"] = fallback["confidence_score"]
-            state["self_check_passed"] = fallback["self_check_passed"]
-
-        state["errors"] = errors
-        return state
-
-    workflow = StateGraph(PCBInspectionState)
-    workflow.add_node("context_retrieval", tool1_context_retrieval_node)
-    workflow.add_node("visual_evidence", tool2_visual_evidence_node)
-    workflow.add_node("measurement_evidence", tool3_measurement_evidence_node)
-    workflow.add_node("reasoning", tool4_reasoning_and_grounding_node)
-
-    workflow.add_edge(START, "context_retrieval")
-    workflow.add_edge("context_retrieval", "visual_evidence")
-    workflow.add_edge("visual_evidence", "measurement_evidence")
-    workflow.add_edge("measurement_evidence", "reasoning")
-    workflow.add_edge("reasoning", END)
-
-    return workflow.compile()
+review_pipeline = build_review_graph()
 
 
-def get_pipeline(api_key: str) -> CompiledStateGraph[PCBInspectionState, Any, Any, Any]:
-    """Entry point used by tool.py. `registry` is built fresh per call (cheap - just wraps an
-    OpenAI client) since it carries the caller's API key; `mcp_client` is the lazy process-wide
-    singleton (expensive - loads a CLIP model) shared across calls."""
-
-    registry = ModelRegistry(api_key)
-    mcp_client = get_mcp_client()
-    return build_graph(registry, mcp_client)
+def execute_explainability_review(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Synchronous interface called by the A2A endpoint."""
+    init_state: ReviewState = {
+        "board_id": input_data.get("board_id", "UNKNOWN"),
+        "component_ref": input_data.get("component_ref", "UNKNOWN"),
+        "defect_image_path": input_data.get("defect_image_path", ""),
+        "golden_image_path": input_data.get("golden_image_path"),
+        "feature_type": input_data.get("feature_type"),
+        "preliminary_defect": input_data.get("preliminary_defect"),
+        "baseline_confidence": float(input_data.get("confidence", 0.0)),
+        "aoi_measurements": input_data.get("aoi_measurements", {}),
+        "retrieved_precedents": [],
+        "telemetry_data": {},
+        "visual_evidence": "",
+        "predicted_defect": "",
+        "final_confidence": 0.0,
+        "diagnosis": "",
+        "contradiction_detected": False,
+        "self_check_passed": False,
+        "ipc_citations": [],
+        "errors": []
+    }
+    return review_pipeline.invoke(init_state)

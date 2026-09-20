@@ -42,10 +42,33 @@ function toAuthUser(body: UserResponseBody): AuthUser {
   };
 }
 
+/**
+ * `detail` isn't always a plain string: FastAPI/Pydantic request-validation failures (a bad
+ * email format, a field that's too short, ...) send `detail` as a list of
+ * `{loc, msg, type}` objects instead - our own HTTPException(detail="...") calls (wrong
+ * password, username already registered, ...) are the plain-string case. Left untreated, the
+ * array falls through as truthy and gets passed straight to `new Error(...)`, which coerces it
+ * to the literal string "[object Object]" (or a comma-joined run of them) - not what a validation
+ * error should show the user.
+ */
+function formatErrorDetail(detail: unknown): string | null {
+  if (typeof detail === 'string' && detail) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) =>
+        item && typeof item === 'object' && 'msg' in item ? String((item as { msg: unknown }).msg) : String(item),
+      )
+      .join('; ');
+  }
+  return null;
+}
+
 async function extractErrorMessage(response: Response): Promise<string> {
   try {
-    const body: { detail?: string } = await response.json();
-    return body.detail ?? `Request failed (${response.status})`;
+    const body: { detail?: unknown } = await response.json();
+    return formatErrorDetail(body.detail) ?? `Request failed (${response.status})`;
   } catch {
     return `Request failed (${response.status})`;
   }
@@ -60,11 +83,23 @@ export class AuthService {
 
   constructor(private readonly router: Router) {}
 
+  /**
+   * Failures here must never leave currentUser stuck at `undefined` - authGuard awaits this
+   * exact call to decide whether to redirect to /login, and an unhandled rejection propagating
+   * out of an async CanActivateFn makes the router silently cancel navigation instead of
+   * redirecting, so the page can appear to just hang. A thrown fetch (backend unreachable - e.g.
+   * still starting up on a fresh `docker compose up`, or a dropped connection) is treated the
+   * same as "not logged in": there's no session to trust either way.
+   */
   async fetchCurrentUser(): Promise<void> {
-    const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`, {
-      credentials: 'include',
-    });
-    this.currentUser.set(response.ok ? toAuthUser(await response.json()) : null);
+    try {
+      const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`, {
+        credentials: 'include',
+      });
+      this.currentUser.set(response.ok ? toAuthUser(await response.json()) : null);
+    } catch {
+      this.currentUser.set(null);
+    }
   }
 
   async register(input: RegisterInput): Promise<void> {

@@ -6,7 +6,7 @@ straight port, since there's no CSV row here supplying a requested-inspection-ty
 (InspectionDefinition). Every failed inspection under the matched feature is relevant to a
 case flagged by a human, not a filtered subset.
 
-Also reused by app/agents/explainability_review_agent/mcp_client.py for real AOI/ICT telemetry
+Also reused by app/agents/case_review_agent/mcp_client.py for real AOI/ICT telemetry
 (find_failed_feature/extract_all_failed_measurements are non-trivial XML-walking logic, not the
 kind of small duplication this repo's "three similar lines" convention condones) - so this module
 carries only the trimmed slice of the AOI schema either caller actually needs: Board/Component/

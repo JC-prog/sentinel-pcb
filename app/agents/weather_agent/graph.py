@@ -1,7 +1,7 @@
 """A small LangGraph pipeline: geocode -> fetch current conditions + a short forecast -> an
 LLM-synthesized advisory, branching into a more cautious tone when the data carries a
 severe-weather signal (thunderstorm, heavy precipitation, or high wind). Mirrors the shape of
-app/agents/explainability_review_agent/graph.py (state TypedDict, sync node functions run off
+app/agents/case_review_agent/graph.py (state TypedDict, sync node functions run off
 the event loop by tool.py, a lazy module-wide compiled-graph singleton) at a much smaller scale -
 no per-request credentials to thread through, so nodes are plain functions, not closures.
 
@@ -114,7 +114,7 @@ def _fallback_advisory(current: dict[str, Any], severe: bool) -> str:
 
 def _query_advisory_llm(state: WeatherAdvisoryState, *, severe: bool) -> str:
     # Routed through the LiteLLM gateway like every other OpenAI-compatible call in the app
-    # (app/agents/explainability_review_agent/models.py, app/chat/providers/openai.py) - never
+    # (app/agents/case_review_agent/models.py, app/chat/providers/openai.py) - never
     # api.openai.com directly. settings.openai_api_key is then a LiteLLM key, not an sk- key.
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
     current = state["current"]

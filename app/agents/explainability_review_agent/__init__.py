@@ -1,15 +1,5 @@
-from app.agents.explainability_review_agent.schemas import (
-    ExplainabilityReviewRequest,
-    ExplainabilityReviewResponse,
-)
-from app.agents.explainability_review_agent.tools import (
-    ExplainabilityReviewTool,
-    InvestigateCaseTool,
-)
+from app.agents.explainability_review_agent.graph import execute_explainability_review
 
 __all__ = [
-    "ExplainabilityReviewRequest",
-    "ExplainabilityReviewResponse",
-    "ExplainabilityReviewTool",
-    "InvestigateCaseTool",
+    "execute_explainability_review",
 ]

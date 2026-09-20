@@ -1,0 +1,267 @@
+<div
+  class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 pt-16 pb-10">
+    <div>
+      <h1 class="text-lg font-bold">
+        Agentic ADC – LLM Planning + Deterministic Policy + Two-Stage Inference
+      </h1>
+      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        ADC Inputs → Workflow State → LLM Planner → Observation / Constraint / Decision / Reason →
+        Policy Engine → Tool Execution → State Update → Re-plan
+      </p>
+    </div>
+
+    <!-- Input Selection -->
+    <section class="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+      <h2 class="mb-3 text-sm font-semibold">Input Selection</h2>
+
+      <div class="flex items-center gap-3 py-1.5">
+        <span class="w-36 shrink-0 text-sm">Dataset CSV</span>
+        <input
+          type="text"
+          readonly
+          [value]="datasetFile()?.name ?? ''"
+          placeholder="No file selected"
+          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-400 dark:border-slate-700 dark:text-slate-300"
+        />
+        <input #datasetInput type="file" accept=".csv" hidden (change)="onDatasetFileChange($event)" />
+        <button
+          type="button"
+          (click)="datasetInput.click()"
+          class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Browse…
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 py-1.5">
+        <span class="w-36 shrink-0 text-sm">Inspection XML</span>
+        <input
+          type="text"
+          readonly
+          [value]="xmlFile()?.name ?? ''"
+          placeholder="No file selected"
+          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-400 dark:border-slate-700 dark:text-slate-300"
+        />
+        <input #xmlInput type="file" accept=".xml" hidden (change)="onXmlFileChange($event)" />
+        <button
+          type="button"
+          (click)="xmlInput.click()"
+          class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Browse…
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 py-1.5">
+        <span class="w-36 shrink-0 text-sm">Image Folder (Optional)</span>
+        <input
+          type="text"
+          readonly
+          [value]="imageRootSummary()"
+          placeholder="No folder selected"
+          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-400 dark:border-slate-700 dark:text-slate-300"
+        />
+        <input
+          #imageRootInput
+          type="file"
+          webkitdirectory
+          multiple
+          hidden
+          (change)="onImageRootFilesChange($event)"
+        />
+        <button
+          type="button"
+          (click)="imageRootInput.click()"
+          class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Browse…
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 py-1.5">
+        <span class="w-36 shrink-0 text-sm">Output JSON</span>
+        <input
+          type="text"
+          [ngModel]="outputFilename()"
+          (ngModelChange)="outputFilename.set($event)"
+          name="outputFilename"
+          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
+        />
+      </div>
+
+      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Image Folder remaps paths below the original "usi" root, e.g. ...\usi\35-... → the folder
+        you pick here. Output JSON is only a filename - there's no local save path to choose from
+        a browser, so this names the file "Download result.json" saves below.
+      </p>
+    </section>
+
+    <!-- Policy + LLM Planner -->
+    <section class="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+      <h2 class="mb-3 text-sm font-semibold">Policy + LLM Planner</h2>
+      <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span>Feature confidence threshold</span>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="featureThreshold()"
+            (ngModelChange)="featureThreshold.set($event)"
+            name="featureThreshold"
+          />
+        </label>
+
+        <label class="flex flex-col gap-1 text-sm">
+          <span>Defect confidence threshold</span>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="defectThreshold()"
+            (ngModelChange)="defectThreshold.set($event)"
+            name="defectThreshold"
+          />
+        </label>
+
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-slate-900 dark:accent-slate-100"
+            [ngModel]="useLlm()"
+            (ngModelChange)="useLlm.set($event)"
+            name="useLlm"
+          />
+          Use real LLM Planner
+        </label>
+
+        <label class="flex flex-col gap-1 text-sm">
+          <span>OpenAI model</span>
+          <input
+            type="text"
+            placeholder="gpt-5.6-luna"
+            class="w-full rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+            [ngModel]="llmModel()"
+            (ngModelChange)="llmModel.set($event)"
+            name="llmModel"
+          />
+        </label>
+
+        <label class="col-span-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-slate-900 dark:accent-slate-100"
+            [ngModel]="llmFallback()"
+            (ngModelChange)="llmFallback.set($event)"
+            name="llmFallback"
+          />
+          Fallback to deterministic planner if LLM call fails
+        </label>
+      </div>
+    </section>
+
+    @if (uploadError()) {
+      <p class="rounded-lg bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+        {{ uploadError() }}
+      </p>
+    }
+
+    <!-- Button bar -->
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        [disabled]="!canRun()"
+        (click)="prepare()"
+        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        1. Prepare
+      </button>
+      <button
+        type="button"
+        [disabled]="!canRun()"
+        (click)="prepareAndVerify()"
+        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        2. Prepare + Verify
+      </button>
+      <button
+        type="button"
+        [disabled]="!canRun()"
+        (click)="runFull()"
+        class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+      >
+        {{ workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
+      </button>
+      <button
+        type="button"
+        (click)="clearLog()"
+        class="ml-auto rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Clear Log
+      </button>
+    </div>
+
+    <!-- Workflow Summary -->
+    <section class="rounded-lg border border-slate-300 p-3 dark:border-slate-700">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+        <span><span class="text-slate-500 dark:text-slate-400">Status:</span> <span class="font-bold">{{ workService.status().status }}</span></span>
+        <span><span class="text-slate-500 dark:text-slate-400">Input:</span> {{ workService.status().input_samples }}</span>
+        <span><span class="text-slate-500 dark:text-slate-400">Prep Ready:</span> {{ workService.status().preparation_ready }}</span>
+        <span><span class="text-slate-500 dark:text-slate-400">Verified:</span> {{ workService.status().verification_passed }}</span>
+        <span><span class="text-slate-500 dark:text-slate-400">Inference:</span> {{ workService.status().inference_attempted }}</span>
+        <span><span class="text-slate-500 dark:text-slate-400">Accepted:</span> {{ workService.status().accepted }}</span>
+        <span><span class="text-slate-500 dark:text-slate-400">Review:</span> {{ workService.status().review_required }}</span>
+      </div>
+    </section>
+
+    <!-- Execution Log / Planner History / Results -->
+    <section class="flex min-h-64 flex-1 flex-col rounded-lg border border-slate-300 dark:border-slate-700">
+      <div class="flex items-center justify-between gap-2 border-b border-slate-300 px-3 py-2 dark:border-slate-700">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold">Execution Log / Planner History / Results</h2>
+          @if (workService.running()) {
+            <span class="flex h-2 w-2 animate-pulse rounded-full bg-cyan-500" aria-hidden="true"></span>
+          }
+        </div>
+        @if (resultJson()) {
+          <button
+            type="button"
+            (click)="downloadResult()"
+            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            Download {{ outputFilename() || 'result.json' }}
+          </button>
+        }
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap">
+        @if (!hasRun()) {
+          <p class="text-slate-400 dark:text-slate-500">
+            Agent loop:
+            State → Planner → Policy → Tool → State Update → Re-plan
+            Enable 'Use real LLM Planner' to make the next-action decision through OpenAI.
+          </p>
+        }
+        @for (entry of workService.log(); track $index) {
+          @if (entry.kind === 'log') {
+            <p>{{ entry.text }}</p>
+          } @else if (entry.kind === 'plan_step') {
+            <p>
+              Step {{ entry.step.plan_version }} [{{ entry.step.planner_source }}] {{ entry.step.decision }} — {{ entry.step.reason }}
+              @if (entry.step.policy && !entry.step.policy.allowed) {
+                (policy rejected: {{ entry.step.policy.reason }})
+              }
+            </p>
+          } @else {
+            <p>ERROR: {{ entry.message }}</p>
+          }
+        }
+      </div>
+    </section>
+  </div>
+</div>

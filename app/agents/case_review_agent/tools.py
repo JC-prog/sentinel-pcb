@@ -24,7 +24,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from PIL import Image
 
-from app.agents.explainability_review_agent.graph import PCBInspectionState, get_pipeline
+from app.agents.case_review_agent.graph import PCBInspectionState, get_pipeline
 from app.config.langfuse import get_langfuse_callbacks
 
 _VALID_DEFECT_CATEGORIES = frozenset(
@@ -129,7 +129,7 @@ class InvestigateCaseTool:
         }
 
     async def run(self, **kwargs: Any) -> str:
-        # Deferred imports: this tool is the one place explainability_review_agent needs
+        # Deferred imports: this tool is the one place case_review_agent needs
         # adc_inspection_agent's case repository and app.uploads' path resolver - neither is a
         # dependency the rest of this package should carry at module import time.
         from app.agents.adc_inspection_agent.repository import (

@@ -98,27 +98,49 @@ cd ui && npx ng test --watch=false && npx ng build
   `tests/conftest.py` disables this by default across the whole suite (it makes its own sync
   OpenAI call that the usual `httpx.AsyncClient` mocking doesn't catch); re-enabled explicitly in
   `tests/agents/test_router_agent.py`.
-- **Explainability & Review Agent** (`app/agents/explainability_review_agent/`): a LangGraph
-  pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning) that
-  diagnoses a PCB defect from an inspection image, ported from a teammate's standalone prototype
-  into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`, `app/agents/registry.py`).
-  Two entry points: `explainability_review` (chat, or `POST /api/agents/explainability-review`)
-  takes a raw uploaded image; `investigate_case` (chat only) takes a case number instead and
-  resolves that Case's stored image/inspection XML/board/component fields itself - no re-upload
-  needed. Also called in-process (not a chat tool call) by the orchestrator agent's
-  `escalate_review` step below, whenever a case's verdict is REVIEW_REQUIRED. Uses the same
-  server-side `settings.openai_api_key` as chat - not a key of its own; `EXPLAINABILITY_AGENT_ENABLED`
-  is its kill switch. Historical-case lookup (`mcp_client.py`'s `search_historical()`) is a real
-  CLIP embedding similarity search against the embedded Qdrant collection (seeded by
-  `scripts/explainability_agent/populate_qdrant.py`); AOI/ICT telemetry (`get_measurements()`)
-  reads a case's actual attached inspection-XML measurements when available (reusing
-  `app/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a hardcoded
-  mock only when no XML is attached at all; and the reasoning step falls back to a deterministic,
-  physics-based self-check (laser-height/side-overhang thresholds, `graph.py`'s
+- **Case Review Agent** (`app/agents/case_review_agent/`, formerly `explainability_review_agent/`):
+  a LangGraph pipeline (context retrieval -> visual evidence -> measurement evidence -> reasoning)
+  that diagnoses a PCB defect from an inspection image, ported from a teammate's standalone
+  prototype into the app's `Tool`/`ToolRegistry` pattern (`app/core/tools.py`,
+  `app/agents/registry.py`). Two entry points: `explainability_review` (chat, or
+  `POST /api/agents/explainability-review`) takes a raw uploaded image; `investigate_case` (chat
+  only) takes a case number instead and resolves that Case's stored image/inspection XML/board/
+  component fields itself - no re-upload needed. Also called in-process (not a chat tool call) by
+  the ADC inspection agent's `escalate_review` step below, whenever a case's verdict is
+  REVIEW_REQUIRED. Uses the same server-side `settings.openai_api_key` as chat - not a key of its
+  own; `EXPLAINABILITY_AGENT_ENABLED` is its kill switch. Historical-case lookup (`mcp_client.py`'s
+  `search_historical()`) is a real CLIP embedding similarity search against the embedded Qdrant
+  collection (seeded by `scripts/explainability_agent/populate_qdrant.py`); AOI/ICT telemetry
+  (`get_measurements()`) reads a case's actual attached inspection-XML measurements when available
+  (reusing `app/agents/adc_inspection_agent/xml_measurements.py`'s parsing), falling back to a
+  hardcoded mock only when no XML is attached at all; and the reasoning step falls back to a
+  deterministic, physics-based self-check (laser-height/side-overhang thresholds, `graph.py`'s
   `_heuristic_self_check`) when the OpenAI reasoning call itself fails. The CLIP embedding model
   and embedded Qdrant collection are loaded lazily on first use, not at import time, to keep app
   startup and test runs fast. See "Known gotchas" below for the remaining stubs carried over from
-  the original prototype (bounding-box detection, IPC standards lookup).
+  the original prototype (bounding-box detection, IPC standards lookup). Renamed from
+  `explainability_review_agent` when a second, unrelated "explainability and review" agent (below)
+  was ported in and took that name instead - this one is the chat-facing agent, that one is
+  Work-tab-only.
+- **Explainability Review Agent** (`app/agents/explainability_review_agent/`, Work-tab-only): ported
+  as-is from a teammate's separate standalone prototype, `pcb_agentic_inspector`'s "Agent 2"
+  (`src/agent2_explainability/pipeline/review_graph.py`) - a different LangGraph pipeline
+  (`retrieve_precedents` -> `extract_telemetry` -> `inspect_visuals` -> `grounding_self_check`)
+  from the Case Review Agent above, and NOT related to it despite the similar name. Never a chat
+  tool - called in-process only by `orchestrator_agent`'s `_execute_inference` (`orchestrator.py`'s
+  `_escalate_review` helper) for a Work-tab run's REVIEW_REQUIRED samples, attaching its diagnosis
+  under `explainability_result` in that sample's result payload. Ported unchanged, including its
+  own `config/agent2_config.yaml` (repo-root-relative, mirrors this file's own cwd-relative
+  convention) and its direct `OPENAI_API_KEY` env var read (not routed through
+  `settings.openai_api_key`/`settings.openai_base_url` the way every other agent here is) -
+  `explainability_review_agent_enabled` is its kill switch, the one thing `orchestrator.py` needs
+  from settings to gate the call without touching the ported module. Visual evidence comes from a
+  local Ollama LLaVA VLM (`ollama pull llava`; base URL from the YAML config, defaults to
+  `http://localhost:11434`); the grounding/self-check reasoning step calls OpenAI GPT-4o directly
+  and falls back to a deterministic heuristic (laser-height/overhang thresholds) on any failure or
+  missing key, same graceful-degradation shape as the Case Review Agent. Its precedent-retrieval
+  node is a hardcoded mock in the source and was left that way - not this change's job to wire up
+  real retrieval.
 - **Weather agent** (`app/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
   fetch current conditions plus a short forecast -> an LLM-synthesized advisory - exposed to
   chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
@@ -155,7 +177,7 @@ cd ui && npx ng test --watch=false && npx ng build
   OpenCV dependency for two narrow checks) -> classify region then the matching defect model for
   that region via the `inference/` microservice (`app.inference.client.classify()`, see
   `inference/models.toml`'s four `pcb_*` models) -> finalize a verdict -> if REVIEW_REQUIRED,
-  escalate to the Explainability & Review Agent in-process and attach its diagnosis (never blocks
+  escalate to the Case Review Agent in-process and attach its diagnosis (never blocks
   persistence if escalation fails - see `graph.py`'s `escalate_review` node) -> persist the result
   as a `Case` row (`repository.py`), always, whether ACCEPTED or REVIEW_REQUIRED. `list_cases` and
   `review_case` list and resolve (approve/override) reviewable cases. `ADC_INSPECTION_AGENT_ENABLED`
@@ -227,7 +249,7 @@ cd ui && npx ng test --watch=false && npx ng build
   already, but it's worth knowing if you're debugging a hang-then-burst pattern. `CHAT_TOOL_MAX_ROUNDS`
   (default 4) caps how many tool-call round trips one message can trigger before the loop gives
   up and answers with what it has, in case a model keeps calling tools without ever finishing.
-- **Explainability & Review Agent still has two known stubs, faithfully ported rather than
+- **Case Review Agent still has two known stubs, faithfully ported rather than
   fixed**: `models.py`'s `BoundingBoxDetector` ("YOLO") always returns the same hardcoded bounding
   box, and `mcp_client.py`'s `get_standards()` is a hardcoded placeholder that doesn't actually
   read `data/ipc_standards/ipc_a_610_chip_components.json`. `get_measurements()` and
@@ -235,7 +257,7 @@ cd ui && npx ng test --watch=false && npx ng build
   and real similarity search. None of this blocks the pipeline from running end to end; it just
   means defect *location* and cited IPC clause text are still bounded by GPT-4o's reasoning over a
   fixed bounding box and mocked standards rather than real ones.
-- **Explainability & Review Agent data prep is a manual, admin-triggered step**: the agent needs
+- **Case Review Agent data prep is a manual, admin-triggered step**: the agent needs
   PCB images under `data/images/inputs/` (`EXPLAINABILITY_AGENT_DATA_DIR`, gitignored - not
   committed; `data/images/ipc_standards/` in the same directory *is* committed, since that's a
   reference document rather than runtime data) before

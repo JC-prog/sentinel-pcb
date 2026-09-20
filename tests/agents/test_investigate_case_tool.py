@@ -10,8 +10,8 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.adc_inspection_agent.repository import create_case
-from app.agents.explainability_review_agent import InvestigateCaseTool
-from app.agents.explainability_review_agent.graph import PCBInspectionState
+from app.agents.case_review_agent import InvestigateCaseTool
+from app.agents.case_review_agent.graph import PCBInspectionState
 from app.config.settings import settings
 from app.db.models import Conversation, User, UserRole
 
@@ -136,7 +136,7 @@ async def test_investigate_case_resolves_image_and_runs_pipeline(
 ) -> None:
     _write_upload("board.png", _png_bytes())
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tools.get_pipeline",
+        "app.agents.case_review_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(_final_state_overrides()),
     )
 
@@ -170,7 +170,7 @@ async def test_investigate_case_resolves_attached_inspection_xml(
             return merged
 
     monkeypatch.setattr(
-        "app.agents.explainability_review_agent.tools.get_pipeline",
+        "app.agents.case_review_agent.tools.get_pipeline",
         lambda api_key: _CapturingPipeline(),
     )
 
