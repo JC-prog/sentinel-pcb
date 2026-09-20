@@ -1,0 +1,132 @@
+# ==============================================================================
+# Agent 2 Configuration: Explainability, Review & Multimodal Grounding
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. A2A (Agent-to-Agent) Server Settings
+# ------------------------------------------------------------------------------
+server:
+  host: "127.0.0.1"
+  port: 8001
+  reload: false
+  workers: 1
+  timeout_seconds: 60
+  agent_card:
+    name: "PCB_Explainability_Review_Agent"
+    version: "2.1.0"
+    description: "Multimodal explainability agent reconciling visual VLM evidence, ICT electrical telemetry, and IPC-A-610 standards."
+    endpoint: "/.well-known/agent.json"
+    task_endpoint: "/a2a/tasks"
+    supported_tasks:
+      - "pcb.explainability.audit"
+      - "pcb.defect.root_cause"
+
+# ------------------------------------------------------------------------------
+# 2. AI Model Providers & Endpoints
+# ------------------------------------------------------------------------------
+models:
+  # Local Vision-Language Model (LLaVA via Ollama)
+  vlm:
+    provider: "ollama"
+    base_url: "http://localhost:11434"
+    model_name: "llava"              # pulled via: ollama pull llava
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 512
+    timeout_seconds: 45
+    system_prompt: >
+      You are an expert industrial PCB inspection vision model. Analyze the provided 
+      defect image compared against the golden reference image. Focus strictly on 
+      component presence, solder joint fillet wetting, pad coverage, polarity, and alignment.
+
+  # Grounding & Self-Check Reasoning Model (OpenAI GPT-4o)
+  grounding_llm:
+    provider: "openai"
+    model_name: "gpt-4o"
+    temperature: 0.0                  # Deterministic for physical self-checking
+    max_tokens: 700
+    timeout_seconds: 30
+
+  # Vector Embedding Model (Historical Cases & IPC-A-610 Standards RAG)
+  embeddings:
+    provider: "openai"                # Alternative: "sentence-transformers"
+    model_name: "text-embedding-3-small"
+    dimension: 1536
+
+# ------------------------------------------------------------------------------
+# 3. Vector Database (Qdrant) Configuration
+# ------------------------------------------------------------------------------
+vector_db:
+  storage_type: "local"               # Options: "local" (disk file) or "remote" (HTTP)
+  local_path: "qdrant_db"             # Directory for embedded persistent database
+  collection_name: "ipc_defect_precedents"
+  similarity_metric: "Cosine"
+  top_k: 3                            # Number of similar historical precedents to retrieve
+  score_threshold: 0.72               # Minimum cosine similarity to inject into context
+
+# ------------------------------------------------------------------------------
+# 4. Telemetry Ingestion & Lookups
+# ------------------------------------------------------------------------------
+telemetry:
+  # Indexed O(1) telemetry file generated from generate_telemetry.py
+  indexed_lookup_path: "outputs/telemetry_by_image.json"
+  fallback_telemetry_path: "outputs/synthetic_telemetry.json"
+  allow_synthetic_fallback: true      # Fallback to simulated data if AOI XML has missing keys
+  telemetry_source: "hybrid"          # "aoi_xml", "file_lookup", or "hybrid"
+
+# ------------------------------------------------------------------------------
+# 5. IPC-A-610 Class 2 & 3 Compliance Thresholds
+# ------------------------------------------------------------------------------
+ipc_standards:
+  target_class: "Class 2"             # Default industrial target standard ("Class 2" or "Class 3")
+  
+  # Tolerances for Class 2 electronics:
+  class_2:
+    max_side_overhang_percent: 50.0   # > 50% width is a confirmed "shifted" defect
+    max_end_overhang_percent: 25.0
+    min_solder_thickness_um: 15.0     # Below this is flagged as "solder insufficient"
+    max_coplanarity_um: 50.0
+    open_circuit_resistance_mohm: 10.0 # R > 10 MOhms confirms "missing part" or "tombstone"
+    missing_height_threshold_um: 5.0   # Laser profile height < 5 um indicates absent body
+
+  # Stricter tolerances for Class 3 (High-Reliability / Aerospace):
+  class_3:
+    max_side_overhang_percent: 25.0
+    max_end_overhang_percent: 10.0
+    min_solder_thickness_um: 25.0
+    max_coplanarity_um: 30.0
+    open_circuit_resistance_mohm: 5.0
+    missing_height_threshold_um: 8.0
+
+# ------------------------------------------------------------------------------
+# 6. Contradiction Detection & Self-Check Policy
+# ------------------------------------------------------------------------------
+self_check_policy:
+  require_physical_visual_agreement: true
+  min_confidence_to_pass: 0.85
+
+  # Rule evaluation triggers
+  rules:
+    # Rule 1: Visual indicates present, but electrical reports open circuit
+    missing_part_contradiction:
+      ict_fail_threshold_mohm: 10.0
+      laser_max_height_um: 5.0
+      enforce_defect_override: "missing part"
+
+    # Rule 2: Visual reports shift, but overhang is within IPC limit
+    false_shift_protection:
+      enforce_ipc_limits: true
+
+    # Rule 3: Visual reports solder insufficient, but fillet height is acceptable
+    fillet_verification:
+      min_fillet_height_percent_of_termination: 25.0
+
+# ------------------------------------------------------------------------------
+# 7. Logging & Diagnostic Artifact Exports
+# ------------------------------------------------------------------------------
+reporting:
+  output_dir: "outputs"
+  results_file: "outputs/inspection_results.json"
+  log_level: "INFO"
+  save_vlm_intermediate_responses: true
+  save_grounding_audit_trails: true

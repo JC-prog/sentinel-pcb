@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # Base URL for every OpenAI-compatible call - chat (app.chat.providers.openai), memory
     # embeddings (app/memory/embeddings.py) and the Explainability & Review Agent's SDK client
-    # (app/agents/explainability_review_agent/models.py). Default is OpenAI direct. Point it at a
+    # (app/agents/case_review_agent/models.py). Default is OpenAI direct. Point it at a
     # LiteLLM proxy to keep real provider keys out of this service: the shared team proxy or the
     # local `offline-llm` compose service in dev, and the Cloud Map address
     # (http://litellm.sentinelchat.internal:4000/v1) set by the backend task definition in prod
@@ -101,14 +101,27 @@ class Settings(BaseSettings):
     # API are served over HTTPS from one CloudFront domain (infra/production/static_site.tf).
     cookie_secure: bool = False
 
-    # Explainability & Review Agent (app/agents/explainability_review_agent/) - POST
+    # Case Review Agent (app/agents/case_review_agent/, chat-facing) - POST
     # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled. Its OpenAI
-    # calls use the shared openai_api_key setting above, not a key of its own.
+    # calls use the shared openai_api_key setting above, not a key of its own. Not to be confused
+    # with explainability_review_agent_enabled below, which gates a different, Work-tab-only
+    # agent (app/agents/explainability_review_agent/) - similar names, different agents.
     explainability_agent_enabled: bool = True
     # PCB images (inputs/, admin-provided), the IPC-A-610 reference JSON (ipc_standards/,
     # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
+
+    # Explainability Review Agent (app/agents/explainability_review_agent/, Work-tab-only) - ported
+    # as-is from a teammate's standalone pcb_agentic_inspector prototype's "Agent 2" (its own
+    # config/agent2_config.yaml and OPENAI_API_KEY env var read are kept unchanged, not routed
+    # through settings). Never a chat tool - called in-process only by orchestrator_agent's
+    # _execute_inference for REVIEW_REQUIRED samples, mirroring adc_inspection_agent's escalation
+    # to case_review_agent above. Kill switch, same pattern as the others - the one thing this
+    # agent needs from settings, since the calling side (orchestrator.py) must be able to skip it
+    # without touching the ported module. Not to be confused with explainability_agent_enabled
+    # above, which gates the renamed chat agent - similar names, different agents.
+    explainability_review_agent_enabled: bool = True
 
     # Weather agent (app/agents/weather_agent/) - a small LangGraph pipeline (geocode -> current
     # conditions + a short forecast -> an LLM-synthesized advisory, branching into a more
@@ -140,7 +153,7 @@ class Settings(BaseSettings):
     # tool that runs a deterministic plan/policy loop (workflow_state.py/planner.py/policy_engine.py)
     # over an uploaded image: two-stage region/defect classification through the inference/
     # microservice, golden-image lookup and alignment/quality checks, optional inspection-XML
-    # measurement validation, and an automatic hand-off to the explainability review agent when the
+    # measurement validation, and an automatic hand-off to the case review agent when the
     # verdict is REVIEW_REQUIRED - always persisting the result as a Case. The only tool offered for
     # submitting an image for inspection through chat. Kill switch, same pattern as
     # explainability_agent_enabled; only offered as a tool when an image is attached.
@@ -182,9 +195,9 @@ class Settings(BaseSettings):
 
     # LangFuse (infra/development/docker-compose.yml's "langfuse" profile) - self-hosted LLM
     # observability/tracing for the LangGraph pipelines only (app/agents/{time_agent,
-    # weather_agent,router_agent,explainability_review_agent,adc_inspection_agent}) - see
+    # weather_agent,router_agent,case_review_agent,adc_inspection_agent}) - see
     # app/config/langfuse.py. Deliberately not wired into the raw (non-LangChain) OpenAI() calls
-    # in router_agent/graph.py, weather_agent/graph.py, explainability_review_agent/models.py, or
+    # in router_agent/graph.py, weather_agent/graph.py, case_review_agent/models.py, or
     # app/chat/providers/openai.py's raw httpx streaming path. Kill switch, default False (unlike
     # the "on by default" feature switches above) since this is optional tooling, not something a
     # fresh dev environment needs working out of the box; get_langfuse_callbacks() also treats a

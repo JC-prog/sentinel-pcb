@@ -15,6 +15,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "langchain>=1.4.2",
+    "langchain-openai>=1.6.2",
     "langfuse>=4.15.4",
     "langgraph>=1.2.11",
     "numpy>=2.5.2",
@@ -44,26 +45,28 @@ dev = [
 [tool.ruff]
 line-length = 100
 # inference/ is a separate service with its own pyproject, venv, and CI job - it must not be
-# linted or type-checked against this project's dependency set. app/agents/orchestrator_agent/ is
-# a close port of orchestrator-agent/adc_agentic_project, an external project someone else
-# maintains - kept close to that project's own (untyped, unlinted) source rather than reformatted
+# linted or type-checked against this project's dependency set. app/agents/orchestrator_agent/ and
+# app/agents/explainability_review_agent/ are close ports of external projects someone else
+# maintains (orchestrator-agent/adc_agentic_project and pcb_agentic_inspector's Agent 2,
+# respectively) - kept close to their own (untyped, unlinted) source rather than reformatted
 # to this repo's conventions, so a diff against upstream stays legible.
-extend-exclude = ["inference", "app/agents/orchestrator_agent"]
+extend-exclude = ["inference", "app/agents/orchestrator_agent", "app/agents/explainability_review_agent"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 exclude = ['^inference/']
 
-# app/agents/orchestrator_agent/ is a close port of orchestrator-agent/adc_agentic_project, an
-# external project someone else maintains - kept close to that project's own (untyped) source
-# rather than reformatted to this repo's strict-typing convention, so a diff against upstream
-# stays legible. Unlike inference/, app/main.py imports directly from this package, so a plain
-# `exclude` wouldn't stop mypy from still following those imports and type-checking it anyway -
+# app/agents/orchestrator_agent/ and app/agents/explainability_review_agent/ are close ports of
+# external projects someone else maintains (orchestrator-agent/adc_agentic_project and
+# pcb_agentic_inspector's Agent 2, respectively) - kept close to their own (untyped) source rather
+# than reformatted to this repo's strict-typing convention, so a diff against upstream stays
+# legible. Unlike inference/, app/main.py imports (transitively) from these packages, so a plain
+# `exclude` wouldn't stop mypy from still following those imports and type-checking them anyway -
 # `ignore_errors` is the mypy-recommended way to silence a specific package while still being
 # importable from typed code.
 [[tool.mypy.overrides]]
-module = "app.agents.orchestrator_agent.*"
+module = ["app.agents.orchestrator_agent.*", "app.agents.explainability_review_agent.*"]
 ignore_errors = true
 
 [tool.pytest.ini_options]
