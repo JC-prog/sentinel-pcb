@@ -27,6 +27,7 @@ methods - is unchanged from the source.
 
 import asyncio
 import json
+import logging
 
 from app.agents.orchestrator_agent.planner import Planner
 from app.agents.orchestrator_agent.policy_engine import PolicyEngine
@@ -36,6 +37,9 @@ from app.agents.orchestrator_agent.services.dataset_verification import DatasetV
 from app.agents.orchestrator_agent.services.model_lifecycle import ModelLifecycleService
 from app.agents.orchestrator_agent.services.multimodal_inference import TwoStageInferenceService
 from app.agents.orchestrator_agent.services.result_comparison import final_decision
+from app.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
@@ -290,6 +294,8 @@ class OrchestratorAgent:
                 payload = result.data
                 payload["status"] = result.status
                 payload["final_decision"] = final_decision(result, self.defect_threshold)
+                if payload["final_decision"] == "REVIEW_REQUIRED":
+                    payload["explainability_result"] = await self._escalate_review(sample, payload)
                 state.inference_results.append(payload)
                 state.inference_completed += 1
             else:
@@ -301,6 +307,8 @@ class OrchestratorAgent:
                     "details": result.data,
                     "final_decision": decision,
                 }
+                if decision == "REVIEW_REQUIRED":
+                    payload["explainability_result"] = await self._escalate_review(sample, payload)
                 state.inference_results.append(payload)
                 if decision == "ABORTED":
                     state.inference_aborted += 1
@@ -327,6 +335,49 @@ class OrchestratorAgent:
             "fatal": not bool(state.inference_results),
             "termination_reason": "NO_INFERENCE_RESULTS",
         }
+
+    async def _escalate_review(self, sample, payload):
+        """Hands a REVIEW_REQUIRED sample off to explainability_review_agent (ported as-is from
+        pcb_agentic_inspector's Agent 2 - see that package's graph.py). Never raises or blocks the
+        run: any failure here (kill switch off, pipeline exception) is recorded as a skipped
+        result and the sample is still appended to inference_results regardless. Mirrors
+        adc_inspection_agent/graph.py's _escalate_review_node for the chat pipeline's equivalent
+        hand-off to case_review_agent. Deferred import so a routine orchestrator run never pays
+        for this agent's (heavier) dependency chain unless a sample actually needs review."""
+
+        if not settings.explainability_review_agent_enabled:
+            return {"skipped": True, "reason": "explainability review agent disabled"}
+
+        try:
+            from app.agents.explainability_review_agent import execute_explainability_review
+
+            classification_data = payload if "feature_classification" in payload else (payload.get("details") or {})
+            feature_stage = classification_data.get("feature_classification") or {}
+            defect_stage = classification_data.get("defect_classification") or {}
+
+            input_data = {
+                "board_id": sample.get("board", "UNKNOWN"),
+                "component_ref": sample.get("component", "UNKNOWN"),
+                "defect_image_path": sample.get("defect_image", ""),
+                "golden_image_path": sample.get("golden_image"),
+                "feature_type": feature_stage.get("prediction"),
+                "preliminary_defect": defect_stage.get("prediction"),
+                "confidence": defect_stage.get("confidence", 0.0),
+                "aoi_measurements": sample.get("failed_inspections") or {},
+            }
+            result = await asyncio.to_thread(execute_explainability_review, input_data)
+            return {
+                "predicted_defect": result.get("predicted_defect"),
+                "confidence": result.get("final_confidence", 0.0),
+                "diagnosis": result.get("diagnosis", ""),
+                "self_check_passed": result.get("self_check_passed", False),
+                "contradiction_detected": result.get("contradiction_detected", False),
+                "ipc_citations": result.get("ipc_citations", []),
+                "visual_evidence": result.get("visual_evidence", ""),
+            }
+        except Exception as exc:
+            logger.exception("Escalation to explainability_review_agent failed.")
+            return {"skipped": True, "reason": str(exc)}
 
     def _finalize(self, state):
         if not state.inference_results:
