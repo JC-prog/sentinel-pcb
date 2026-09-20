@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
-import { AuthService, AuthUser } from './auth.service';
+import { AuthService, AuthUser } from '../auth.service';
 import { ChatResponder, ChatResponderEvent, CHAT_RESPONDER } from './chat-responder';
 import { ChatService } from './chat.service';
 

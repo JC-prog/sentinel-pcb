@@ -4,9 +4,9 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { BackendStatusBanner } from './backend-status-banner/backend-status-banner';
 import { ModeToggle } from './mode-toggle/mode-toggle';
-import { Settings } from './settings/settings';
-import { SettingsService } from './settings.service';
-import { Sidebar } from './sidebar/sidebar';
+import { Settings } from './chat/settings/settings';
+import { SettingsService } from './chat/settings.service';
+import { Sidebar } from './chat/sidebar/sidebar';
 import { ThemeToggle } from './theme-toggle/theme-toggle';
 
 // Work has its own controls (dataset/XML/image-root pickers, run buttons), not conversation

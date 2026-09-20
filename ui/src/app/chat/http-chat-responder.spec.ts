@@ -1,7 +1,7 @@
 import { firstValueFrom } from 'rxjs';
 import { toArray } from 'rxjs/operators';
 import { vi } from 'vitest';
-import { AuthService } from './auth.service';
+import { AuthService } from '../auth.service';
 import { HttpChatResponder } from './http-chat-responder';
 import { SettingsService } from './settings.service';
 

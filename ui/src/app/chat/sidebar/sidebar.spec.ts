@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { Sidebar } from './sidebar';
-import { AuthService, AuthUser } from '../auth.service';
+import { AuthService, AuthUser } from '../../auth.service';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
 import { SettingsService } from '../settings.service';

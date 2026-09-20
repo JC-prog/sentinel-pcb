@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { environment } from '../environments/environment';
-import { AuthService } from './auth.service';
+import { environment } from '../../environments/environment';
+import { AuthService } from '../auth.service';
 import { ChatResponder, ChatResponderEvent } from './chat-responder';
 import { SettingsService } from './settings.service';
 

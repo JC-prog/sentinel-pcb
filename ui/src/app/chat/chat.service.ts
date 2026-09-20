@@ -1,6 +1,6 @@
 import { Inject, Injectable, Signal, computed, effect, signal } from '@angular/core';
-import { environment } from '../environments/environment';
-import { AuthService } from './auth.service';
+import { environment } from '../../environments/environment';
+import { AuthService } from '../auth.service';
 import { CHAT_RESPONDER, ChatResponder } from './chat-responder';
 import { ChatMessage, Conversation, MessageRole, PersistedConversation } from './models/chat.models';
 

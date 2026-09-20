@@ -4,7 +4,7 @@ import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { App } from './app';
 import { BackendStatusService } from './backend-status.service';
-import { CHAT_RESPONDER } from './chat-responder';
+import { CHAT_RESPONDER } from './chat/chat-responder';
 import { of } from 'rxjs';
 
 const backendStatusStub = {

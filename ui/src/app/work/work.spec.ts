@@ -2,8 +2,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { vi } from 'vitest';
 import { Work } from './work';
-import { WorkService } from '../work.service';
-import { OrchestratorLogEntry, OrchestratorStatusEvent } from '../models/orchestrator.models';
+import { WorkService } from './work.service';
+import { OrchestratorLogEntry, OrchestratorStatusEvent } from './models/orchestrator.models';
 
 const IDLE_STATUS: OrchestratorStatusEvent = {
   status: 'Ready',

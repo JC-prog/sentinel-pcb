@@ -1,6 +1,6 @@
 import { Component, Signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService } from '../auth.service';
+import { AuthService } from '../../auth.service';
 import { ChatService } from '../chat.service';
 import { Conversation } from '../models/chat.models';
 import { SettingsService } from '../settings.service';

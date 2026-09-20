@@ -1,7 +1,7 @@
 import { firstValueFrom } from 'rxjs';
 import { toArray } from 'rxjs/operators';
 import { vi } from 'vitest';
-import { AuthService } from './auth.service';
+import { AuthService } from '../auth.service';
 import { WorkOrchestratorClient } from './work-orchestrator-client';
 
 function sseResponse(body: string, ok = true): Response {

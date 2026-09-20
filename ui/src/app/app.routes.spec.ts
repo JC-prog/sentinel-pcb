@@ -3,7 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { routes } from './app.routes';
 import { AuthService, AuthUser } from './auth.service';
-import { CHAT_RESPONDER } from './chat-responder';
+import { CHAT_RESPONDER } from './chat/chat-responder';
 
 const USER: AuthUser = {
   id: 'user-1',
