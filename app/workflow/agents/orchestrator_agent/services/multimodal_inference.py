@@ -88,7 +88,14 @@ class TwoStageInferenceService:
                 "source_feature": source_feature,
                 "machine_defect": machine_defect,
                 "feature_classification": stage1,
-                "routing": {"selected_model": route},
+                # "selected_model" is route_feature()'s raw key ("body"/"lead"/"text"), used only
+                # for routing; "service_model" is the actual inference-service model name
+                # (e.g. "pcb_body_defect", from model_lifecycle.py) that modelops code elsewhere
+                # (drift reports, retraining tickets) needs to match against.
+                "routing": {
+                    "selected_model": route,
+                    "service_model": defect_model_result.data["service_model"],
+                },
                 "defect_classification": stage2,
                 "comparison": {
                     "feature_agreement": source_feature.lower() == predicted_feature.lower(),
@@ -122,4 +129,7 @@ class TwoStageInferenceService:
             "prediction": result.label,
             "confidence": result.confidence,
             "probabilities": result.scores,
+            # "" when the inference service predates versioning - normalized to None so callers
+            # get a clean "unknown" rather than an empty-looking version string.
+            "model_version": result.model_version or None,
         }
