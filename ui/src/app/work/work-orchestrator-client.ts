@@ -5,20 +5,52 @@ import { AuthService } from '../auth.service';
 import {
   OrchestratorPlanStepEvent,
   OrchestratorRunRequest,
+  OrchestratorRunResult,
   OrchestratorStatusEvent,
   OrchestratorUploadRecord,
+  WorkflowDriftReportRequest,
+  WorkflowDriftReportOut,
+  WorkflowRetrainingTicketOut,
+  WorkflowRetrainingTicketsRequest,
 } from './models/orchestrator.models';
 
 export type WorkResponderEvent =
   | { type: 'log'; text: string }
   | { type: 'status'; status: OrchestratorStatusEvent }
   | { type: 'planStep'; step: OrchestratorPlanStepEvent }
-  | { type: 'result'; result: unknown }
+  | { type: 'result'; result: OrchestratorRunResult }
   | { type: 'error'; message: string };
 
 interface SseFrame {
   event: string;
   data: Record<string, unknown>;
+}
+
+/** The API answers errors with `{detail: string}` (our own HTTPException) or, for request
+ * validation, `{detail: [{msg, ...}]}` - same helper as ui/src/app/models/model-ops-client.ts,
+ * duplicated rather than imported: work/ and models/ are separate UI areas, the same way this
+ * file's own parseSseFrame below duplicates rather than imports chat's SSE parser to keep work/
+ * and chat/ decoupled. */
+async function errorMessage(response: Response): Promise<string> {
+  try {
+    const body: { detail?: unknown } = await response.json();
+    const detail = body.detail;
+    if (typeof detail === 'string' && detail) {
+      return detail;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((item) =>
+          item && typeof item === 'object' && 'msg' in item
+            ? String((item as { msg: unknown }).msg)
+            : String(item),
+        )
+        .join('; ');
+    }
+  } catch {
+    // not JSON - fall through to the generic message
+  }
+  return `Request failed (${response.status})`;
 }
 
 /** Same tiny SSE-frame parser as http-chat-responder.ts, duplicated rather than shared - the Work
@@ -124,7 +156,7 @@ export class WorkOrchestratorClient {
             } else if (frame.event === 'plan_step') {
               subscriber.next({ type: 'planStep', step: frame.data as unknown as OrchestratorPlanStepEvent });
             } else if (frame.event === 'result') {
-              subscriber.next({ type: 'result', result: frame.data });
+              subscriber.next({ type: 'result', result: frame.data as unknown as OrchestratorRunResult });
             } else if (frame.event === 'error') {
               subscriber.next({ type: 'error', message: String(frame.data['message'] ?? 'Run error') });
             } else if (frame.event === 'done') {
@@ -138,5 +170,27 @@ export class WorkOrchestratorClient {
 
       return () => controller.abort();
     });
+  }
+
+  async reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
+    return this.post('/api/orchestrator/monitoring/drift-report', request);
+  }
+
+  async flagForRetraining(
+    request: WorkflowRetrainingTicketsRequest,
+  ): Promise<WorkflowRetrainingTicketOut[]> {
+    return this.post('/api/orchestrator/monitoring/retraining-tickets', request);
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as T;
   }
 }

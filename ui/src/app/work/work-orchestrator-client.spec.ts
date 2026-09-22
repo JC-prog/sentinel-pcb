@@ -114,4 +114,61 @@ describe('WorkOrchestratorClient', () => {
     expect(formData.get('files')).toBe(file);
     expect(formData.get('relative_paths')).toBe('image.jpg');
   });
+
+  const SAMPLE = { sample_id: 'S1', final_decision: 'REVIEW_REQUIRED' as const };
+
+  it('posts a JSON body to the drift-report route and returns the parsed response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: 'r1', model_name: 'pcb_body_defect', model_version: null, status: 'open' }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new WorkOrchestratorClient(authService).reportDrift({
+      model_name: 'pcb_body_defect',
+      description: 'looks off',
+      samples: [SAMPLE],
+    });
+
+    expect(result).toEqual({ id: 'r1', model_name: 'pcb_body_defect', model_version: null, status: 'open' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/orchestrator/monitoring/drift-report');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({
+      model_name: 'pcb_body_defect',
+      description: 'looks off',
+      samples: [SAMPLE],
+    });
+  });
+
+  it('posts the selected tickets to the retraining-tickets route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([{ id: 't1', sample_ref: 'S1', model_name: 'pcb_body_defect', status: 'open' }]),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new WorkOrchestratorClient(authService).flagForRetraining({
+      tickets: [{ sample: SAMPLE, reason: 'false positive' }],
+    });
+
+    expect(result).toEqual([{ id: 't1', sample_ref: 'S1', model_name: 'pcb_body_defect', status: 'open' }]);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/monitoring/retraining-tickets');
+  });
+
+  it('throws the error detail when either monitoring route fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve({ detail: 'no resolvable model for sample(s): S2' }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new WorkOrchestratorClient(authService).flagForRetraining({
+        tickets: [{ sample: SAMPLE, reason: 'x' }],
+      }),
+    ).rejects.toThrow('no resolvable model for sample(s): S2');
+  });
 });

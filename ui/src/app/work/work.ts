@@ -1,6 +1,6 @@
 import { Component, Signal, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { OrchestratorRunMode } from './models/orchestrator.models';
+import { OrchestratorInferenceResult, OrchestratorRunMode } from './models/orchestrator.models';
 import { WorkService } from './work.service';
 
 function formatBytes(bytes: number): string {
@@ -47,6 +47,15 @@ export class Work {
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
 
+  // Reporting drift / flagging samples for retraining, once a run has finished.
+  protected readonly selectedSampleIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly driftModelName = signal('');
+  protected readonly driftDescription = signal('');
+  protected readonly retrainingReason = signal('');
+  protected readonly monitoringBusy = signal(false);
+  protected readonly monitoringError = signal<string | null>(null);
+  protected readonly monitoringMessage = signal<string | null>(null);
+
   protected readonly canRun: Signal<boolean> = computed(
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
@@ -66,6 +75,37 @@ export class Work {
     const result = this.workService.result();
     return result === null ? null : JSON.stringify(result, null, 2);
   });
+
+  protected readonly results: Signal<OrchestratorInferenceResult[]> = computed(
+    () => this.workService.result()?.results ?? [],
+  );
+
+  /** Distinct real model names (routing.service_model, not the routing key) actually seen in this
+   * run's results - what the "Report drift" model picker offers. A sample that never reached
+   * stage 2 (e.g. FEATURE_CLASSIFICATION_UNCERTAIN) contributes nothing here. */
+  protected readonly modelsInResults: Signal<string[]> = computed(() => {
+    const names = new Set<string>();
+    for (const sample of this.results()) {
+      const name = sample.routing?.service_model;
+      if (name) {
+        names.add(name);
+      }
+    }
+    return [...names].sort();
+  });
+
+  protected readonly selectedSamples: Signal<OrchestratorInferenceResult[]> = computed(() => {
+    const ids = this.selectedSampleIds();
+    return this.results().filter((sample) => ids.has(sample.sample_id));
+  });
+
+  protected readonly canReportDrift: Signal<boolean> = computed(
+    () => this.driftModelName() !== '' && this.driftDescription().trim() !== '' && !this.monitoringBusy(),
+  );
+
+  protected readonly canFlagSelected: Signal<boolean> = computed(
+    () => this.selectedSampleIds().size > 0 && this.retrainingReason().trim() !== '' && !this.monitoringBusy(),
+  );
 
   constructor(protected readonly workService: WorkService) {}
 
@@ -96,6 +136,76 @@ export class Work {
 
   clearLog(): void {
     this.workService.clearLog();
+    this.selectedSampleIds.set(new Set());
+    this.monitoringError.set(null);
+    this.monitoringMessage.set(null);
+  }
+
+  confidencePercent(sample: OrchestratorInferenceResult): number | null {
+    const confidence = sample.defect_classification?.confidence;
+    return confidence === undefined ? null : Math.round(confidence * 100);
+  }
+
+  isSampleSelected(sampleId: string): boolean {
+    return this.selectedSampleIds().has(sampleId);
+  }
+
+  toggleSample(sampleId: string): void {
+    this.selectedSampleIds.update((ids) => {
+      const next = new Set(ids);
+      if (!next.delete(sampleId)) {
+        next.add(sampleId);
+      }
+      return next;
+    });
+  }
+
+  async reportDrift(): Promise<void> {
+    if (!this.canReportDrift()) {
+      return;
+    }
+    this.monitoringBusy.set(true);
+    this.monitoringError.set(null);
+    this.monitoringMessage.set(null);
+    try {
+      await this.workService.reportDrift({
+        model_name: this.driftModelName(),
+        description: this.driftDescription().trim(),
+        samples: this.results(),
+      });
+      this.driftDescription.set('');
+      this.monitoringMessage.set(`Drift report filed for ${this.driftModelName()}.`);
+    } catch (error) {
+      this.monitoringError.set(error instanceof Error ? error.message : 'Could not file the drift report.');
+    } finally {
+      this.monitoringBusy.set(false);
+    }
+  }
+
+  async flagSelectedForRetraining(): Promise<void> {
+    if (!this.canFlagSelected()) {
+      return;
+    }
+    const reason = this.retrainingReason().trim();
+    this.monitoringBusy.set(true);
+    this.monitoringError.set(null);
+    this.monitoringMessage.set(null);
+    try {
+      const tickets = await this.workService.flagForRetraining({
+        tickets: this.selectedSamples().map((sample) => ({ sample, reason })),
+      });
+      this.monitoringMessage.set(
+        `Flagged ${tickets.length} sample${tickets.length === 1 ? '' : 's'} for retraining.`,
+      );
+      this.selectedSampleIds.set(new Set());
+      this.retrainingReason.set('');
+    } catch (error) {
+      this.monitoringError.set(
+        error instanceof Error ? error.message : 'Could not flag the selected samples.',
+      );
+    } finally {
+      this.monitoringBusy.set(false);
+    }
   }
 
   downloadResult(): void {

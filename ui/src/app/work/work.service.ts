@@ -2,7 +2,12 @@ import { Injectable, Signal, signal } from '@angular/core';
 import {
   OrchestratorLogEntry,
   OrchestratorRunMode,
+  OrchestratorRunResult,
   OrchestratorStatusEvent,
+  WorkflowDriftReportRequest,
+  WorkflowDriftReportOut,
+  WorkflowRetrainingTicketOut,
+  WorkflowRetrainingTicketsRequest,
 } from './models/orchestrator.models';
 import { WorkOrchestratorClient } from './work-orchestrator-client';
 
@@ -29,12 +34,12 @@ export class WorkService {
   private readonly _status = signal<OrchestratorStatusEvent>(INITIAL_STATUS);
   private readonly _log = signal<OrchestratorLogEntry[]>([]);
   private readonly _running = signal(false);
-  private readonly _result = signal<unknown>(null);
+  private readonly _result = signal<OrchestratorRunResult | null>(null);
 
   readonly status: Signal<OrchestratorStatusEvent> = this._status.asReadonly();
   readonly log: Signal<OrchestratorLogEntry[]> = this._log.asReadonly();
   readonly running: Signal<boolean> = this._running.asReadonly();
-  readonly result: Signal<unknown> = this._result.asReadonly();
+  readonly result: Signal<OrchestratorRunResult | null> = this._result.asReadonly();
 
   constructor(private readonly client: WorkOrchestratorClient) {}
 
@@ -48,6 +53,18 @@ export class WorkService {
 
   uploadImageRootFiles(files: File[]): Promise<string> {
     return this.client.uploadImageRootFiles(files);
+  }
+
+  // Thin passthroughs, like the uploads above - the component (work.ts) owns the busy/error UI
+  // state for these, the same way it already does around the upload calls.
+  reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
+    return this.client.reportDrift(request);
+  }
+
+  flagForRetraining(
+    request: WorkflowRetrainingTicketsRequest,
+  ): Promise<WorkflowRetrainingTicketOut[]> {
+    return this.client.flagForRetraining(request);
   }
 
   clearLog(): void {
