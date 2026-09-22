@@ -88,6 +88,29 @@ async def make_ticket(
     )
 
 
+async def make_workflow_ticket(
+    session: AsyncSession,
+    user: User,
+    *,
+    sample_ref: str = "S1",
+    model_name: str | None = "pcb_body_defect",
+    model_version: str | None = "JcProg/body@v1",
+    correct_label: str | None = "Golden",
+) -> RetrainingTicket:
+    """A ticket with no Case behind it - what the Work tab's bulk orchestrator files."""
+
+    return await create_ticket(
+        session,
+        sample_ref=sample_ref,
+        flagged_by_user_id=user.id,
+        reason="false positive",
+        model_name=model_name,
+        model_version=model_version,
+        observed_label="MissingPart",
+        correct_label=correct_label,
+    )
+
+
 def model_info(name: str, version: str, previous: str | None = None) -> ModelInfo:
     return ModelInfo(
         name=name,

@@ -1,10 +1,17 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.db.models import DriftReportStatus, RetrainingTicketStatus
+from app.shared.db.models import DriftReportStatus, RetrainingTicket, RetrainingTicketStatus
 from app.shared.modelops import drift, tickets
-from tests.shared._modelops_helpers import make_case, make_ticket, make_user
+from tests.shared._modelops_helpers import (
+    make_case,
+    make_ticket,
+    make_user,
+    make_workflow_ticket,
+)
 
 
 async def test_a_drift_report_stores_the_evidence_and_the_numbers(
@@ -92,6 +99,44 @@ async def test_a_ticket_may_omit_the_model_and_the_correct_label(
     )
 
     assert ticket.model_name is None and ticket.correct_label is None
+
+
+async def test_a_workflow_origin_ticket_has_a_sample_ref_instead_of_a_case(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+
+    ticket = await make_workflow_ticket(db_async_session, user, sample_ref="S1")
+
+    assert (ticket.case_id, ticket.case_number) == (None, None)
+    assert ticket.sample_ref == "S1"
+    assert ticket.model_name == "pcb_body_defect"
+
+
+async def test_creating_a_ticket_with_neither_case_nor_sample_is_rejected(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+
+    with pytest.raises(ValueError, match="case_id or sample_ref"):
+        await tickets.create_ticket(
+            db_async_session, flagged_by_user_id=user.id, reason="no reference given"
+        )
+
+
+async def test_the_database_rejects_a_ticket_with_neither_case_nor_sample(
+    db_async_session: AsyncSession,
+) -> None:
+    """Backstop below the app-level check in create_ticket - a raw insert must still be refused."""
+
+    user = await make_user(db_async_session)
+
+    db_async_session.add(
+        RetrainingTicket(flagged_by_user_id=user.id, reason="bypassing create_ticket")
+    )
+    with pytest.raises(IntegrityError):
+        await db_async_session.commit()
+    await db_async_session.rollback()
 
 
 async def test_only_open_unassigned_tickets_of_the_model_are_listed(

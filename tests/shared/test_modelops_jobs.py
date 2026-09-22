@@ -15,6 +15,7 @@ from app.shared.modelops.versions import list_versions, sync_versions
 from tests.shared._modelops_helpers import (
     make_ticket,
     make_user,
+    make_workflow_ticket,
     model_info,
     remote_job,
 )
@@ -49,6 +50,7 @@ async def test_draft_collects_open_tickets_into_a_pending_job(
         {
             "case_id": ticket.case_id,
             "case_number": ticket.case_number,
+            "sample_ref": None,
             "ticket_id": ticket.id,
             "observed_label": "MissingPart",
             "expected_label": "Golden",
@@ -56,6 +58,28 @@ async def test_draft_collects_open_tickets_into_a_pending_job(
     ]
     await db_async_session.refresh(ticket)
     assert (ticket.status, ticket.job_id) == (RetrainingTicketStatus.ACKNOWLEDGED, job.id)
+
+
+async def test_draft_mixes_chat_and_workflow_origin_tickets_for_the_same_model(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+    chat_ticket = await make_ticket(db_async_session, user)
+    workflow_ticket = await make_workflow_ticket(db_async_session, user, sample_ref="S1")
+    await sync_versions(db_async_session, [model_info(NAME, V1)])
+
+    job = await _draft(db_async_session, user)
+
+    assert {(s["case_id"], s["sample_ref"]) for s in job.samples} == {
+        (chat_ticket.case_id, None),
+        (None, "S1"),
+    }
+    assert {s["ticket_id"] for s in job.samples} == {chat_ticket.id, workflow_ticket.id}
+    await db_async_session.refresh(chat_ticket)
+    await db_async_session.refresh(workflow_ticket)
+    assert chat_ticket.status == RetrainingTicketStatus.ACKNOWLEDGED
+    assert workflow_ticket.status == RetrainingTicketStatus.ACKNOWLEDGED
+    assert {chat_ticket.job_id, workflow_ticket.job_id} == {job.id}
 
 
 async def test_draft_ignores_other_models_and_tickets_already_in_a_job(

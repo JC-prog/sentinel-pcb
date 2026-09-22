@@ -23,7 +23,7 @@ from app.shared.modelops import drift as drift_repo
 from app.shared.modelops import jobs as job_repo
 from app.shared.modelops.versions import record_candidate
 from tests.modelops.fake_inference import FakeInference, install, succeeded
-from tests.shared._modelops_helpers import make_ticket
+from tests.shared._modelops_helpers import make_ticket, make_workflow_ticket
 
 MODEL = "pcb_body_defect"
 V1 = "JcProg/body@v1"
@@ -273,6 +273,23 @@ async def test_the_queue_lists_jobs_with_ticket_counts_and_the_detail_shows_the_
     assert detail["samples"][0]["observed_label"] == "MissingPart"
     assert detail["samples"][0]["expected_label"] == "Golden"
     assert authenticated_client.get(_job_url("nope")).status_code == 404
+
+
+async def test_a_workflow_origin_samples_case_id_is_null_with_a_sample_ref(
+    authenticated_client: TestClient, fake: FakeInference, db_async_session: AsyncSession
+) -> None:
+    author = await _qa(db_async_session)
+    await make_workflow_ticket(db_async_session, author, sample_ref="S1")
+    job = await job_repo.draft_job(
+        db_async_session, model_name=MODEL, created_by_user_id=author.id, rationale="bulk run"
+    )
+
+    detail = authenticated_client.get(_job_url(job.id)).json()
+
+    (sample,) = detail["samples"]
+    assert sample["case_id"] is None
+    assert sample["case_number"] is None
+    assert sample["sample_ref"] == "S1"
 
 
 async def test_the_queue_can_be_filtered_by_status(

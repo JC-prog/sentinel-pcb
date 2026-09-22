@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -188,17 +189,29 @@ class RetrainingTicketStatus(StrEnum):
 
 
 class RetrainingTicket(Base):
-    """A QA/Admin reviewer's claim that a Case's model verdict was wrong - created by the chat
-    monitoring agent's flag_case_for_retraining tool. Creating one only records the claim; a
-    RetrainingJob (drafted from open tickets, approved by an Admin) is what actually asks for a
-    retrain."""
+    """A QA/Admin reviewer's claim that a model's verdict was wrong - created by the chat
+    monitoring agent's flag_case_for_retraining tool (case_id set) or by the Work tab's bulk
+    orchestrator flagging a dataset sample (sample_ref set; workflow owns no Case row to point
+    at). Creating one only records the claim; a RetrainingJob (drafted from open tickets, approved
+    by an Admin) is what actually asks for a retrain - see jobs.py's draft_job, which is agnostic
+    to which of the two this is."""
 
     __tablename__ = "retraining_tickets"
+    __table_args__ = (
+        CheckConstraint(
+            "case_id IS NOT NULL OR sample_ref IS NOT NULL",
+            name="ck_retraining_tickets_case_or_sample",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
-    case_id: Mapped[str] = mapped_column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id: Mapped[str | None] = mapped_column(String, ForeignKey("cases.id"), nullable=True, index=True)
     # "CASE-000123", copied at flag time (see DriftReport.case_numbers for why).
     case_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The Work tab's sample_id for a workflow-origin ticket (no Case exists to reference instead).
+    # Exactly one of case_id/sample_ref is set - enforced by the CHECK constraint above and by
+    # tickets.create_ticket.
+    sample_ref: Mapped[str | None] = mapped_column(String, nullable=True)
     flagged_by_user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id"), nullable=False
     )
