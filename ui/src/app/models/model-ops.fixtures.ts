@@ -120,6 +120,7 @@ export function jobDetail(overrides: Partial<RetrainingJobDetail> = {}): Retrain
       {
         case_id: 'c-1',
         case_number: 'CASE-000007',
+        sample_ref: null,
         ticket_id: 't-1',
         observed_label: 'MissingPart',
         expected_label: 'Golden',
@@ -127,8 +128,17 @@ export function jobDetail(overrides: Partial<RetrainingJobDetail> = {}): Retrain
       {
         case_id: 'c-2',
         case_number: null,
+        sample_ref: null,
         ticket_id: 't-2',
         observed_label: null,
+        expected_label: null,
+      },
+      {
+        case_id: null,
+        case_number: null,
+        sample_ref: 'S1',
+        ticket_id: 't-3',
+        observed_label: 'MissingPart',
         expected_label: null,
       },
     ],

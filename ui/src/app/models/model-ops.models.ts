@@ -115,8 +115,11 @@ export interface RetrainingJob {
 }
 
 export interface JobSample {
-  case_id: string;
+  // Exactly one of case_id (a chat Case) / sample_ref (a Work-tab dataset sample, no Case behind
+  // it) identifies what was flagged.
+  case_id: string | null;
   case_number: string | null;
+  sample_ref: string | null;
   ticket_id: string | null;
   observed_label: string | null;
   expected_label: string | null;

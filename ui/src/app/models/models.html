@@ -446,9 +446,11 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (sample of detail.samples; track sample.ticket_id ?? sample.case_id) {
+                  @for (sample of detail.samples; track sample.ticket_id ?? sample.case_id ?? sample.sample_ref) {
                     <tr class="border-t border-slate-200 dark:border-slate-800">
-                      <td class="py-1 pr-3 font-mono">{{ sample.case_number ?? sample.case_id }}</td>
+                      <td class="py-1 pr-3 font-mono">
+                        {{ sample.case_number ?? sample.case_id ?? sample.sample_ref ?? '—' }}
+                      </td>
                       <td class="py-1 pr-3">{{ sample.observed_label ?? '–' }}</td>
                       <td class="py-1">{{ sample.expected_label ?? '–' }}</td>
                     </tr>

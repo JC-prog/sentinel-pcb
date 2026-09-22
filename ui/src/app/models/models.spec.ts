@@ -492,6 +492,7 @@ describe('Models', () => {
       expect(card()).toContain('MissingPart');
       expect(card()).toContain('Golden');
       expect(card()).toContain('c-2'); // no case number recorded - falls back to the id
+      expect(card()).toContain('S1'); // workflow-origin sample - falls back to sample_ref
       await click('Hide flagged cases');
       expect(card()).not.toContain('CASE-000007');
     });
