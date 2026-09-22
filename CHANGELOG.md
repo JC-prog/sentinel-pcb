@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: once a bulk run finishes, QA/Admin can file a drift report for the run's model and flag
+  selected samples as retraining tickets, straight from the run's results - using the same shared
+  model-operations tables the chat monitoring agent and Models tab already use
+  (`POST /api/orchestrator/monitoring/{drift-report,retraining-tickets}`, requiring both
+  `ORCHESTRATOR_AGENT_ENABLED` and `MODELOPS_ENABLED`). `RetrainingTicket.case_id` is now optional; a
+  ticket may instead carry a Work-tab `sample_ref` when it has no chat Case behind it. Includes a
+  database migration.
 - New **Models** tab beside Chat and Work: the live version of each model and its version history,
   drift reports people have filed (with the numbers behind them), and the retraining queue with each
   job's progress and the cases it was drafted from. Admins can approve or cancel a retraining plan,
