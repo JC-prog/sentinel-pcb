@@ -1,0 +1,9 @@
+policy:
+  require_all_samples_verified: false
+  feature_confidence_threshold: 0.70
+  defect_confidence_threshold: 0.70
+  require_feature_agreement: false
+  alignment:
+    enabled: true
+    warning_shift_pixels: 12
+    fail_shift_pixels: 35

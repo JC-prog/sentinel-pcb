@@ -1,0 +1,2271 @@
+{
+  "status": "REVIEW_REQUIRED",
+  "inputs": {
+    "dataset_csv": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\dataset.csv",
+    "inspection_xml": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\7017-0205-05.2026-09-08.14.46.55.i.xml",
+    "image_root": "D:/zwang/Project/adc_agentic_project/sample_data"
+  },
+  "prepared_samples": [
+    {
+      "sample_id": "S000001",
+      "board": "Board1",
+      "package": "35-900032-AAA-RV1",
+      "component": "U51",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902427",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\35-900032-AAA-RV1\\Text\\Golden\\Board1_U51_Text1_35-900032-AAA-RV1_20260908_144902427_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\35-900032-AAA-RV1\\Text\\WrongPart_13\\Board1_U51_Text1_35-900032-AAA-RV1_20260908_144902427_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "42.844203530588942",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000002",
+      "board": "Board1",
+      "package": "26-188412-AAA-RV1",
+      "component": "FB1",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902442",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\26-188412-AAA-RV1\\Body\\Golden\\Board1_FB1_Body_26-188412-AAA-RV1_20260908_144902442_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\26-188412-AAA-RV1\\Body\\ForeignMaterial_19\\Board1_FB1_Body_26-188412-AAA-RV1_20260908_144902442_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.051036477163545695",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000003",
+      "board": "Board1",
+      "package": "18-149003-AAA-RV1-1",
+      "component": "R54",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902454",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1-1\\Body\\Golden\\Board1_R54_Body_18-149003-AAA-RV1-1_20260908_144902454_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1-1\\Body\\Shift_4\\Board1_R54_Body_18-149003-AAA-RV1-1_20260908_144902454_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.033",
+              "Minimum": "-0.182",
+              "Maximum": "0.182",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.037",
+              "Minimum": "-0.097",
+              "Maximum": "0.097",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "179.16653926104047",
+              "Minimum": "173",
+              "Maximum": "187",
+              "Target": "180"
+            },
+            "ConfidenceLevel": {
+              "Value": "0",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000004",
+      "board": "Board1",
+      "package": "06-233344-AAA-RV1",
+      "component": "C333",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902460",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-233344-AAA-RV1\\Body\\Golden\\Board1_C333_Body_06-233344-AAA-RV1_20260908_144902460_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-233344-AAA-RV1\\Body\\ForeignMaterial_19\\Board1_C333_Body_06-233344-AAA-RV1_20260908_144902460_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.0256089585767309",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000005",
+      "board": "Board1",
+      "package": "50-204321-01",
+      "component": "A2",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902471",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204321-01\\Body\\Golden\\Board1_A2_Body_50-204321-01_20260908_144902471_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204321-01\\Body\\SolderInsuffcient_5\\Board1_A2_Body_50-204321-01_20260908_144902471_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "DiffHeight",
+            "MeanHeight",
+            "MaxHeight"
+          ],
+          "measurements": {
+            "MeanHeight": {
+              "Value": "0.746928414188217",
+              "LowerFailure": "0.58353661402509238",
+              "UpperFailure": "0.7435366140250923",
+              "Target": "0.66353661402509234"
+            },
+            "MaxHeight": {
+              "Value": "0.94748915068117123",
+              "LowerFailure": "0.66548845940344314",
+              "UpperFailure": "0.84548845940344308",
+              "Target": "0.7454884594034431"
+            },
+            "DiffHeight": {
+              "Value": "0.29559106866958179",
+              "LowerFailure": "0.064394626822057766",
+              "UpperFailure": "0.22439462682205777",
+              "Target": "0.12439462682205776"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000006",
+      "board": "Board1",
+      "package": "38-110438-AAA-RV2",
+      "component": "D15",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902483",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board1_D15_Text1_38-110438-AAA-RV2_20260908_144902483_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board1_D15_Text1_38-110438-AAA-RV2_20260908_144902483_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "19.868090861142395",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000007",
+      "board": "Board1",
+      "package": "18-400067-05",
+      "component": "R60",
+      "inspection_definition_raw": "BlobDetection|BodyInspection",
+      "inspection_definitions": [
+        "BlobDetection",
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902491",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-400067-05\\Body\\Golden\\Board1_R60_Body_18-400067-05_20260908_144902491_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-400067-05\\Body\\SolderInsuffcient_5\\Board1_R60_Body_18-400067-05_20260908_144902491_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0",
+              "Minimum": "-0.2",
+              "Maximum": "0.2",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0",
+              "Minimum": "-0.2",
+              "Maximum": "0.2",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "0",
+              "Minimum": "-7",
+              "Maximum": "7",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.026304000712653704",
+              "Threshold": "0.12",
+              "Target": "0"
+            },
+            "Tombstone": {
+              "Value": "0",
+              "Threshold": "25",
+              "Target": "0"
+            },
+            "Billboard": {
+              "Value": "0",
+              "Threshold": "30",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "0.27198004597047304",
+              "LowerFailure": "0.26466906262791523",
+              "UpperFailure": "0.3970035939418729",
+              "Target": "0.33083632828489407"
+            },
+            "MeasuredArea": {
+              "Value": "0.0058320004125656634",
+              "LowerFailure": "0.35395216075928915",
+              "UpperFailure": "0.65733972712439426",
+              "Target": "0.5056459439418417"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000008",
+      "board": "Board1",
+      "package": "32-996678-AAA-RV1",
+      "component": "U33",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902499",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-996678-AAA-RV1\\Body\\Golden\\Board1_U33_Body_32-996678-AAA-RV1_20260908_144902499_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-996678-AAA-RV1\\Body\\SolderInsuffcient_5\\Board1_U33_Body_32-996678-AAA-RV1_20260908_144902499_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "MeanHeight",
+            "Area"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.075",
+              "Minimum": "-0.17420218415763303",
+              "Maximum": "0.17420218415763303",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.027",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "1.4845815196613672",
+              "Minimum": "-3.5",
+              "Maximum": "3.5",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.092372425519511567",
+              "Threshold": "0.18",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "-0.033332043746830249",
+              "LowerFailure": "0.35827209814216554",
+              "UpperFailure": "0.59712016357027586",
+              "Target": "0.4776961308562207"
+            },
+            "MeasuredArea": {
+              "Value": "0.78440405549008163",
+              "LowerFailure": "1.1754902433202084",
+              "UpperFailure": "1.9591504055336806",
+              "Target": "1.5673203244269445"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000009",
+      "board": "Board1",
+      "package": "14-722718-AAA-RV1",
+      "component": "C223",
+      "inspection_definition_raw": "GeometryMeasurement",
+      "inspection_definitions": [
+        "GeometryMeasurement"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902509",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\14-722718-AAA-RV1\\Body\\Golden\\Board1_C223_Body_14-722718-AAA-RV1_20260908_144902509_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\14-722718-AAA-RV1\\Body\\SolderInsuffcient_5\\Board1_C223_Body_14-722718-AAA-RV1_20260908_144902509_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "GeometryMeasurement": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Deviation"
+          ],
+          "measurements": {
+            "Deviation": {
+              "Value": "0.09",
+              "Threshold": "0.088",
+              "Type": "RMS"
+            },
+            "Diameter": {
+              "Value": "6.588",
+              "Min": "6.0365588915194284",
+              "Max": "7.37801642296819"
+            },
+            "OffsetX": {
+              "Value": "-0.01",
+              "Threshold": "0.2"
+            },
+            "OffsetY": {
+              "Value": "0.079",
+              "Threshold": "0.25"
+            },
+            "OffsetAngle": {
+              "Value": "0",
+              "Threshold": "3"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000010",
+      "board": "Board1",
+      "package": "32-976002-AAA-RV1",
+      "component": "U27",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902518",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-976002-AAA-RV1\\Text\\Golden\\Board1_U27_Text1_32-976002-AAA-RV1_20260908_144902518_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-976002-AAA-RV1\\Text\\WrongPart_13\\Board1_U27_Text1_32-976002-AAA-RV1_20260908_144902518_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel",
+            "Polarity"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "17.833263560031622",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "40"
+            },
+            "Polarity": {
+              "IsFailed": "true"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000011",
+      "board": "Board1",
+      "package": "11-032857-AAA-RV1",
+      "component": "D5",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead2",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902526",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\11-032857-AAA-RV1\\Lead\\Golden\\Board1_D5_Lead2_11-032857-AAA-RV1_20260908_144902526_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\11-032857-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board1_D5_Lead2_11-032857-AAA-RV1_20260908_144902526_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.08248927072800992",
+              "LowerFailure": "0.0017434982364426879",
+              "UpperFailure": "0.076713922403478213",
+              "Target": "0.034869964728853731"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000012",
+      "board": "Board1",
+      "package": "18-149003-AAA-RV1",
+      "component": "R249",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902536",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1\\Body\\Golden\\Board1_R249_Body_18-149003-AAA-RV1_20260908_144902536_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1\\Body\\SolderInsuffcient_5\\Board1_R249_Body_18-149003-AAA-RV1_20260908_144902536_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "-0.056",
+              "Minimum": "-0.2",
+              "Maximum": "0.2",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "-0.031",
+              "Minimum": "-0.2",
+              "Maximum": "0.2",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "2.7287708659645578",
+              "Minimum": "-7",
+              "Maximum": "7",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.053499958506936993",
+              "Threshold": "0.12",
+              "Target": "0"
+            },
+            "Tombstone": {
+              "Value": "2.0379317054694535",
+              "Threshold": "25",
+              "Target": "0"
+            },
+            "Billboard": {
+              "Value": "5.9613866957888888",
+              "Threshold": "30",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "0.31917194564700385",
+              "LowerFailure": "0.25536",
+              "UpperFailure": "0.38304",
+              "Target": "0.3192"
+            },
+            "MeasuredArea": {
+              "Value": "0.28706402030739875",
+              "LowerFailure": "0.3003",
+              "UpperFailure": "0.5577",
+              "Target": "0.429"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000013",
+      "board": "Board1",
+      "package": "38-110438-AAA-RV2",
+      "component": "D13",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902544",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board1_D13_Text1_38-110438-AAA-RV2_20260908_144902544_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board1_D13_Text1_38-110438-AAA-RV2_20260908_144902544_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "17.773670585807018",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000014",
+      "board": "Board1",
+      "package": "50-204321-01",
+      "component": "A1",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902554",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204321-01\\Body\\Golden\\Board1_A1_Body_50-204321-01_20260908_144902554_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204321-01\\Body\\SolderInsuffcient_5\\Board1_A1_Body_50-204321-01_20260908_144902554_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "MaxHeight"
+          ],
+          "measurements": {
+            "MeanHeight": {
+              "Value": "0.724668306357903",
+              "LowerFailure": "0.58353661402509238",
+              "UpperFailure": "0.7435366140250923",
+              "Target": "0.66353661402509234"
+            },
+            "MaxHeight": {
+              "Value": "0.8497051626716241",
+              "LowerFailure": "0.66548845940344314",
+              "UpperFailure": "0.84548845940344308",
+              "Target": "0.7454884594034431"
+            },
+            "DiffHeight": {
+              "Value": "0.2015133411735045",
+              "LowerFailure": "0.064394626822057766",
+              "UpperFailure": "0.22439462682205777",
+              "Target": "0.12439462682205776"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000015",
+      "board": "Board1",
+      "package": "06-247398-AAA-RV2",
+      "component": "C350",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902568",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-247398-AAA-RV2\\Body\\Golden\\Board1_C350_Body_06-247398-AAA-RV2_20260908_144902568_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-247398-AAA-RV2\\Body\\ForeignMaterial_19\\Board1_C350_Body_06-247398-AAA-RV2_20260908_144902568_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.026127358547919786",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000016",
+      "board": "Board1",
+      "package": "32-367595-AAA-RV1",
+      "component": "U5",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902580",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-367595-AAA-RV1\\Body\\Golden\\Board1_U5_Body_32-367595-AAA-RV1_20260908_144902580_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-367595-AAA-RV1\\Body\\SolderInsuffcient_5\\Board1_U5_Body_32-367595-AAA-RV1_20260908_144902580_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "OffsetY",
+            "Offset"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.006",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "-0.251",
+              "Minimum": "-0.25",
+              "Maximum": "0.25",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "0.23921549451758894",
+              "Minimum": "-1.5",
+              "Maximum": "1.5",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.017735727809616492",
+              "Threshold": "0.1",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "0.76518834110216571",
+              "LowerFailure": "0.59506323781799042",
+              "UpperFailure": "0.89259485672698557",
+              "Target": "0.743829047272488"
+            },
+            "MeasuredArea": {
+              "Value": "13.029984921763372",
+              "LowerFailure": "9.866775",
+              "UpperFailure": "16.444625",
+              "Target": "13.1557"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000017",
+      "board": "Board1",
+      "package": "44-300144-AAA-RV1",
+      "component": "Y1",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902590",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Text\\Golden\\Board1_Y1_Text1_44-300144-AAA-RV1_20260908_144902590_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Text\\WrongPart_13\\Board1_Y1_Text1_44-300144-AAA-RV1_20260908_144902590_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "30.140669388376477",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "40"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000018",
+      "board": "Board1",
+      "package": "44-300144-AAA-RV1",
+      "component": "Y1",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Polarity1",
+      "machine_defect": "Polarity1_10",
+      "timestamp": "20260908_144902597",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Polarity\\Golden\\Board1_Y1_Polarity1_44-300144-AAA-RV1_20260908_144902597_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Polarity\\Polarity1_10\\Board1_Y1_Polarity1_44-300144-AAA-RV1_20260908_144902597_Polarity1_10.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "30.660408509105338",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "45"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000019",
+      "board": "Board1",
+      "package": "18-122241-AAA-RV2-1",
+      "component": "R438",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902606",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-122241-AAA-RV2-1\\Body\\Golden\\Board1_R438_Body_18-122241-AAA-RV2-1_20260908_144902606_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-122241-AAA-RV2-1\\Body\\Shift_4\\Board1_R438_Body_18-122241-AAA-RV2-1_20260908_144902606_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.005",
+              "Minimum": "-0.182",
+              "Maximum": "0.182",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.03",
+              "Minimum": "-0.097",
+              "Maximum": "0.097",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "266.42791576621596",
+              "Minimum": "263",
+              "Maximum": "277",
+              "Target": "270"
+            },
+            "ConfidenceLevel": {
+              "Value": "42.635151428301192",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000020",
+      "board": "Board1",
+      "package": "06-310691-AAA-RV1",
+      "component": "C311",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead1",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902610",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310691-AAA-RV1\\Lead\\Golden\\Board1_C311_Lead1_06-310691-AAA-RV1_20260908_144902610_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310691-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board1_C311_Lead1_06-310691-AAA-RV1_20260908_144902610_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.092664006555209982",
+              "LowerFailure": "0.012999999999999998",
+              "UpperFailure": "0.091",
+              "Target": "0.052"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000021",
+      "board": "Board1",
+      "package": "38-110438-AAA-RV2",
+      "component": "D70",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902619",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board1_D70_Text1_38-110438-AAA-RV2_20260908_144902619_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board1_D70_Text1_38-110438-AAA-RV2_20260908_144902619_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "11.566557918967854",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000022",
+      "board": "Board1",
+      "package": "27-000560-AAA-RV1",
+      "component": "L4",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902630",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\27-000560-AAA-RV1\\Body\\Golden\\Board1_L4_Body_27-000560-AAA-RV1_20260908_144902630_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\27-000560-AAA-RV1\\Body\\SolderInsuffcient_5\\Board1_L4_Body_27-000560-AAA-RV1_20260908_144902630_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "OffsetY",
+            "Offset",
+            "Coplanarity"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.164",
+              "Minimum": "-0.27",
+              "Maximum": "0.27",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.327",
+              "Minimum": "-0.25",
+              "Maximum": "0.25",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "0.23921549451758894",
+              "Minimum": "-5",
+              "Maximum": "5",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.21956187405628952",
+              "Threshold": "0.2",
+              "Target": "0"
+            },
+            "Tombstone": {
+              "Value": "2.1716825103595938",
+              "Threshold": "25",
+              "Target": "0"
+            },
+            "Billboard": {
+              "Value": "0.23633235379016543",
+              "Threshold": "30",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "5.7914833379604991",
+              "LowerFailure": "4.6940800000000005",
+              "UpperFailure": "7.04112",
+              "Target": "5.8676"
+            },
+            "MeasuredArea": {
+              "Value": "40.812014887111594",
+              "LowerFailure": "28.2611",
+              "UpperFailure": "52.484899999999996",
+              "Target": "40.373"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000023",
+      "board": "Board1",
+      "package": "06-222018-AAA-RV2",
+      "component": "C382",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902646",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-222018-AAA-RV2\\Body\\Golden\\Board1_C382_Body_06-222018-AAA-RV2_20260908_144902646_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-222018-AAA-RV2\\Body\\ForeignMaterial_19\\Board1_C382_Body_06-222018-AAA-RV2_20260908_144902646_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.0256089585767309",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000024",
+      "board": "Board1",
+      "package": "06-310691-AAA-RV1",
+      "component": "C315",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead1",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902663",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310691-AAA-RV1\\Lead\\Golden\\Board1_C315_Lead1_06-310691-AAA-RV1_20260908_144902663_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310691-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board1_C315_Lead1_06-310691-AAA-RV1_20260908_144902663_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.098820006990695944",
+              "LowerFailure": "0.012999999999999998",
+              "UpperFailure": "0.091",
+              "Target": "0.052"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000025",
+      "board": "Board1",
+      "package": "39-900051-AAA-RV1",
+      "component": "U26",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead3",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902680",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\39-900051-AAA-RV1\\Lead\\Golden\\Board1_U26_Lead3_39-900051-AAA-RV1_20260908_144902680_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\39-900051-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board1_U26_Lead3_39-900051-AAA-RV1_20260908_144902680_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.0039770507192706025",
+              "LowerFailure": "0.0077653854974303604",
+              "UpperFailure": "0.19413463743575909",
+              "Target": "0.077653854974303646"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000026",
+      "board": "Board1",
+      "package": "32-608052-AAA-RV1",
+      "component": "U52",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902694",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-608052-AAA-RV1\\Text\\Golden\\Board1_U52_Text1_32-608052-AAA-RV1_20260908_144902694_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-608052-AAA-RV1\\Text\\WrongPart_13\\Board1_U52_Text1_32-608052-AAA-RV1_20260908_144902694_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "44.253924499424912",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000027",
+      "board": "Board1",
+      "package": "53-924201-AAA-RV1",
+      "component": "J19",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902711",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\53-924201-AAA-RV1\\Text\\Golden\\Board1_J19_Text1_53-924201-AAA-RV1_20260908_144902711_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\53-924201-AAA-RV1\\Text\\WrongPart_13\\Board1_J19_Text1_53-924201-AAA-RV1_20260908_144902711_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "26.321263464159539",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "40"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000028",
+      "board": "Board1",
+      "package": "32-606014-AAA-RV1",
+      "component": "U22",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead5",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902725",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-606014-AAA-RV1\\Lead\\Golden\\Board1_U22_Lead5_32-606014-AAA-RV1_20260908_144902725_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-606014-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board1_U22_Lead5_32-606014-AAA-RV1_20260908_144902725_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.0051303296437815466",
+              "LowerFailure": "0.0051462394099917111",
+              "UpperFailure": "0.1132172670198176",
+              "Target": "0.05146239409991709"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000029",
+      "board": "Board1",
+      "package": "06-310649-AAA-RV1",
+      "component": "C309",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902739",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310649-AAA-RV1\\Body\\Golden\\Board1_C309_Body_06-310649-AAA-RV1_20260908_144902739_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310649-AAA-RV1\\Body\\ForeignMaterial_19\\Board1_C309_Body_06-310649-AAA-RV1_20260908_144902739_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.096733434623845871",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000030",
+      "board": "Board2",
+      "package": "18-149003-AAA-RV1-1",
+      "component": "R54",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902753",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1-1\\Body\\Golden\\Board2_R54_Body_18-149003-AAA-RV1-1_20260908_144902753_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-149003-AAA-RV1-1\\Body\\Shift_4\\Board2_R54_Body_18-149003-AAA-RV1-1_20260908_144902753_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.034",
+              "Minimum": "-0.182",
+              "Maximum": "0.182",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.049",
+              "Minimum": "-0.097",
+              "Maximum": "0.097",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "184.30477624370536",
+              "Minimum": "173",
+              "Maximum": "187",
+              "Target": "180"
+            },
+            "ConfidenceLevel": {
+              "Value": "0",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000031",
+      "board": "Board2",
+      "package": "06-210488-AAA-RV4",
+      "component": "C65",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902760",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-210488-AAA-RV4\\Body\\Golden\\Board2_C65_Body_06-210488-AAA-RV4_20260908_144902760_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-210488-AAA-RV4\\Body\\ForeignMaterial_19\\Board2_C65_Body_06-210488-AAA-RV4_20260908_144902760_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.0258422385637659",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000032",
+      "board": "Board2",
+      "package": "38-110438-AAA-RV2",
+      "component": "D15",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902781",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board2_D15_Text1_38-110438-AAA-RV2_20260908_144902781_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board2_D15_Text1_38-110438-AAA-RV2_20260908_144902781_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "12.270446525985422",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000033",
+      "board": "Board2",
+      "package": "06-247398-AAA-RV2",
+      "component": "C353",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902793",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-247398-AAA-RV2\\Body\\Golden\\Board2_C353_Body_06-247398-AAA-RV2_20260908_144902793_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-247398-AAA-RV2\\Body\\ForeignMaterial_19\\Board2_C353_Body_06-247398-AAA-RV2_20260908_144902793_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.018740158958478179",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000034",
+      "board": "Board2",
+      "package": "18-400067-05-1",
+      "component": "R210",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902810",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-400067-05-1\\Body\\Golden\\Board2_R210_Body_18-400067-05-1_20260908_144902810_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-400067-05-1\\Body\\Shift_4\\Board2_R210_Body_18-400067-05-1_20260908_144902810_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "-0.069",
+              "Minimum": "-0.204",
+              "Maximum": "0.204",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "-0.015",
+              "Minimum": "-0.204",
+              "Maximum": "0.204",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "-1.6012500856703094",
+              "Minimum": "-7",
+              "Maximum": "7",
+              "Target": "0"
+            },
+            "ConfidenceLevel": {
+              "Value": "49.07128019384966",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000035",
+      "board": "Board2",
+      "package": "38-110438-AAA-RV2",
+      "component": "D13",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902829",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board2_D13_Text1_38-110438-AAA-RV2_20260908_144902829_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board2_D13_Text1_38-110438-AAA-RV2_20260908_144902829_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "15.692383967936143",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000036",
+      "board": "Board2",
+      "package": "14-768710-AAA-RV1",
+      "component": "C47",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead1",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902846",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\14-768710-AAA-RV1\\Lead\\Golden\\Board2_C47_Lead1_14-768710-AAA-RV1_20260908_144902846_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\14-768710-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board2_C47_Lead1_14-768710-AAA-RV1_20260908_144902846_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.098172006944855325",
+              "LowerFailure": "0.15045465555845539",
+              "UpperFailure": "3.3100024222860225",
+              "Target": "1.5045465555845556"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000037",
+      "board": "Board2",
+      "package": "38-110438-AAA-RV2",
+      "component": "D70",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902859",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\Golden\\Board2_D70_Text1_38-110438-AAA-RV2_20260908_144902859_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\38-110438-AAA-RV2\\Text\\WrongPart_13\\Board2_D70_Text1_38-110438-AAA-RV2_20260908_144902859_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "17.748838862818598",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000038",
+      "board": "Board2",
+      "package": "50-204323-01",
+      "component": "A6",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902868",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204323-01\\Body\\Golden\\Board2_A6_Body_50-204323-01_20260908_144902868_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\50-204323-01\\Body\\SolderInsuffcient_5\\Board2_A6_Body_50-204323-01_20260908_144902868_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "MaxHeight"
+          ],
+          "measurements": {
+            "MeanHeight": {
+              "Value": "0.59087324520058393",
+              "LowerFailure": "0.4271",
+              "UpperFailure": "0.6071",
+              "Target": "0.4871"
+            },
+            "MaxHeight": {
+              "Value": "0.59087324520058393",
+              "LowerFailure": "0.41022126601328857",
+              "UpperFailure": "0.59022126601328861",
+              "Target": "0.49022126601328858"
+            },
+            "DiffHeight": {
+              "Value": "0",
+              "LowerFailure": "-0.03",
+              "UpperFailure": "0.08",
+              "Target": "0"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000039",
+      "board": "Board2",
+      "package": "44-300144-AAA-RV1",
+      "component": "Y1",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902882",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Text\\Golden\\Board2_Y1_Text1_44-300144-AAA-RV1_20260908_144902882_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Text\\WrongPart_13\\Board2_Y1_Text1_44-300144-AAA-RV1_20260908_144902882_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel",
+            "Polarity"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "28.497280015292315",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "40"
+            },
+            "Polarity": {
+              "IsFailed": "true"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000040",
+      "board": "Board2",
+      "package": "44-300144-AAA-RV1",
+      "component": "Y1",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Polarity1",
+      "machine_defect": "Polarity1_10",
+      "timestamp": "20260908_144902893",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Polarity\\Golden\\Board2_Y1_Polarity1_44-300144-AAA-RV1_20260908_144902893_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\44-300144-AAA-RV1\\Polarity\\Polarity1_10\\Board2_Y1_Polarity1_44-300144-AAA-RV1_20260908_144902893_Polarity1_10.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "31.366394050729788",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "45"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000041",
+      "board": "Board2",
+      "package": "18-110333-AAA-RV6-1",
+      "component": "R243",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902905",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-110333-AAA-RV6-1\\Body\\Golden\\Board2_R243_Body_18-110333-AAA-RV6-1_20260908_144902905_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-110333-AAA-RV6-1\\Body\\Shift_4\\Board2_R243_Body_18-110333-AAA-RV6-1_20260908_144902905_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "-0.013",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.017",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "90.200855227211534",
+              "Minimum": "83",
+              "Maximum": "97",
+              "Target": "90"
+            },
+            "ConfidenceLevel": {
+              "Value": "39.547502080231162",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000042",
+      "board": "Board2",
+      "package": "32-606013-AAA-RV1",
+      "component": "U44",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902916",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-606013-AAA-RV1\\Text\\Golden\\Board2_U44_Text1_32-606013-AAA-RV1_20260908_144902916_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-606013-AAA-RV1\\Text\\WrongPart_13\\Board2_U44_Text1_32-606013-AAA-RV1_20260908_144902916_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "42.80110395882997",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "45"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000043",
+      "board": "Board2",
+      "package": "18-110333-AAA-RV6-1",
+      "component": "R331",
+      "inspection_definition_raw": "AI2|BlobDetection",
+      "inspection_definitions": [
+        "AI2",
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "Shift_4",
+      "timestamp": "20260908_144902927",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-110333-AAA-RV6-1\\Body\\Golden\\Board2_R331_Body_18-110333-AAA-RV6-1_20260908_144902927_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\18-110333-AAA-RV6-1\\Body\\Shift_4\\Board2_R331_Body_18-110333-AAA-RV6-1_20260908_144902927_Shift_4.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "0.009",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.066",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "86.624232278841077",
+              "Minimum": "83",
+              "Maximum": "97",
+              "Target": "90"
+            },
+            "ConfidenceLevel": {
+              "Value": "48.692176466595207",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [
+        "BlobDetection"
+      ],
+      "xml_feature_status": "Failed",
+      "preparation_status": "FAILED",
+      "preparation_error": "FAILED_INSPECTION_NOT_FOUND"
+    },
+    {
+      "sample_id": "S000044",
+      "board": "Board2",
+      "package": "32-367595-AAA-RV1",
+      "component": "U5",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902937",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-367595-AAA-RV1\\Body\\Golden\\Board2_U5_Body_32-367595-AAA-RV1_20260908_144902937_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-367595-AAA-RV1\\Body\\SolderInsuffcient_5\\Board2_U5_Body_32-367595-AAA-RV1_20260908_144902937_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "OffsetY",
+            "Offset"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "-0.005",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "-0.251",
+              "Minimum": "-0.25",
+              "Maximum": "0.25",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "0.24142299013385687",
+              "Minimum": "-1.5",
+              "Maximum": "1.5",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.024171952152695214",
+              "Threshold": "0.1",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "0.7749013506536484",
+              "LowerFailure": "0.59506323781799042",
+              "UpperFailure": "0.89259485672698557",
+              "Target": "0.743829047272488"
+            },
+            "MeasuredArea": {
+              "Value": "13.01734892086948",
+              "LowerFailure": "9.866775",
+              "UpperFailure": "16.444625",
+              "Target": "13.1557"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000045",
+      "board": "Board2",
+      "package": "06-310652-AAA-RV3",
+      "component": "C271",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902947",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310652-AAA-RV3\\Body\\Golden\\Board2_C271_Body_06-310652-AAA-RV3_20260908_144902947_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-310652-AAA-RV3\\Body\\ForeignMaterial_19\\Board2_C271_Body_06-310652-AAA-RV3_20260908_144902947_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.05909759671553285",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000046",
+      "board": "Board2",
+      "package": "30-512623-AAA-RV1",
+      "component": "U19",
+      "inspection_definition_raw": "BodyInspection",
+      "inspection_definitions": [
+        "BodyInspection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902959",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\30-512623-AAA-RV1\\Body\\Golden\\Board2_U19_Body_30-512623-AAA-RV1_20260908_144902959_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\30-512623-AAA-RV1\\Body\\SolderInsuffcient_5\\Board2_U19_Body_30-512623-AAA-RV1_20260908_144902959_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "BodyInspection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "OffsetY",
+            "Offset"
+          ],
+          "measurements": {
+            "X": {
+              "Value": "-0.032",
+              "Minimum": "-0.1",
+              "Maximum": "0.1",
+              "Target": "0"
+            },
+            "Y": {
+              "Value": "0.152",
+              "Minimum": "-0.15",
+              "Maximum": "0.15",
+              "Target": "0"
+            },
+            "Angle": {
+              "Value": "0.047200424542166657",
+              "Minimum": "-1",
+              "Maximum": "1",
+              "Target": "0"
+            },
+            "Coplanarity": {
+              "Value": "0.024568728805387536",
+              "Threshold": "0.1",
+              "Target": "0"
+            },
+            "MeanHeight": {
+              "Value": "0.67943523493019631",
+              "LowerFailure": "0.49506964556259192",
+              "UpperFailure": "0.82511607593765313",
+              "Target": "0.66009286075012252"
+            },
+            "MeasuredArea": {
+              "Value": "148.31003849170526",
+              "LowerFailure": "119.43576",
+              "UpperFailure": "179.15364",
+              "Target": "149.2947"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000047",
+      "board": "Board2",
+      "package": "32-976002-AAA-RV1",
+      "component": "U27",
+      "inspection_definition_raw": "VolumeHeight",
+      "inspection_definitions": [
+        "VolumeHeight"
+      ],
+      "source_feature": "Lead7",
+      "machine_defect": "SolderInsuffcient_5",
+      "timestamp": "20260908_144902972",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-976002-AAA-RV1\\Lead\\Golden\\Board2_U27_Lead7_32-976002-AAA-RV1_20260908_144902972_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\32-976002-AAA-RV1\\Lead\\SolderInsuffcient_5\\Board2_U27_Lead7_32-976002-AAA-RV1_20260908_144902972_SolderInsuffcient_5.jpg",
+      "failed_inspections": {
+        "VolumeHeight": {
+          "status": "Failed",
+          "failed_criteria": [
+            "Area"
+          ],
+          "measurements": {
+            "MeasuredArea": {
+              "Value": "0.1490400105433447",
+              "LowerFailure": "0.0067711979627657418",
+              "UpperFailure": "0.14896635518084622",
+              "Target": "0.067711979627657376"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    },
+    {
+      "sample_id": "S000048",
+      "board": "Board2",
+      "package": "06-233344-AAA-RV1",
+      "component": "C333",
+      "inspection_definition_raw": "BlobDetection",
+      "inspection_definitions": [
+        "BlobDetection"
+      ],
+      "source_feature": "Body",
+      "machine_defect": "ForeignMaterial_19",
+      "timestamp": "20260908_144902985",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-233344-AAA-RV1\\Body\\Golden\\Board2_C333_Body_06-233344-AAA-RV1_20260908_144902985_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\06-233344-AAA-RV1\\Body\\ForeignMaterial_19\\Board2_C333_Body_06-233344-AAA-RV1_20260908_144902985_ForeignMaterial_19.jpg",
+      "failed_inspections": {
+        "BlobDetection": {
+          "status": "Failed",
+          "failed_criteria": [
+            "BlobArea"
+          ],
+          "measurements": {
+            "MaxBlobArea": {
+              "Value": "0.011223359376239353",
+              "Minimum": "0",
+              "Maximum": "0.01"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    }
+  ],
+  "verified_samples": [
+    {
+      "sample_id": "S000001",
+      "board": "Board1",
+      "package": "35-900032-AAA-RV1",
+      "component": "U51",
+      "inspection_definition_raw": "AI2",
+      "inspection_definitions": [
+        "AI2"
+      ],
+      "source_feature": "Text1",
+      "machine_defect": "WrongPart_13",
+      "timestamp": "20260908_144902427",
+      "golden_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\35-900032-AAA-RV1\\Text\\Golden\\Board1_U51_Text1_35-900032-AAA-RV1_20260908_144902427_Golden.jpg",
+      "defect_image": "D:\\zwang\\Project\\adc_agentic_project\\sample_data\\35-900032-AAA-RV1\\Text\\WrongPart_13\\Board1_U51_Text1_35-900032-AAA-RV1_20260908_144902427_WrongPart_13.jpg",
+      "failed_inspections": {
+        "AI2": {
+          "status": "Failed",
+          "failed_criteria": [
+            "ConfidenceLevel"
+          ],
+          "measurements": {
+            "ConfidenceLevel": {
+              "Value": "42.844203530588942",
+              "Minimum": "1",
+              "Maximum": "100",
+              "Target": "50"
+            },
+            "Polarity": {
+              "IsFailed": "false"
+            }
+          }
+        }
+      },
+      "missing_failed_inspections": [],
+      "xml_feature_status": "Failed",
+      "preparation_status": "READY"
+    }
+  ],
+  "inference_results": [
+    {
+      "sample_id": "S000001",
+      "status": "FEATURE_CLASSIFICATION_UNCERTAIN",
+      "errors": [],
+      "details": {
+        "sample_id": "S000001",
+        "feature_classification": {
+          "prediction": "Body",
+          "confidence": 0.5570313334465027,
+          "probabilities": {
+            "Body": 0.5570313334465027,
+            "Lead": 0.2225794792175293,
+            "Text": 0.22038917243480682
+          }
+        }
+      },
+      "final_decision": "REVIEW_REQUIRED"
+    }
+  ],
+  "observations": [
+    "Raw ADC inputs are available but no prepared samples exist.",
+    "Dataset preparation: 41/48 READY; 7 failed. Status=PREPARATION_PARTIAL.",
+    "Preparation produced 41 READY sample(s).",
+    "Dataset verification: 1/48 PASSED; 47 failed. Status=VERIFICATION_PARTIAL.",
+    "Verified samples are available.",
+    "1 verified sample(s) are available.",
+    "Inference completed 1 sample(s): 0 accepted, 1 review-required, 0 aborted.",
+    "Inference results are available.",
+    "Workflow finalized as REVIEW_REQUIRED. Reason=FEATURE_CLASSIFICATION_UNCERTAIN."
+  ],
+  "plan_history": [
+    {
+      "plan_version": 1,
+      "observation": "Raw ADC inputs are available but no prepared samples exist.",
+      "constraint": "Inference cannot run before preparation and verification.",
+      "decision": "dataset_preparation",
+      "reason": "Prepare and enrich the inference manifest before verification.",
+      "planner_source": "deterministic",
+      "policy": {
+        "allowed": true,
+        "reason": "Raw ADC inputs may be prepared."
+      },
+      "tool_status": "PREPARATION_PARTIAL"
+    },
+    {
+      "plan_version": 2,
+      "observation": "Preparation produced 41 READY sample(s).",
+      "constraint": "Only verified samples may proceed to inference.",
+      "decision": "dataset_verification",
+      "reason": "Validate prepared samples, image pairs, and measurements.",
+      "planner_source": "deterministic",
+      "policy": {
+        "allowed": true,
+        "reason": "Prepared samples may be verified."
+      },
+      "tool_status": "VERIFICATION_PARTIAL"
+    },
+    {
+      "plan_version": 3,
+      "observation": "1 verified sample(s) are available.",
+      "constraint": "Only verified samples may enter model inference.",
+      "decision": "multimodal_inference",
+      "reason": "Run hierarchical feature routing and specialist defect classification.",
+      "planner_source": "deterministic",
+      "policy": {
+        "allowed": true,
+        "reason": "Verified samples are available for inference."
+      },
+      "tool_status": "INFERENCE_EXECUTED"
+    },
+    {
+      "plan_version": 4,
+      "observation": "Inference results are available.",
+      "constraint": "Terminal workflow status must reflect ACCEPTED, REVIEW_REQUIRED, or ABORTED results.",
+      "decision": "finalize",
+      "reason": "Aggregate per-sample decisions and terminate the workflow correctly.",
+      "planner_source": "deterministic",
+      "policy": {
+        "allowed": true,
+        "reason": "Inference results are available for terminal decision aggregation."
+      },
+      "tool_status": "REVIEW_REQUIRED"
+    }
+  ],
+  "tool_history": [
+    {
+      "step": "dataset_preparation",
+      "status": "PREPARATION_PARTIAL",
+      "success": true
+    },
+    {
+      "step": "dataset_verification",
+      "status": "VERIFICATION_PARTIAL",
+      "success": true
+    },
+    {
+      "step": "multimodal_inference",
+      "status": "INFERENCE_EXECUTED",
+      "success": true
+    },
+    {
+      "step": "finalize",
+      "status": "REVIEW_REQUIRED",
+      "success": true
+    }
+  ],
+  "errors": [
+    "S000003: missing failed inspection(s): BlobDetection",
+    "S000007: missing failed inspection(s): BlobDetection",
+    "S000019: missing failed inspection(s): BlobDetection",
+    "S000030: missing failed inspection(s): BlobDetection",
+    "S000034: missing failed inspection(s): BlobDetection",
+    "S000041: missing failed inspection(s): BlobDetection",
+    "S000043: missing failed inspection(s): BlobDetection"
+  ],
+  "current_step": null,
+  "replan_count": 4,
+  "termination_reason": "FEATURE_CLASSIFICATION_UNCERTAIN",
+  "input_samples": 48,
+  "preparation_ready": 41,
+  "preparation_failed": 7,
+  "verification_passed": 1,
+  "verification_failed": 47,
+  "inference_attempted": 1,
+  "inference_completed": 0,
+  "accepted": 0,
+  "review_required": 1,
+  "inference_aborted": 0,
+  "planner_backend": "deterministic",
+  "llm_enabled": false,
+  "planner_model": null
+}

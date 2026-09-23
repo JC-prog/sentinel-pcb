@@ -105,21 +105,22 @@ class Settings(BaseSettings):
     # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled. Its OpenAI
     # calls use the shared openai_api_key setting above, not a key of its own. Not to be confused
     # with explainability_review_agent_enabled below, which gates a different, Work-tab-only
-    # agent (app/workflow/agents/explainability_review_agent/) - similar names, different agents.
+    # agent (app/workflow/src/agent2_explainability/) - similar names, different agents.
     explainability_agent_enabled: bool = True
     # PCB images (inputs/, admin-provided), the IPC-A-610 reference JSON (ipc_standards/,
     # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
     # cwd-relative convention as chat_upload_dir.
     explainability_agent_data_dir: str = "data/images"
 
-    # Explainability Review Agent (app/workflow/agents/explainability_review_agent/, Work-tab-only) - ported
-    # as-is from a teammate's standalone pcb_agentic_inspector prototype's "Agent 2" (its own
-    # config/agent2_config.yaml and OPENAI_API_KEY env var read are kept unchanged, not routed
-    # through settings). Never a chat tool - called in-process only by orchestrator_agent's
-    # _execute_inference for REVIEW_REQUIRED samples. Kill switch, same pattern as the others - the one thing this
-    # agent needs from settings, since the calling side (orchestrator.py) must be able to skip it
-    # without touching the ported module. Not to be confused with explainability_agent_enabled
-    # above, which gates the renamed chat agent - similar names, different agents.
+    # Explainability Review Agent (app/workflow/src/agent2_explainability/, Work-tab-only) -
+    # dropped in as-is from a teammate's standalone pcb_agentic_inspector prototype's "Agent 2"
+    # (its own config/agent2_config.yaml and OPENAI_API_KEY env var read are kept unchanged, not
+    # routed through settings). Never a chat tool. Currently a leftover kill switch: the
+    # orchestrator agent (app/workflow/src/agent1_orchestrator/) is constructed with
+    # enable_a2a=False (app/workflow/services/streaming.py), so nothing reads this setting yet -
+    # wiring Agent 2 back in should consult it, the same way orchestrator.py used to. Not to be
+    # confused with explainability_agent_enabled above, which gates the renamed chat agent -
+    # similar names, different agents.
     explainability_review_agent_enabled: bool = True
 
     # Weather agent (app/chat/agents/weather_agent/) - a small LangGraph pipeline (geocode -> current
@@ -222,11 +223,12 @@ class Settings(BaseSettings):
     # `environment:` block), same pattern as openai_base_url/qdrant_url above.
     langfuse_host: str = "http://localhost:3000"
 
-    # orchestrator_agent (app/workflow/agents/orchestrator_agent/) - a QA/Admin-only, chat-invisible agent
-    # driven from the UI's "Work" tab, not chat. Ported from orchestrator-agent/adc_agentic_project:
-    # runs its plan/policy loop over a whole uploaded dataset CSV (many rows at once), unlike
-    # inspection_agent's inspect_image, which handles one chat-attached image. Never registered
-    # in app/chat/agents/registry.py/access.py - structurally unreachable from the chat tool-calling
+    # orchestrator_agent (app/workflow/src/agent1_orchestrator/) - a QA/Admin-only, chat-invisible
+    # agent driven from the UI's "Work" tab, not chat. A close-to-verbatim drop-in of
+    # pcb_agentic_inspector's Agent 1 - see app/workflow/INTEGRATION_NOTES.md: runs its plan/policy
+    # loop over a whole uploaded dataset CSV (many rows at once), unlike inspection_agent's
+    # inspect_image, which handles one chat-attached image. Never registered in
+    # app/chat/agents/registry.py/access.py - structurally unreachable from the chat tool-calling
     # loop, not just settings-gated. Kill switch, same pattern as the others.
     orchestrator_agent_enabled: bool = True
     # Its own direct OpenAI client, isolated from openai_api_key/openai_base_url above (which may

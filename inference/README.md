@@ -38,6 +38,9 @@ outbound access to Hugging Face), loads and smoke-tests it, and only then swaps 
 version stays loaded, so `POST /models/{name}/rollback` is instant. A new version must be a drop-in:
 labels, input size and preprocessing are inherited from the version it replaces.
 
+See [`MODELS.md`](MODELS.md) for per-model documentation (architecture, training data,
+validation/test metrics, known limitations).
+
 ## Retraining jobs
 
 `POST /jobs` queues a retraining request; one worker runs jobs one at a time. The trainer is behind

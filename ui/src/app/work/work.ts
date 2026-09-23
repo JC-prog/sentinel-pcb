@@ -107,7 +107,17 @@ export class Work {
     () => this.selectedSampleIds().size > 0 && this.retrainingReason().trim() !== '' && !this.monitoringBusy(),
   );
 
-  constructor(protected readonly workService: WorkService) {}
+  // Mirrors ui.py's one-time `os.getenv("OPENAI_API_KEY")` check next to its "Use real LLM
+  // Planner" checkbox - null while the initial GET /api/orchestrator/status is in flight (or if
+  // it fails, e.g. orchestrator_agent_enabled is off), so the label only appears once it's known.
+  protected readonly llmConfigured = signal<boolean | null>(null);
+
+  constructor(protected readonly workService: WorkService) {
+    this.workService
+      .getStatus()
+      .then((status) => this.llmConfigured.set(status.llm_configured))
+      .catch(() => this.llmConfigured.set(null));
+  }
 
   onDatasetFileChange(event: Event): void {
     this.datasetFile.set((event.target as HTMLInputElement).files?.[0] ?? null);

@@ -163,6 +163,12 @@
           />
           Fallback to deterministic planner if LLM call fails
         </label>
+
+        @if (llmConfigured() !== null) {
+          <p class="col-span-2 text-sm text-slate-500 dark:text-slate-400">
+            {{ llmConfigured() ? 'OPENAI_API_KEY detected' : 'OPENAI_API_KEY not detected' }}
+          </p>
+        }
       </div>
     </section>
 

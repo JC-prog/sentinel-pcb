@@ -45,36 +45,47 @@ dev = [
 [tool.ruff]
 line-length = 100
 # inference/ is a separate service with its own pyproject, venv, and CI job - it must not be
-# linted or type-checked against this project's dependency set. app/workflow/agents/orchestrator_agent/
-# and app/workflow/agents/explainability_review_agent/ are close ports of external projects someone else
-# maintains (orchestrator-agent/adc_agentic_project and pcb_agentic_inspector's Agent 2,
-# respectively) - kept close to their own (untyped, unlinted) source rather than reformatted
-# to this repo's conventions, so a diff against upstream stays legible.
+# linted or type-checked against this project's dependency set. app/workflow/src/ (and its sibling
+# top-level planner/, state/, verification/, adc_shared/, data/, adc_rest.py, test_rest.py, tests/)
+# is a close-to-verbatim drop-in of an external project someone else maintains
+# (pcb_agentic_inspector) - kept close to its own (untyped, unlinted) source rather than
+# reformatted to this repo's conventions, so a diff against upstream stays legible. Only
+# app/workflow/api/, app/workflow/services/ and app/workflow/__init__.py (the thin FastAPI routing
+# layer wired around it) are this repo's own code and stay linted/typed normally.
 extend-exclude = [
     "inference",
-    "app/workflow/agents/orchestrator_agent",
-    "app/workflow/agents/explainability_review_agent",
+    "app/workflow/src",
+    "app/workflow/tests",
+    "app/workflow/planner",
+    "app/workflow/state",
+    "app/workflow/verification",
+    "app/workflow/adc_shared",
+    "app/workflow/data",
+    "app/workflow/adc_rest.py",
+    "app/workflow/test_rest.py",
 ]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-exclude = ['^inference/']
-
-# app/workflow/agents/orchestrator_agent/ and app/workflow/agents/explainability_review_agent/ are
-# close ports of external projects someone else maintains (orchestrator-agent/adc_agentic_project and
-# pcb_agentic_inspector's Agent 2, respectively) - kept close to their own (untyped) source rather
-# than reformatted to this repo's strict-typing convention, so a diff against upstream stays
-# legible. Unlike inference/, app/main.py imports (transitively) from these packages, so a plain
-# `exclude` wouldn't stop mypy from still following those imports and type-checking them anyway -
-# `ignore_errors` is the mypy-recommended way to silence a specific package while still being
-# importable from typed code.
-[[tool.mypy.overrides]]
-module = [
-    "app.workflow.agents.orchestrator_agent.*",
-    "app.workflow.agents.explainability_review_agent.*",
+# See the ruff extend-exclude comment above for what these are and why. Unlike the old ported
+# agents this carve-out used to cover, nothing under app/workflow/api or app/workflow/services
+# imports any of these paths as a proper `app.workflow....` dotted package (they're reached only
+# via a runtime sys.path insertion - app/workflow/services/streaming.py's _bridge_sys_path - using
+# their own bare, unqualified imports), so a plain top-level `exclude` is enough; mypy never
+# follows an import into them the way it did for the old agents.
+exclude = [
+    '^inference/',
+    '^app/workflow/src/',
+    '^app/workflow/tests/',
+    '^app/workflow/planner/',
+    '^app/workflow/state/',
+    '^app/workflow/verification/',
+    '^app/workflow/adc_shared/',
+    '^app/workflow/data/',
+    '^app/workflow/adc_rest\.py$',
+    '^app/workflow/test_rest\.py$',
 ]
-ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
