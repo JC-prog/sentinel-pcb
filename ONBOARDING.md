@@ -85,7 +85,21 @@ Optional: to use a shared team LiteLLM proxy instead of your own container, poin
 
 ## 5. Start the app
 
-The Docker services (`db`, `qdrant`, `litellm`) are already up from step 3. In two terminals:
+One command starts everything - Docker infra (already up from step 3, idempotent), the backend,
+the inference service, and the UI, each with live reload:
+
+```bash
+bash infra/development/scripts/unix/start-dev.sh                    # macOS/Linux - one terminal
+powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows - opens 3 windows
+```
+
+It also points the backend at the inference service for you (`INFERENCE_BASE_URL` in `.env`), so
+`inspect_image`/the Work tab/the Models tab all work without extra setup - the inference service
+itself boots without real models (`inference/models.toml` unfilled is fine; classification calls
+just won't return real predictions until you fill it in). Ctrl+C stops the app processes; the
+Docker services keep running.
+
+Prefer to run things by hand (fewer moving parts to reason about, or you only need one piece)?
 
 ```bash
 # terminal 1 - backend
@@ -93,6 +107,9 @@ uv run uvicorn app.main:app --reload        # http://localhost:8000
 
 # terminal 2 - UI
 cd ui && npm start                          # http://localhost:4200
+
+# terminal 3 - inference (optional - only if your work touches classification)
+cd inference && uv run uvicorn inference_service.main:app --app-dir src --port 8001 --reload
 ```
 
 Stop the Docker services when you're done for the day:
@@ -127,7 +144,7 @@ needs it:
 |---|---|
 | Backend / chat / memory / agents | nothing - the default stack covers it |
 | UI | `npm start` is the real loop; `docker compose ... --profile ui up -d` only for a container smoke test |
-| Inference service (`inference/`) | fill in real Hugging Face repos in `inference/models.toml`, then `docker compose -f infra/development/docker-compose.yml --env-file .env --profile inference up -d`, or work in `inference/` with its own README |
+| Inference service (`inference/`) | `start-dev` (step 5) already runs it natively; fill in real Hugging Face repos in `inference/models.toml` for real predictions, or work in `inference/` with its own README. `docker compose -f infra/development/docker-compose.yml --env-file .env --profile inference up -d` for a container smoke test instead |
 | Case Review Agent data | seed its embedded Qdrant with `scripts/explainability_agent/generate_telemetry.py` and `scripts/explainability_agent/populate_qdrant.py` - see [`DEVELOPMENT.md`](DEVELOPMENT.md) |
 | LangFuse tracing for the agent pipelines | `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait`, then set `LANGFUSE_ENABLED=True` in `.env` and restart the backend. Auto-provisions an org/project/API key on first boot - log in at http://localhost:3000 with `dev@sentinelchat.local` / `sentinelchat-dev-password`. |
 
@@ -171,7 +188,7 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 | 4000 | LiteLLM proxy | Compose (`litellm`) |
 | 5433 | Postgres (`5433` -> container `5432`) | Compose (`db`) |
 | 6333 / 6334 | Qdrant REST / gRPC (dashboard at `6333/dashboard`) | Compose (`qdrant`) |
-| 8001 | inference service | Compose (`inference`), profile only |
+| 8001 | inference service | you (`start-dev`, terminal 3, or Compose `inference` profile) |
 | 3000 | LangFuse tracing UI | Compose (`langfuse-web`), profile only |
 
 ---

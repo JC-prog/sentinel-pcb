@@ -35,7 +35,7 @@ npx ng build
 
 Inference service (from `inference/`, separate venv): `uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run pytest -q`. Note it also enforces `ruff format`; the backend does not.
 
-Local stack: `bash infra/development/scripts/unix/setup-dev.sh` (or `powershell -File infra\development\scripts\windows\setup-dev.ps1`) is idempotent and does everything, including `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm`. **Always pass `--env-file .env`** to hand-run compose commands, otherwise `${...}` substitutions (e.g. the LiteLLM key) silently go blank. `ui`, `inference`, `langfuse` are opt-in `--profile`s.
+Local stack: `bash infra/development/scripts/unix/setup-dev.sh` (or `powershell -File infra\development\scripts\windows\setup-dev.ps1`) is idempotent and does everything, including `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm`. **Always pass `--env-file .env`** to hand-run compose commands, otherwise `${...}` substitutions (e.g. the LiteLLM key) silently go blank. `ui`, `inference`, `langfuse` are opt-in `--profile`s. After that, `start-dev.sh`/`start-dev.ps1` (same `scripts/{unix,windows}/` dirs) start the backend, `inference/`, and the UI natively with live reload in one command - also fills in `INFERENCE_BASE_URL` in `.env` if it's blank/missing, so the two are wired together without manual setup.
 
 CI (`.github/workflows/ci.yml`) runs exactly: backend ruff + mypy + pytest against a real Postgres service, inference checks, UI `ng test` + `ng build`.
 
