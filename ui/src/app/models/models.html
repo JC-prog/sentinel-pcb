@@ -1,0 +1,471 @@
+<div
+  class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 pt-16 pb-10">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-bold">Models</h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Which model version is live, what drift has been reported, and the retraining queue.
+        </p>
+      </div>
+      <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+        @if (service.lastUpdated(); as updated) {
+          <span>Updated {{ updated.toLocaleTimeString() }}</span>
+        }
+        <button
+          type="button"
+          (click)="service.refresh()"
+          [disabled]="service.loading()"
+          class="rounded border border-slate-300 px-3 py-1 text-sm text-slate-900 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          {{ service.loading() ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </div>
+    </div>
+
+    @if (service.loadError(); as error) {
+      <div
+        role="alert"
+        class="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+      >
+        {{ error }}
+      </div>
+    }
+
+    @if (service.actionError(); as error) {
+      <div
+        role="alert"
+        class="flex items-start justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+      >
+        <span>{{ error }}</span>
+        <button type="button" (click)="dismissActionError()" class="shrink-0 underline">
+          Dismiss
+        </button>
+      </div>
+    }
+
+    @if (service.inference(); as inference) {
+      @if (!inference.configured) {
+        <div
+          role="status"
+          class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          The inference service is not configured (<code>INFERENCE_BASE_URL</code>), so there is
+          nothing to show here yet.
+        </div>
+      } @else if (!inference.reachable) {
+        <div
+          role="status"
+          class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          The inference service can't be reached, so this is the last known state and job progress
+          may be out of date.
+          @if (inference.error) {
+            <span class="block text-xs opacity-80">{{ inference.error }}</span>
+          }
+        </div>
+      }
+    }
+
+    <!-- Models -->
+    <section aria-labelledby="models-heading" class="flex flex-col gap-3">
+      <h2 id="models-heading" class="text-sm font-semibold">Live models</h2>
+
+      @if (service.overview(); as overview) {
+        @for (model of overview.models; track model.name) {
+          <article
+            class="rounded-lg border border-slate-300 p-4 dark:border-slate-700"
+            [attr.data-model]="model.name"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="font-mono text-sm font-semibold">{{ model.name }}</h3>
+                @if (model.live; as live) {
+                  <p class="mt-1 text-sm">
+                    <span [class]="versionStatusClass('live')">live</span>
+                    <span class="ml-2 font-mono">{{ live.version }}</span>
+                  </p>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Live since {{ formatDate(live.activated_at ?? live.first_seen_at) }}
+                    @if (live.activated_by) {
+                      · activated by {{ live.activated_by }}
+                    }
+                  </p>
+                } @else {
+                  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">No live version recorded.</p>
+                }
+                @if (model.labels; as labels) {
+                  <p class="mt-2 flex flex-wrap gap-1">
+                    @for (label of labels; track label) {
+                      <span
+                        class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >{{ label }}</span
+                      >
+                    }
+                  </p>
+                }
+              </div>
+
+              <dl class="grid grid-cols-3 gap-4 text-center text-xs">
+                <div>
+                  <dt class="text-slate-500 dark:text-slate-400">Drift reports</dt>
+                  <dd class="text-base font-semibold" data-testid="open-drift">
+                    {{ model.open_drift_reports }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-slate-500 dark:text-slate-400">Flagged cases</dt>
+                  <dd class="text-base font-semibold" data-testid="open-tickets">
+                    {{ model.open_tickets }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-slate-500 dark:text-slate-400">Active jobs</dt>
+                  <dd class="text-base font-semibold" data-testid="active-jobs">
+                    {{ model.active_jobs }}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                (click)="toggleHistory(model)"
+                [attr.aria-expanded]="isHistoryOpen(model)"
+                class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                {{ isHistoryOpen(model) ? 'Hide' : 'Show' }} versions ({{ model.versions.length }})
+              </button>
+              @if (isAdmin() && model.previous) {
+                <button
+                  type="button"
+                  (click)="rollback(model)"
+                  [disabled]="service.isBusy('model:' + model.name)"
+                  class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Roll back to {{ model.previous.revision }}
+                </button>
+              }
+            </div>
+
+            @if (isHistoryOpen(model)) {
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="text-xs text-slate-500 dark:text-slate-400">
+                    <tr>
+                      <th class="py-1 pr-3 font-medium">Version</th>
+                      <th class="py-1 pr-3 font-medium">Status</th>
+                      <th class="py-1 pr-3 font-medium">First seen</th>
+                      <th class="py-1 pr-3 font-medium">Activated</th>
+                      <th class="py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (version of model.versions; track version.id) {
+                      <tr class="border-t border-slate-200 dark:border-slate-800">
+                        <td class="py-1.5 pr-3 font-mono">{{ version.version }}</td>
+                        <td class="py-1.5 pr-3">
+                          <span [class]="versionStatusClass(version.status)">{{
+                            version.status
+                          }}</span>
+                          @if (version.source_job_id) {
+                            <span class="ml-1 text-xs text-slate-500 dark:text-slate-400"
+                              >from a retraining job</span
+                            >
+                          }
+                        </td>
+                        <td class="py-1.5 pr-3">{{ formatDate(version.first_seen_at) }}</td>
+                        <td class="py-1.5 pr-3">
+                          {{ formatDate(version.activated_at) }}
+                          @if (version.activated_by) {
+                            <span class="text-xs text-slate-500 dark:text-slate-400"
+                              >by {{ version.activated_by }}</span
+                            >
+                          }
+                        </td>
+                        <td class="py-1.5 text-right">
+                          @if (canPromote(version)) {
+                            <button
+                              type="button"
+                              (click)="promote(model, version)"
+                              [disabled]="service.isBusy('model:' + model.name)"
+                              class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                            >
+                              Make live
+                            </button>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </article>
+        } @empty {
+          <p class="text-sm text-slate-500 dark:text-slate-400">No models recorded yet.</p>
+        }
+      } @else if (service.loading()) {
+        <p class="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+      }
+    </section>
+
+    <!-- Drift -->
+    <section aria-labelledby="drift-heading" class="flex flex-col gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="drift-heading" class="text-sm font-semibold">Drift reports</h2>
+        <div role="group" aria-label="Drift window" class="flex items-center gap-1 text-xs">
+          <span class="mr-1 text-slate-500 dark:text-slate-400">Reported in the last</span>
+          @for (days of driftWindows; track days) {
+            <button
+              type="button"
+              (click)="setDriftWindow(days)"
+              [attr.aria-pressed]="driftDays() === days"
+              class="rounded-full border px-2.5 py-0.5"
+              [class]="
+                driftDays() === days
+                  ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                  : 'border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800'
+              "
+            >
+              {{ days }} days
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (service.drift(); as drift) {
+        @if (driftEntries(drift.reported_in_window_by_model).length > 0) {
+          <p class="flex flex-wrap gap-x-4 gap-y-1 text-sm" data-testid="drift-counts">
+            @for (entry of driftEntries(drift.reported_in_window_by_model); track entry[0]) {
+              <span
+                ><span class="font-mono">{{ entry[0] }}</span
+                >: {{ entry[1] }} reported, {{ drift.open_by_model[entry[0]] ?? 0 }} open</span
+              >
+            }
+          </p>
+        }
+
+        @for (report of drift.reports; track report.id) {
+          <article
+            class="rounded-lg border border-slate-300 p-4 dark:border-slate-700"
+            [attr.data-report]="report.id"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="text-sm">
+                  <span class="font-mono font-semibold">{{ report.model_name }}</span>
+                  @if (report.model_version) {
+                    <span class="ml-1 font-mono text-xs text-slate-500 dark:text-slate-400">{{
+                      report.model_version
+                    }}</span>
+                  }
+                  <span
+                    class="ml-2"
+                    [class]="
+                      report.status === 'open'
+                        ? 'rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                        : 'rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    "
+                    >{{ report.status }}</span
+                  >
+                </p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Reported by {{ report.reported_by }} · {{ formatDate(report.created_at) }}
+                </p>
+              </div>
+              @if (isAdmin() && report.status === 'open') {
+                <button
+                  type="button"
+                  (click)="resolve(report)"
+                  [disabled]="service.isBusy('drift:' + report.id)"
+                  class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Mark resolved
+                </button>
+              }
+            </div>
+            <p class="mt-2 text-sm">{{ report.description }}</p>
+            @if (driftFigures(report).length > 0) {
+              <p class="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                {{ driftFigures(report).join(' · ') }}
+              </p>
+            }
+            @if (report.stats.signals?.length) {
+              <ul class="mt-1 list-disc pl-5 text-xs text-amber-800 dark:text-amber-300">
+                @for (signal of report.stats.signals; track signal) {
+                  <li>{{ signal }}</li>
+                }
+              </ul>
+            }
+            @if (report.case_numbers.length > 0) {
+              <p class="mt-2 flex flex-wrap gap-1 text-xs">
+                @for (caseNumber of report.case_numbers; track caseNumber) {
+                  <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono dark:bg-slate-800">{{
+                    caseNumber
+                  }}</span>
+                }
+              </p>
+            }
+          </article>
+        } @empty {
+          <p class="text-sm text-slate-500 dark:text-slate-400">No drift reports.</p>
+        }
+      }
+    </section>
+
+    <!-- Retraining queue -->
+    <section aria-labelledby="queue-heading" class="flex flex-col gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="queue-heading" class="text-sm font-semibold">Retraining queue</h2>
+        @if (service.queue(); as queue) {
+          <p class="text-xs text-slate-500 dark:text-slate-400" data-testid="ticket-counts">
+            Flagged cases: {{ queue.tickets.open }} unplanned · {{ queue.tickets.acknowledged }} in
+            a plan · {{ queue.tickets.resolved }} resolved
+          </p>
+        }
+      </div>
+
+      @if (service.queue(); as queue) {
+        @for (job of queue.jobs; track job.id) {
+          <article
+            class="rounded-lg border border-slate-300 p-4 dark:border-slate-700"
+            [attr.data-job]="job.id"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm">
+                  <span class="font-mono font-semibold">{{ job.model_name }}</span>
+                  <span class="ml-2" [class]="jobStatusClass(job.status)">{{
+                    jobStatusLabel(job.status)
+                  }}</span>
+                </p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  From <span class="font-mono">{{ job.base_version }}</span> ·
+                  {{ job.sample_count }} flagged case{{ job.sample_count === 1 ? '' : 's' }} ·
+                  drafted by {{ job.created_by }} · {{ formatDate(job.created_at) }}
+                </p>
+                @if (job.approved_by) {
+                  <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Approved by {{ job.approved_by }} · {{ formatDate(job.approved_at) }}
+                  </p>
+                }
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                @if (canApprove(job)) {
+                  <button
+                    type="button"
+                    (click)="approve(job)"
+                    [disabled]="service.isBusy('job:' + job.id)"
+                    class="rounded bg-slate-900 px-3 py-1 text-sm text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+                  >
+                    Approve
+                  </button>
+                }
+                @if (canResend(job)) {
+                  <button
+                    type="button"
+                    (click)="resend(job)"
+                    [disabled]="service.isBusy('job:' + job.id)"
+                    class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    Retry sending
+                  </button>
+                }
+                @if (canCancel(job)) {
+                  <button
+                    type="button"
+                    (click)="cancel(job)"
+                    [disabled]="service.isBusy('job:' + job.id)"
+                    class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    {{ cancelLabel(job) }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <p class="mt-2 text-sm">{{ job.rationale }}</p>
+
+            @if (showsProgress(job)) {
+              <div
+                class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+                role="progressbar"
+                [attr.aria-valuenow]="progressPercent(job)"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div class="h-full bg-sky-500" [style.width.%]="progressPercent(job)"></div>
+              </div>
+            }
+
+            @if (job.error) {
+              <p class="mt-2 text-sm text-red-700 dark:text-red-300">{{ job.error }}</p>
+            }
+
+            @if (job.status === 'succeeded') {
+              @if (job.simulated) {
+                <p
+                  class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+                  data-testid="simulated-note"
+                >
+                  Simulated run – nothing was trained and no new model was produced.
+                </p>
+              } @else if (job.artifact_repo_id) {
+                <p class="mt-2 text-xs text-emerald-800 dark:text-emerald-300">
+                  Produced
+                  <span class="font-mono">{{ job.artifact_repo_id }}@{{ job.artifact_revision }}</span
+                  >. It is listed under the model's versions and can be made live from there.
+                </p>
+              }
+            }
+
+            <button
+              type="button"
+              (click)="toggleJob(job)"
+              [attr.aria-expanded]="isJobOpen(job)"
+              class="mt-2 text-xs underline"
+            >
+              {{ isJobOpen(job) ? 'Hide' : 'Show' }} flagged cases
+            </button>
+
+            @if (detailState(job) === 'loading') {
+              <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Loading…</p>
+            } @else if (detailState(job) === 'error') {
+              <p class="mt-2 text-xs text-red-700 dark:text-red-300">Could not load the cases.</p>
+            } @else if (detailOf(job); as detail) {
+              <table class="mt-2 w-full text-left text-xs">
+                <thead class="text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th class="py-1 pr-3 font-medium">Case</th>
+                    <th class="py-1 pr-3 font-medium">Model said</th>
+                    <th class="py-1 font-medium">Should be</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (sample of detail.samples; track sample.ticket_id ?? sample.case_id ?? sample.sample_ref) {
+                    <tr class="border-t border-slate-200 dark:border-slate-800">
+                      <td class="py-1 pr-3 font-mono">
+                        {{ sample.case_number ?? sample.case_id ?? sample.sample_ref ?? '—' }}
+                      </td>
+                      <td class="py-1 pr-3">{{ sample.observed_label ?? '–' }}</td>
+                      <td class="py-1">{{ sample.expected_label ?? '–' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </article>
+        } @empty {
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            No retraining jobs yet. Flag cases the model got wrong in the chat and ask for a
+            retraining plan.
+          </p>
+        }
+      }
+    </section>
+  </div>
+</div>

@@ -86,10 +86,17 @@ describe('WorkService', () => {
     const service = new WorkService(fakeClient(events$));
 
     service.run('prepare', 'dataset-1', 'xml-1', null, OPTIONS);
-    events$.next({ type: 'result', result: { status: 'PREPARATION_COMPLETED' } });
+    events$.next({
+      type: 'result',
+      result: { workflow_status: 'PREPARATION_COMPLETED', termination_reason: null, results: [] },
+    });
     events$.complete();
 
-    expect(service.result()).toEqual({ status: 'PREPARATION_COMPLETED' });
+    expect(service.result()).toEqual({
+      workflow_status: 'PREPARATION_COMPLETED',
+      termination_reason: null,
+      results: [],
+    });
     expect(service.running()).toBe(false);
   });
 
@@ -110,7 +117,10 @@ describe('WorkService', () => {
 
     service.run('prepare', 'dataset-1', 'xml-1', null, OPTIONS);
     events$.next({ type: 'log', text: 'hello' });
-    events$.next({ type: 'result', result: { status: 'PREPARATION_COMPLETED' } });
+    events$.next({
+      type: 'result',
+      result: { workflow_status: 'PREPARATION_COMPLETED', termination_reason: null, results: [] },
+    });
     events$.complete();
 
     service.clearLog();

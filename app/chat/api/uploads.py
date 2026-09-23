@@ -41,8 +41,8 @@ async def upload_inspection_xml(
     _user: Annotated[User, Depends(get_current_user)],
 ) -> UploadRecord:
     """Same storage (app.chat.uploads.service) as image uploads - content-type-agnostic already, so no
-    new storage dir/setting is needed for this. Only consumed by create_case
-    (app/chat/agents/adc_inspection_agent/), and only optionally there."""
+    new storage dir/setting is needed for this. Only consumed by inspect_image
+    (app/chat/agents/inspection_agent/), and only optionally there."""
 
     if not (file.filename or "").lower().endswith(".xml"):
         raise HTTPException(status_code=422, detail="file must be an XML document")

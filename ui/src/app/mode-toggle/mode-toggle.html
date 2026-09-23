@@ -3,30 +3,19 @@
   aria-label="Mode"
   class="flex items-center gap-0.5 rounded-full border border-slate-300 bg-slate-100 p-0.5 text-sm font-medium dark:border-slate-700 dark:bg-slate-900"
 >
-  <a
-    routerLink="/chat"
-    role="tab"
-    [attr.aria-selected]="!isWork()"
-    class="rounded-full px-4 py-1.5 transition-colors"
-    [class]="
-      !isWork()
-        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-50'
-        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-    "
-  >
-    Chat
-  </a>
-  <a
-    routerLink="/work"
-    role="tab"
-    [attr.aria-selected]="isWork()"
-    class="rounded-full px-4 py-1.5 transition-colors"
-    [class]="
-      isWork()
-        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-50'
-        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-    "
-  >
-    Work
-  </a>
+  @for (tab of tabs; track tab.label) {
+    <a
+      [routerLink]="tab.link"
+      role="tab"
+      [attr.aria-selected]="active() === tab"
+      class="rounded-full px-4 py-1.5 transition-colors"
+      [class]="
+        active() === tab
+          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-50'
+          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+      "
+    >
+      {{ tab.label }}
+    </a>
+  }
 </div>

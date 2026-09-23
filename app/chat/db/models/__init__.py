@@ -1,4 +1,4 @@
-"""Chat-owned models (conversations, inspection cases, golden images, retraining tickets).
+"""Chat-owned models (conversations, inspection cases, golden images).
 Importing this package registers them on the shared `Base.metadata`; they reference the shared
 `users` table by foreign key only, never by importing its model.
 """
@@ -6,7 +6,6 @@ Importing this package registers them on the shared `Base.metadata`; they refere
 from app.chat.db.models.case import Case, CaseStatus
 from app.chat.db.models.chat import Conversation, Message
 from app.chat.db.models.golden_image import GoldenImage
-from app.chat.db.models.retraining_ticket import RetrainingTicket, RetrainingTicketStatus
 
 __all__ = [
     "Case",
@@ -14,6 +13,4 @@ __all__ = [
     "Conversation",
     "GoldenImage",
     "Message",
-    "RetrainingTicket",
-    "RetrainingTicketStatus",
 ]

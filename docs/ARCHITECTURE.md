@@ -68,7 +68,7 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 | Component | Tech | Responsibility |
 |---|---|---|
 | **UI** (`ui/`) | Angular, standalone components, signals | Chat interface, login/register, settings, image attach (paperclip or drag-drop), light/dark theme. Streams the assistant reply chunk by chunk. |
-| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | One service, organised as two independent feature modules over shared infrastructure - `app/chat/` (chat SSE streaming, conversation persistence, image uploads, the tool-calling loop and its agents, long-term memory), `app/workflow/` (the Work tab's bulk orchestrator and explainability-review agents) and `app/shared/` (auth, config, DB base/session, the inference-service client). See "Module boundaries" below. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
+| **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | One service, organised as three independent feature modules over shared infrastructure - `app/chat/` (chat SSE streaming, conversation persistence, image uploads, the tool-calling loop and its agents, long-term memory), `app/workflow/` (the Work tab's bulk orchestrator and explainability-review agents), `app/modelops/` (the Models tab: model versions, drift reports, the retraining queue) and `app/shared/` (auth, config, DB base/session, the model-operations tables and rules, the inference-service client). See "Module boundaries" below. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
 | **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
 | **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/shared/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
@@ -108,9 +108,11 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the backend builds the registered tool s
 - `get_weather` - the Weather Agent below.
 - `explainability_review` - the Case Review Agent below; only offered when the message has an
   attached image, since the model cannot reference a real upload id on its own.
-- `create_case` - the ADC Inspection Agent below; same image-attached gating.
-- `investigate_case`, `list_cases`, `review_case`, `flag_case_for_retraining` - resolve an existing
-  Case by number, so no image is needed; `monitoring_status` is Admin-only.
+- `inspect_image` - the Inspection Agent below; same image-attached gating.
+- `find_similar_cases`, `get_case`, `list_cases`, `review_case`, `investigate_case` - the Case Agent;
+  they work from a case number (or the latest case in the conversation), so no image is needed.
+- `flag_case_for_retraining`, `report_model_drift`, `get_drift_summary`, `draft_retraining_plan` -
+  the Monitoring Agent's model-health tools; `monitoring_status` (its overview) is Admin-only.
 
 The Work tab's agents are deliberately **not** among these - see "Work tab" below.
 
@@ -138,7 +140,7 @@ Two tiers, both server-side and per account:
 
 ### Case Review Agent
 
-A LangGraph pipeline (`app/chat/agents/case_review_agent/`, formerly `explainability_review_agent/`),
+A LangGraph pipeline (`app/chat/agents/case_agent/`, formerly `explainability_review_agent/`),
 callable directly via `POST /api/agents/explainability-review` or as a chat tool:
 
 ```
@@ -207,22 +209,56 @@ branch again, just a plain check this time. **No LLM step anywhere in this one**
 other two agents, "what time is it" is fully structured, so there's nothing an LLM would add
 besides latency and cost.
 
-### ADC Inspection Agent
+### Inspection Agent
 
-A cyclic LangGraph pipeline (`app/chat/agents/adc_inspection_agent/`), exposed as the
-`create_case` chat tool (plus `list_cases` / `review_case`), that inspects **one image** per call:
+`app/chat/agents/inspection_agent/`, exposed as the `inspect_image` chat tool, inspects **one
+image** per call in two stages. First an LLM-driven ReAct pass (`react.py`) works the inspection
+steps as tools (verify, golden lookup, XML validation, alignment, region and defect classification,
+list live models); every step it asks for is checked by the same PolicyEngine the planner uses, and
+it closes with a plain-language summary. Then the deterministic pipeline (`graph.py`) resumes from
+whatever state the LLM left: it runs any skipped step, applies the confidence/measurement/alignment
+rules to reach a verdict, and persists the Case. The LLM never sees image bytes or ids and never
+decides the verdict, so a failed or confused LLM run only costs time (and without an OpenAI key the
+first stage is simply skipped). The pipeline:
 
 ```
 verify image -> golden-image lookup -> validate inspection XML -> alignment/quality check
-   -> classify_region -> classify_defect -> verdict -> (REVIEW_REQUIRED? escalate to Case Review Agent)
-   -> persist a Case
+   -> classify_region -> classify_defect -> verdict -> persist a Case
 ```
 
 A deterministic Planner proposes each next step and a PolicyEngine validates it before dispatch;
 a rejection aborts rather than looping. Region and defect classification call the inference
 service (`pcb_region`, then `pcb_body_defect` / `pcb_lead_defect` / `pcb_text_defect`). Every run
-is persisted as a `Case` (ACCEPTED or REVIEW_REQUIRED). `ADC_INSPECTION_AGENT_ENABLED` is its
-kill switch. Not to be confused with the Work tab's bulk `orchestrator_agent` below.
+is persisted as a `Case` (ACCEPTED or REVIEW_REQUIRED) stamped with the model versions that
+answered. `ADC_INSPECTION_AGENT_ENABLED` is its kill switch; `INSPECTION_AGENT_LLM_ENABLED` turns
+off just the LLM stage. REVIEW_REQUIRED is terminal: the agent never calls another agent (chat agents are
+independent, enforced by `tests/chat/test_agent_boundaries.py`); a deeper diagnosis is requested
+from the Case Review Agent by case number. Not to be confused with the Work tab's bulk
+`orchestrator_agent` below.
+
+### Models tab (`app/modelops/`)
+
+Backend for the Models tab: which version of each model is live, drift reports, and the retraining
+queue. The app's database is the record (`model_versions`, `drift_reports`, `retraining_jobs`,
+`retraining_tickets`); the inference service holds no durable state - it reports what it has loaded
+and runs jobs. Opening the tab (`GET /api/models`) syncs versions from it, and reading the queue
+refreshes queued/running jobs; if the service is unreachable the tab shows last-known data and says
+so, and a job it no longer remembers (jobs are in its memory only) is failed and its tickets
+released for a new plan.
+
+The flow: chat agents flag cases and draft a plan (`pending_approval`) - they can do nothing more.
+An Admin approves it in the tab, which sends it to the inference service (a failed send leaves it
+`approved` with the reason, retryable; the service dedupes on our job id). When the job succeeds its
+weights are registered as a `candidate` version, and an Admin promotes it (the service downloads,
+loads and smoke-tests it before swapping, so a bad file leaves the current model serving) or rolls
+back. Training itself is a stub for now: it produces no new weights and is marked `simulated`.
+
+The UI counterpart is `ui/src/app/models/` (the third tab beside Chat and Work): live model
+versions and their history, drift reports, and the retraining queue with progress. It polls while
+any job is queued or running, flags a stale view when the inference service is unreachable, and
+labels a simulated run as such rather than as an improved model. Approve, promote, roll back,
+resolve and cancel are shown to Admins only (a QA user can withdraw a plan they drafted); the
+backend enforces the same rules.
 
 ### Work tab (`app/workflow/`)
 
@@ -326,10 +362,12 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 
 - **Stateless backend.** Horizontal scaling is a config change, not a rewrite. The one
   exception (chat image uploads on local disk) is a tracked gap.
-- **Module boundaries.** `app/chat/` and `app/workflow/` are independent; both may import
-  `app/shared/`, and neither may import the other (`tests/test_module_boundaries.py` enforces it,
+- **Module boundaries.** `app/chat/`, `app/workflow/` and `app/modelops/` are independent; each may
+  import `app/shared/`, and none may import another (`tests/test_module_boundaries.py` enforces it,
   including lazy imports). Each module owns its own `api/`, `agents/`, `services/`, `core/` and
-  `db/`; anything both need moves to `shared`. `app/main.py` is the only place that knows all three.
+  `db/` as needed; anything two need moves to `shared` - which is why the model-operations tables
+  and rules live there (chat's monitoring agent drafts plans; modelops's Admin routes approve and
+  run them). `app/main.py` is the only place that knows all of them.
 - **Pure core interfaces + factories.** `app/chat/core/` holds IO-free `Protocol`s
   (`ChatService`, `MemoryStore`, `Tool`); a single factory constructs each concrete
   implementation. Swapping a provider or a vector store touches one file.

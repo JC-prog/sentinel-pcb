@@ -95,10 +95,15 @@ def test_tools_field_sent_by_default_excluding_explainability(
         "current_time",
         "get_weather",
         "list_cases",
+        "get_case",
         "review_case",
-        "monitoring_status",
+        "find_similar_cases",
         "investigate_case",
         "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
+        "monitoring_status",
     }
 
 
@@ -121,12 +126,17 @@ def test_tools_field_includes_explainability_when_image_attached(
         "current_time",
         "get_weather",
         "explainability_review",
-        "create_case",
+        "inspect_image",
         "list_cases",
+        "get_case",
         "review_case",
-        "monitoring_status",
+        "find_similar_cases",
         "investigate_case",
         "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
+        "monitoring_status",
     }
 
 

@@ -1,11 +1,11 @@
-"""Routes only - see app/chat/agents/adc_inspection_agent/golden_images.py for storage logic."""
+"""Routes only - see app/chat/agents/inspection_agent/golden_images.py for storage logic."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.chat.agents.adc_inspection_agent import golden_images
-from app.chat.agents.adc_inspection_agent.schemas import GoldenImageOut
+from app.chat.agents.inspection_agent import golden_images
+from app.chat.agents.inspection_agent.schemas import GoldenImageOut
 from app.shared.auth import get_current_user
 from app.shared.auth.dependencies import SessionDep
 from app.shared.db import User, UserRole
@@ -25,7 +25,7 @@ async def register_golden_image(
     notes: Annotated[str | None, Form()] = None,
 ) -> GoldenImageOut:
     """Admin-only: registers one golden reference image, looked up later by
-    app/chat/agents/adc_inspection_agent/golden_images.py's find_golden_image() when a case is flagged
+    app/chat/agents/inspection_agent/golden_images.py's find_golden_image() when a case is flagged
     for the same board_id/component_ref/package/feature. Minimal by design - a single-image
     registration endpoint, not a bulk importer or management UI."""
 

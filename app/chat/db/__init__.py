@@ -4,8 +4,6 @@ from app.chat.db.models import (
     Conversation,
     GoldenImage,
     Message,
-    RetrainingTicket,
-    RetrainingTicketStatus,
 )
 
 __all__ = [
@@ -14,6 +12,4 @@ __all__ = [
     "Conversation",
     "GoldenImage",
     "Message",
-    "RetrainingTicket",
-    "RetrainingTicketStatus",
 ]

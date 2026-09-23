@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.chat.agents.case_review_agent.graph import PCBInspectionState
+from app.chat.agents.case_agent.graph import PCBInspectionState
 from app.shared.config.settings import settings
 
 _REQUEST_PAYLOAD = {
@@ -56,7 +56,7 @@ def _mock_pipeline_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
             return state  # type: ignore[return-value]
 
     monkeypatch.setattr(
-        "app.chat.agents.case_review_agent.tools.get_pipeline",
+        "app.chat.agents.case_agent.tools.get_pipeline",
         lambda api_key: _FakePipeline(),
     )
 

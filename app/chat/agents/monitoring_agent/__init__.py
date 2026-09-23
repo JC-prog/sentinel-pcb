@@ -1,3 +1,15 @@
-from app.chat.agents.monitoring_agent.tool import FlagCaseForRetrainingTool, MonitoringAgentTool
+from app.chat.agents.monitoring_agent.tools import (
+    DraftRetrainingPlanTool,
+    FlagCaseForRetrainingTool,
+    GetDriftSummaryTool,
+    MonitoringAgentTool,
+    ReportModelDriftTool,
+)
 
-__all__ = ["FlagCaseForRetrainingTool", "MonitoringAgentTool"]
+__all__ = [
+    "DraftRetrainingPlanTool",
+    "FlagCaseForRetrainingTool",
+    "GetDriftSummaryTool",
+    "MonitoringAgentTool",
+    "ReportModelDriftTool",
+]

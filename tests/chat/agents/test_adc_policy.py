@@ -1,7 +1,7 @@
 from typing import Any
 
-from app.chat.agents.adc_inspection_agent.policy_engine import PolicyEngine
-from app.chat.agents.adc_inspection_agent.workflow_state import OrchestratorState
+from app.chat.agents.inspection_agent.policy_engine import PolicyEngine
+from app.chat.agents.inspection_agent.workflow_state import OrchestratorState
 
 
 def _blank_state(**overrides: Any) -> OrchestratorState:
@@ -29,13 +29,13 @@ def _blank_state(**overrides: Any) -> OrchestratorState:
         "region_confidence": 0.0,
         "region_scores": {},
         "region_uncertain": False,
+        "region_model_version": "",
         "defect_model": "",
+        "defect_model_version": "",
         "defect_label": "",
         "defect_confidence": 0.0,
         "defect_scores": {},
         "final_decision": "",
-        "escalation_done": False,
-        "explainability_result": None,
         "case_persisted": False,
         "case_id": None,
         "case_number": None,
@@ -74,30 +74,16 @@ def test_allows_finalize_when_region_uncertain_even_without_defect() -> None:
     assert allowed is True
 
 
-def test_rejects_escalate_review_unless_review_required() -> None:
-    allowed, _ = PolicyEngine().validate_action(
-        "escalate_review", _blank_state(final_decision="ACCEPTED")
-    )
-    assert allowed is False
-
-
-def test_allows_escalate_review_when_review_required() -> None:
+def test_rejects_the_removed_escalate_review_action() -> None:
     allowed, _ = PolicyEngine().validate_action(
         "escalate_review", _blank_state(final_decision="REVIEW_REQUIRED")
     )
-    assert allowed is True
-
-
-def test_rejects_persist_case_for_review_required_before_escalation() -> None:
-    allowed, _ = PolicyEngine().validate_action(
-        "persist_case", _blank_state(final_decision="REVIEW_REQUIRED", escalation_done=False)
-    )
     assert allowed is False
 
 
-def test_allows_persist_case_for_review_required_after_escalation() -> None:
+def test_allows_persist_case_for_review_required_without_escalation() -> None:
     allowed, _ = PolicyEngine().validate_action(
-        "persist_case", _blank_state(final_decision="REVIEW_REQUIRED", escalation_done=True)
+        "persist_case", _blank_state(final_decision="REVIEW_REQUIRED")
     )
     assert allowed is True
 

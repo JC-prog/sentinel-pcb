@@ -82,29 +82,40 @@ def test_qa_sees_orchestrator_explainability_review_and_retraining_tools(
     assert offered == {
         "current_time",
         "get_weather",
-        "create_case",
+        "inspect_image",
         "explainability_review",
-        "investigate_case",
         "list_cases",
+        "get_case",
         "review_case",
+        "find_similar_cases",
+        "investigate_case",
         "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
     }
 
 
 def test_qa_sees_investigate_and_retraining_tools_without_an_image_attached(
     qa_authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """investigate_case and flag_case_for_retraining resolve an existing Case by number - unlike
-    create_case/explainability_review, they need no image attached to this message."""
+    """Every case and model-health tool works from a case number (or the conversation's latest
+    case) - unlike inspect_image/explainability_review, they need no image attached to this
+    message."""
 
     offered = _offered_tools(qa_authenticated_client, monkeypatch, image_attached=False)
     assert offered == {
         "current_time",
         "get_weather",
-        "investigate_case",
         "list_cases",
+        "get_case",
         "review_case",
+        "find_similar_cases",
+        "investigate_case",
         "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
     }
 
 
@@ -115,12 +126,17 @@ def test_admin_sees_every_tool(
     assert offered == {
         "current_time",
         "get_weather",
-        "create_case",
+        "inspect_image",
         "explainability_review",
-        "investigate_case",
         "list_cases",
+        "get_case",
         "review_case",
+        "find_similar_cases",
+        "investigate_case",
         "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
         "monitoring_status",
     }
 

@@ -1,5 +1,5 @@
 """A minimal admin-curated bank of golden (reference, non-defective) images, looked up by
-app/chat/agents/adc_inspection_agent/golden_images.py when a QA user flags an ambiguous image and no
+app/chat/agents/inspection_agent/golden_images.py when a QA user flags an ambiguous image and no
 golden reference was supplied by hand. Registered one at a time via POST /api/admin/golden-images
 (app/chat/api/admin.py) - not a bulk import.
 """
@@ -31,7 +31,7 @@ class GoldenImage(Base):
     package: Mapped[str] = mapped_column(String, nullable=False)
     feature: Mapped[str] = mapped_column(String, nullable=False)
     # References app.chat.uploads' stored-filename convention (uuid4().hex + suffix), not blob data -
-    # see app/chat/agents/adc_inspection_agent/golden_images.py's save_golden_image(). Stored under
+    # see app/chat/agents/inspection_agent/golden_images.py's save_golden_image(). Stored under
     # settings.case_golden_image_dir, not settings.chat_upload_dir - a separate, admin-curated
     # directory rather than the free-for-all chat upload one.
     stored_filename: Mapped[str] = mapped_column(String, nullable=False)

@@ -13,19 +13,24 @@ from typing import Any
 from PIL import Image
 
 from app.chat.agents import (
-    CreateCaseTool,
     CurrentTimeAgentTool,
+    DraftRetrainingPlanTool,
+    FindSimilarCasesTool,
     FlagCaseForRetrainingTool,
+    GetCaseTool,
+    GetDriftSummaryTool,
+    InspectImageTool,
     InvestigateCaseTool,
     ListCasesTool,
     MonitoringAgentTool,
+    ReportModelDriftTool,
     ReviewCaseTool,
     ToolRegistry,
     WeatherAgentTool,
     call_tool,
 )
 from app.chat.agents.access import allowed_tool_names
-from app.chat.agents.case_review_agent import ExplainabilityReviewTool
+from app.chat.agents.case_agent import ExplainabilityReviewTool
 from app.chat.agents.router_agent import Clarify, route
 from app.chat.core.chat import ChatMessage, TextDelta, ToolCallRequest
 from app.chat.db import Conversation
@@ -44,17 +49,22 @@ logger = logging.getLogger(__name__)
 
 # Constructing ExplainabilityReviewTool() here doesn't load anything heavy - it's a thin wrapper;
 # the actual CLIP model load is deferred to first use of the agent (see
-# app/chat/agents/case_review_agent/graph.py's get_mcp_client()). Exposed to app/chat/api/chat.py
+# app/chat/agents/case_agent/graph.py's get_mcp_client()). Exposed to app/chat/api/chat.py
 # for its own direct-invocation explainability-review route.
 tool_registry = ToolRegistry(
     [
-        CreateCaseTool(),
         CurrentTimeAgentTool(),
+        DraftRetrainingPlanTool(),
         ExplainabilityReviewTool(),
+        FindSimilarCasesTool(),
         FlagCaseForRetrainingTool(),
+        GetCaseTool(),
+        GetDriftSummaryTool(),
+        InspectImageTool(),
         InvestigateCaseTool(),
         ListCasesTool(),
         MonitoringAgentTool(),
+        ReportModelDriftTool(),
         ReviewCaseTool(),
         WeatherAgentTool(),
     ]
@@ -66,16 +76,43 @@ tool_registry = ToolRegistry(
 # tool call is in flight. Falls back to a humanized version of the raw tool name for anything not
 # listed here, so a future tool never goes unlabeled.
 _TOOL_DISPLAY_LABELS: dict[str, str] = {
-    "create_case": "ADC Inspection Agent",
-    "explainability_review": "Case Review Agent",
-    "investigate_case": "Case Review Agent",
-    "list_cases": "Case Lookup",
-    "review_case": "Case Review",
+    "inspect_image": "Inspection Agent",
+    "explainability_review": "Case Agent",
+    "investigate_case": "Case Agent",
+    "find_similar_cases": "Case Agent",
+    "get_case": "Case Agent",
+    "list_cases": "Case Agent",
+    "review_case": "Case Agent",
     "flag_case_for_retraining": "Monitoring Agent",
+    "report_model_drift": "Monitoring Agent",
+    "get_drift_summary": "Monitoring Agent",
+    "draft_retraining_plan": "Monitoring Agent",
     "monitoring_status": "Monitoring Agent",
     "current_time": "Current Time",
     "get_weather": "Weather Agent",
 }
+
+
+# Tools that need the DB session and who is asking / where, injected here because none of it is
+# something the LLM could or should supply. (inspect_image, investigate_case and
+# explainability_review need more - uploads, the OpenAI key - and are handled individually below.)
+_CONTEXT_TOOLS = frozenset(
+    {
+        "list_cases",
+        "get_case",
+        "review_case",
+        "find_similar_cases",
+        "flag_case_for_retraining",
+        "report_model_drift",
+        "get_drift_summary",
+        "draft_retraining_plan",
+        "monitoring_status",
+    }
+)
+_MODELOPS_TOOLS = frozenset(
+    {"report_model_drift", "get_drift_summary", "draft_retraining_plan", "monitoring_status"}
+)
+_MONITORING_TOOLS = _MODELOPS_TOOLS | {"flag_case_for_retraining"}
 
 
 def _tool_display_label(name: str) -> str:
@@ -87,11 +124,11 @@ def _available_tool_specs(image_ids: list[str], role: UserRole) -> list[dict[str
     case fall back to this, so a disabled feature is byte-identical to the pre-tool-calling
     request shape. Every spec is first narrowed to what `role` is allowed to call at all
     (app/chat/agents/access.py) - re-checked again at dispatch time in _run_tool_call, since hiding a
-    spec from the LLM isn't itself an access control. explainability_review and create_case are
+    spec from the LLM isn't itself an access control. explainability_review and inspect_image are
     only ever offered when an image is actually attached to this message - the model has no way to
     reference a real upload id itself (see _run_tool_call, which overrides whatever it supplies
-    anyway). investigate_case and flag_case_for_retraining need no image attached - they resolve
-    an existing Case by number instead."""
+    anyway). Every other case/monitoring tool needs no image - it resolves an existing Case by
+    number (or the latest case in this conversation) instead."""
 
     if not settings.chat_tool_calling_enabled:
         return None
@@ -103,12 +140,14 @@ def _available_tool_specs(image_ids: list[str], role: UserRole) -> list[dict[str
         specs = [s for s in specs if s["name"] != "explainability_review"]
 
     if not image_ids or not settings.adc_inspection_agent_enabled:
-        specs = [s for s in specs if s["name"] != "create_case"]
+        specs = [s for s in specs if s["name"] != "inspect_image"]
 
     if not settings.monitoring_agent_enabled:
-        specs = [
-            s for s in specs if s["name"] not in ("monitoring_status", "flag_case_for_retraining")
-        ]
+        specs = [s for s in specs if s["name"] not in _MONITORING_TOOLS]
+    elif not settings.modelops_enabled:
+        # Flagging a case only needs the ticket table; drift reports, the drift numbers, plans and
+        # the overview belong to the model-operations feature that switch turns off.
+        specs = [s for s in specs if s["name"] not in _MODELOPS_TOOLS]
 
     return specs or None
 
@@ -124,7 +163,7 @@ async def _run_tool_call(
 ) -> str:
     """Executes one model-requested tool call. Never raises - any failure becomes a
     {"error": ...} tool result fed back to the model, so one bad call degrades gracefully
-    instead of ending the whole SSE stream (mirrors app/chat/agents/case_review_agent/
+    instead of ending the whole SSE stream (mirrors app/chat/agents/case_agent/
     mcp_client.py's own graceful-degradation pattern).
 
     Defense in depth: re-checks role access even though _available_tool_specs already filtered
@@ -160,9 +199,7 @@ async def _run_tool_call(
         if not settings.openai_api_key:
             return json.dumps({"error": "no OpenAI key configured on this server"})
         arguments = {**arguments, "session": session, "openai_api_key": settings.openai_api_key}
-    elif call.name == "flag_case_for_retraining":
-        arguments = {**arguments, "session": session, "user_id": user.id}
-    elif call.name == "create_case":
+    elif call.name == "inspect_image":
         image_id = image_ids[0]  # only offered when non-empty - see _available_tool_specs
         image_path = resolve_upload_path(image_id)
         if image_path is None:
@@ -189,8 +226,14 @@ async def _run_tool_call(
             "feature": arguments.get("feature"),
             "issue_symptom": arguments.get("issue_symptom"),
         }
-    elif call.name in {"list_cases", "review_case"}:
-        arguments = {**arguments, "session": session, "user_id": user.id, "username": user.username}
+    elif call.name in _CONTEXT_TOOLS:
+        arguments = {
+            **arguments,
+            "session": session,
+            "user_id": user.id,
+            "username": user.username,
+            "conversation_id": conversation_id,
+        }
 
     try:
         return await call_tool(tool_registry, call.name, arguments)

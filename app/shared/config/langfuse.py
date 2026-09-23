@@ -1,8 +1,8 @@
 """Optional self-hosted LangFuse tracing (infra/development/docker-compose.yml's "langfuse"
 profile) for the app's LangGraph pipelines - app/chat/agents/{time_agent,weather_agent,router_agent,
-case_review_agent,adc_inspection_agent}. Deliberately scoped to those 5 compiled
+case_agent,inspection_agent}. Deliberately scoped to those 5 compiled
 graphs only: the raw (non-LangChain) OpenAI() clients in router_agent/graph.py,
-weather_agent/graph.py, and case_review_agent/models.py, and app/chat/services/providers/
+weather_agent/graph.py, and case_agent/models.py, and app/chat/services/providers/
 openai.py's raw httpx streaming path, are not instrumented here.
 
 get_langfuse_callbacks() returns [] whenever settings.langfuse_enabled is False or either key is

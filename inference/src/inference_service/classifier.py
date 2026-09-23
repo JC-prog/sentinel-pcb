@@ -3,6 +3,7 @@ predict() call. onnxruntime is CPU-only here (no GPU on Fargate) and its run() i
 callers should hand it to a worker thread."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,7 @@ class OnnxClassifier:
         self._spec = spec
         self._session = session
         self._input_name = spec.input_name or session.get_inputs()[0].name
+        self.loaded_at = datetime.now(UTC)
 
     @classmethod
     def load(cls, spec: ModelSpec, model_path: str | Path) -> "OnnxClassifier":
@@ -35,6 +37,14 @@ class OnnxClassifier:
     @property
     def spec(self) -> ModelSpec:
         return self._spec
+
+    def smoke_test(self) -> None:
+        """Runs one blank image through the model so a file that loads but doesn't fit its spec
+        (wrong input size, wrong number of outputs) fails here - before it is ever swapped in to
+        serve traffic - rather than on a caller's first request. Raises ValueError/ORT errors."""
+
+        height, width = self._spec.input_size
+        self.predict(Image.new("RGB", (width, height)))
 
     def predict(self, image: Image.Image) -> Prediction:
         tensor = preprocess(image, self._spec)

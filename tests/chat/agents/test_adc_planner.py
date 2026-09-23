@@ -1,7 +1,7 @@
 from typing import Any
 
-from app.chat.agents.adc_inspection_agent.planner import Planner
-from app.chat.agents.adc_inspection_agent.workflow_state import OrchestratorState
+from app.chat.agents.inspection_agent.planner import Planner
+from app.chat.agents.inspection_agent.workflow_state import OrchestratorState
 
 
 def _blank_state(**overrides: Any) -> OrchestratorState:
@@ -29,13 +29,13 @@ def _blank_state(**overrides: Any) -> OrchestratorState:
         "region_confidence": 0.0,
         "region_scores": {},
         "region_uncertain": False,
+        "region_model_version": "",
         "defect_model": "",
+        "defect_model_version": "",
         "defect_label": "",
         "defect_confidence": 0.0,
         "defect_scores": {},
         "final_decision": "",
-        "escalation_done": False,
-        "explainability_result": None,
         "case_persisted": False,
         "case_id": None,
         "case_number": None,
@@ -129,7 +129,9 @@ def test_plans_finalize_after_classification_complete() -> None:
     assert decision.decision == "finalize"
 
 
-def test_plans_escalate_review_when_review_required() -> None:
+def test_plans_persist_case_directly_when_review_required() -> None:
+    """REVIEW_REQUIRED is terminal for this agent - no hand-off step before persisting."""
+
     decision = Planner().plan(
         _blank_state(
             image_readable=True,
@@ -139,10 +141,10 @@ def test_plans_escalate_review_when_review_required() -> None:
             final_decision="REVIEW_REQUIRED",
         )
     )
-    assert decision.decision == "escalate_review"
+    assert decision.decision == "persist_case"
 
 
-def test_skips_escalate_review_when_accepted() -> None:
+def test_plans_persist_case_when_accepted() -> None:
     decision = Planner().plan(
         _blank_state(
             image_readable=True,
@@ -150,20 +152,6 @@ def test_skips_escalate_review_when_accepted() -> None:
             region="Body",
             defect_label="MissingPart",
             final_decision="ACCEPTED",
-        )
-    )
-    assert decision.decision == "persist_case"
-
-
-def test_plans_persist_case_after_escalation_done() -> None:
-    decision = Planner().plan(
-        _blank_state(
-            image_readable=True,
-            golden_lookup_done=True,
-            region="Body",
-            defect_label="MissingPart",
-            final_decision="REVIEW_REQUIRED",
-            escalation_done=True,
         )
     )
     assert decision.decision == "persist_case"

@@ -10,7 +10,7 @@
 # Models are at https://huggingface.co/JcProg - this is the two-stage PCB ADC (Automated Defect
 # Classification) pipeline: pcb_region picks the component region (Body/Lead/Text), then the
 # matching pcb_*_defect model classifies the actual defect. See
-# app/agents/adc_inspection_agent/graph.py for the caller that chains them.
+# app/agents/inspection_agent/graph.py for the caller that chains them.
 
 [[models]]
 name = "pcb_region"

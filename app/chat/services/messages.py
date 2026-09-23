@@ -26,7 +26,7 @@ def _with_attachment_note(message: str, image_ids: list[str], xml_ids: list[str]
     call resolves the real upload server-side (app/chat/services/streaming.py's _run_tool_call). Without this note
     the model has no textual signal that anything was attached at all - a tool merely being
     *offered* isn't reliably read as "the user attached something", and models were declining to
-    call adc_inspection/create_case, telling the user no image was provided even though one was."""
+    call inspect_image, telling the user no image was provided even though one was."""
 
     notes = []
     if image_ids:

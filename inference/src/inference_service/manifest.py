@@ -44,6 +44,14 @@ class ModelSpec(BaseModel):
     def is_placeholder(self) -> bool:
         return PLACEHOLDER in self.repo_id
 
+    @property
+    def version(self) -> str:
+        """The identity callers see for "which model is this": `<repo_id>@<revision>`. Only as
+        stable as `revision` is - pin it to a commit SHA in models.toml (and when activating a new
+        version) rather than a moving ref like "main"."""
+
+        return f"{self.repo_id}@{self.revision}"
+
 
 class Manifest(BaseModel):
     models: list[ModelSpec] = Field(min_length=1)

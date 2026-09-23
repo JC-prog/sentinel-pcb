@@ -1,7 +1,7 @@
 """Composition root: creates the app, wires up middleware/lifespan, and mounts each module's
-routes (app/shared/api/, app/chat/api/, app/workflow/api/). Carries no route declarations of its
-own. app/chat/ and app/workflow/ are independent feature modules that only share app/shared/ -
-this file is the one place that knows about all three.
+routes (app/shared/api/, app/chat/api/, app/workflow/api/, app/modelops/api/). Carries no route
+declarations of its own. app/chat/, app/workflow/ and app/modelops/ are independent feature modules
+that only share app/shared/ - this file is the one place that knows about all of them.
 """
 
 import json
@@ -18,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.chat.api import STREAMING_PATHS as _CHAT_STREAMING_PATHS
 from app.chat.api import router as chat_router
 from app.chat.db import models as _chat_models  # registers chat tables on Base.metadata
+from app.modelops.api import STREAMING_PATHS as _MODELOPS_STREAMING_PATHS
+from app.modelops.api import router as modelops_router
 from app.shared.api import STREAMING_PATHS as _SHARED_STREAMING_PATHS
 from app.shared.api import router as shared_router
 from app.shared.api.auth import ACCESS_TOKEN_COOKIE
@@ -62,6 +64,7 @@ app.add_middleware(
 app.include_router(shared_router)
 app.include_router(chat_router)
 app.include_router(workflow_router)
+app.include_router(modelops_router)
 
 
 def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
@@ -81,7 +84,10 @@ def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
 
 
 _STREAMING_RESPONSE_PATHS = (
-    _SHARED_STREAMING_PATHS | _CHAT_STREAMING_PATHS | _WORKFLOW_STREAMING_PATHS
+    _SHARED_STREAMING_PATHS
+    | _CHAT_STREAMING_PATHS
+    | _WORKFLOW_STREAMING_PATHS
+    | _MODELOPS_STREAMING_PATHS
 )
 
 

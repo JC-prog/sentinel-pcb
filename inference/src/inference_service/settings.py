@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Hard ceiling on a decoded request image, before it reaches Pillow.
     max_upload_bytes: int = 10 * 1024 * 1024
 
+    # Retraining jobs. Only a stub trainer exists (see trainer.py): it takes this long to "train"
+    # and produces no new weights. Jobs are held in memory - the backend's database is the record;
+    # a restart loses in-flight jobs and the backend reconciles them as failed.
+    stub_trainer_seconds: float = 3.0
+    job_history_limit: int = 200
+
     # Internal service - the browser never calls it, so there is normally no CORS to allow. Kept
     # configurable only for the odd case of hitting it directly from a dev tool.
     cors_allow_origins: list[str] = []

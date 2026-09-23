@@ -9,13 +9,13 @@ import { SettingsService } from './chat/settings.service';
 import { Sidebar } from './chat/sidebar/sidebar';
 import { ThemeToggle } from './theme-toggle/theme-toggle';
 
-// Work has its own controls (dataset/XML/image-root pickers, run buttons), not conversation
-// history, so it gets no chat sidebar - same reasoning as login/register.
-const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register', '/work']);
+// Work and Models have their own controls (pickers/run buttons; version/queue actions), not
+// conversation history, so they get no chat sidebar - same reasoning as login/register.
+const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register', '/work', '/models']);
 
-// The Chat/Work toggle only makes sense once logged in - login/register aren't "modes" to switch
-// between, so it stays hidden there (unlike the sidebar, it IS shown on /work - that's the whole
-// point of the toggle).
+// The Chat/Work/Models toggle only makes sense once logged in - login/register aren't "modes" to switch
+// between, so it stays hidden there (unlike the sidebar, it IS shown on /work and /models - that's
+// the whole point of the toggle).
 const ROUTES_WITHOUT_MODE_TOGGLE = new Set(['/login', '/register']);
 
 @Component({

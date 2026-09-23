@@ -9,7 +9,12 @@ describe('ModeToggle', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ModeToggle],
-      providers: [provideRouter([{ path: 'work', children: [] }])],
+      providers: [
+        provideRouter([
+          { path: 'work', children: [] },
+          { path: 'models', children: [] },
+        ]),
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ModeToggle);
@@ -17,25 +22,40 @@ describe('ModeToggle', () => {
     fixture.detectChanges();
   });
 
-  it('renders both Chat and Work tabs', () => {
-    const labels = Array.from(fixture.nativeElement.querySelectorAll('a')).map(
-      (el) => (el as HTMLElement).textContent?.trim(),
-    );
-    expect(labels).toEqual(['Chat', 'Work']);
+  function tabs(): { label: string; selected: string | null; href: string | null }[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('a')).map((el) => ({
+      label: (el as HTMLElement).textContent?.trim() ?? '',
+      selected: (el as HTMLElement).getAttribute('aria-selected'),
+      href: (el as HTMLElement).getAttribute('href'),
+    }));
+  }
+
+  async function goTo(url: string): Promise<void> {
+    await router.navigateByUrl(url);
+    fixture.detectChanges();
+  }
+
+  it('renders the Chat, Work and Models tabs, each linking to its page', () => {
+    expect(tabs().map((t) => [t.label, t.href])).toEqual([
+      ['Chat', '/chat'],
+      ['Work', '/work'],
+      ['Models', '/models'],
+    ]);
   });
 
   it('marks Chat as selected on the chat route', () => {
-    const [chatTab, workTab] = fixture.nativeElement.querySelectorAll('a');
-    expect(chatTab.getAttribute('aria-selected')).toBe('true');
-    expect(workTab.getAttribute('aria-selected')).toBe('false');
+    expect(tabs().map((t) => t.selected)).toEqual(['true', 'false', 'false']);
   });
 
   it('marks Work as selected after navigating to /work', async () => {
-    await router.navigateByUrl('/work');
-    fixture.detectChanges();
+    await goTo('/work');
 
-    const [chatTab, workTab] = fixture.nativeElement.querySelectorAll('a');
-    expect(workTab.getAttribute('aria-selected')).toBe('true');
-    expect(chatTab.getAttribute('aria-selected')).toBe('false');
+    expect(tabs().map((t) => t.selected)).toEqual(['false', 'true', 'false']);
+  });
+
+  it('marks Models as selected after navigating to /models', async () => {
+    await goTo('/models');
+
+    expect(tabs().map((t) => t.selected)).toEqual(['false', 'false', 'true']);
   });
 });
