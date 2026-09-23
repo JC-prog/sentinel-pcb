@@ -51,9 +51,11 @@ cd ui && npx ng test --watch=false && npx ng build
   - `app/chat/` - the chat SSE stream, the tool-calling agents (`app/chat/agents/`), long-term
     memory, chat uploads, and every chat-owned table (conversations, cases, golden images -
     `app/chat/db/`).
-  - `app/workflow/` - the Work tab: `orchestrator_agent` and `explainability_review_agent`
-    (`app/workflow/agents/`), plus the run-streaming/upload glue (`app/workflow/services/`).
-    Owns no tables.
+  - `app/workflow/` - the Work tab: `src/agent1_orchestrator/` and `src/agent2_explainability/`
+    are a close-to-verbatim drop-in of `pcb_agentic_inspector` (see
+    `app/workflow/INTEGRATION_NOTES.md`); `app/workflow/api/` and `app/workflow/services/` are
+    this repo's own thin FastAPI layer (SSE run streaming, upload glue, monitoring routes) around
+    it. Owns no tables.
   - `app/modelops/` - the Models tab's API (`/api/models/*`): model versions, drift reports and the
     retraining queue (QA/Admin can read; only an Admin can approve or cancel a retraining job,
     promote a model version or roll back). It syncs versions and job progress from the inference
@@ -146,25 +148,25 @@ cd ui && npx ng test --watch=false && npx ng build
   `explainability_review_agent` when a second, unrelated "explainability and review" agent (below)
   was ported in and took that name instead - this one is the chat-facing agent, that one is
   Work-tab-only.
-- **Explainability Review Agent** (`app/workflow/agents/explainability_review_agent/`, Work-tab-only): ported
-  as-is from a teammate's separate standalone prototype, `pcb_agentic_inspector`'s "Agent 2"
-  (`src/agent2_explainability/pipeline/review_graph.py`) - a different LangGraph pipeline
+- **Explainability Review Agent** (`app/workflow/src/agent2_explainability/`, Work-tab-only):
+  dropped in as-is from a teammate's separate standalone prototype, `pcb_agentic_inspector`'s
+  "Agent 2" (`pipeline/review_graph.py`) - a different LangGraph pipeline
   (`retrieve_precedents` -> `extract_telemetry` -> `inspect_visuals` -> `grounding_self_check`)
   from the Case Review Agent above, and NOT related to it despite the similar name. Never a chat
-  tool - called in-process only by `orchestrator_agent`'s `_execute_inference` (`orchestrator.py`'s
-  `_escalate_review` helper) for a Work-tab run's REVIEW_REQUIRED samples, attaching its diagnosis
-  under `explainability_result` in that sample's result payload. Ported unchanged, including its
+  tool, and **currently unwired**: the orchestrator agent below is constructed with
+  `enable_a2a=False` (`app/workflow/services/streaming.py`), so nothing calls into this pipeline
+  yet - a REVIEW_REQUIRED sample from a Work-tab run just stays REVIEW_REQUIRED for now.
+  `explainability_review_agent_enabled` (`settings.py`) is a leftover kill switch nothing
+  currently reads; wiring this back in is a natural next step. Dropped in unchanged, including its
   own `config/agent2_config.yaml` (repo-root-relative, mirrors this file's own cwd-relative
   convention) and its direct `OPENAI_API_KEY` env var read (not routed through
-  `settings.openai_api_key`/`settings.openai_base_url` the way every other agent here is) -
-  `explainability_review_agent_enabled` is its kill switch, the one thing `orchestrator.py` needs
-  from settings to gate the call without touching the ported module. Visual evidence comes from a
-  local Ollama LLaVA VLM (`ollama pull llava`; base URL from the YAML config, defaults to
-  `http://localhost:11434`); the grounding/self-check reasoning step calls OpenAI GPT-4o directly
-  and falls back to a deterministic heuristic (laser-height/overhang thresholds) on any failure or
-  missing key, same graceful-degradation shape as the Case Review Agent. Its precedent-retrieval
-  node is a hardcoded mock in the source and was left that way - not this change's job to wire up
-  real retrieval.
+  `settings.openai_api_key`/`settings.openai_base_url` the way every other agent here is). When
+  wired in, visual evidence comes from a local Ollama LLaVA VLM (`ollama pull llava`; base URL
+  from the YAML config, defaults to `http://localhost:11434`); the grounding/self-check reasoning
+  step calls OpenAI GPT-4o directly and falls back to a deterministic heuristic (laser-height/
+  overhang thresholds) on any failure or missing key, same graceful-degradation shape as the Case
+  Review Agent. Its precedent-retrieval node is a hardcoded mock in the source and was left that
+  way - not this change's job to wire up real retrieval.
 - **Weather agent** (`app/chat/agents/weather_agent/`): a small LangGraph pipeline - geocode ->
   fetch current conditions plus a short forecast -> an LLM-synthesized advisory - exposed to
   chat as the single `get_weather` tool (same name/shape as before, so nothing calling it had to
@@ -216,18 +218,23 @@ cd ui && npx ng test --watch=false && npx ng build
   batch/dataset ingestion mode from the source prototype (a CSV of many samples joined against an
   AOI machine's inspection XML) was deliberately not ported - there's no CSV row for a chat
   upload, and nothing in this app currently ingests one.
-- **Orchestrator agent, Work tab** (`app/workflow/agents/orchestrator_agent/`): the *bulk* counterpart
-  to the ADC inspection agent above, and unrelated to it despite the shared origin - a port of
-  `orchestrator-agent/adc_agentic_project`'s dataset workflow (CSV + inspection XML + image root; modes
-  `prepare`, `prepare_verify`, `run_full`). Never a chat tool: `app/workflow/` has no route into
-  the chat tool-calling loop, and `app/chat/` cannot import it. Served by
-  `app/workflow/api/orchestrator.py` (QA/Admin only) as SSE at `POST /api/orchestrator/run/stream`,
-  with its own uploads under `/api/orchestrator/uploads/*` (`ORCHESTRATOR_DATA_DIR`,
-  `ORCHESTRATOR_AGENT_ENABLED` kill switch). `run()` is an async generator; the sync planner and
-  pandas/opencv work is wrapped in `asyncio.to_thread`. Like `explainability_review_agent`, it is a
-  close port kept unformatted and untyped on purpose so diffs against upstream stay legible - both
-  are excluded from ruff and have mypy `ignore_errors` in `pyproject.toml`; don't "fix" them.
-  Inspection-model calls go through the shared `app/shared/inference/` client.
+- **Orchestrator agent, Work tab** (`app/workflow/src/agent1_orchestrator/`): the *bulk* counterpart
+  to the ADC inspection agent above, and unrelated to it despite the shared origin - a
+  close-to-verbatim drop-in of `pcb_agentic_inspector`'s Agent 1, a dataset workflow (CSV +
+  inspection XML + image root; modes `prepare`, `prepare_verify`, `run_full`). Never a chat tool:
+  `app/workflow/` has no route into the chat tool-calling loop, and `app/chat/` cannot import it.
+  Served by `app/workflow/api/orchestrator.py` (QA/Admin only) as SSE at
+  `POST /api/orchestrator/run/stream`, with its own uploads under `/api/orchestrator/uploads/*`
+  (`ORCHESTRATOR_DATA_DIR`, `ORCHESTRATOR_AGENT_ENABLED` kill switch). Unlike the old hand-port
+  this replaced, `OrchestratorAgent.run()` is synchronous and returns a `WorkflowState`, not an
+  async generator - `app/workflow/services/streaming.py` runs it via `asyncio.to_thread` and
+  streams progress live through one additive hook added to it (`on_step`, see
+  `app/workflow/INTEGRATION_NOTES.md`). It is a close-to-verbatim drop-in kept unformatted and
+  untyped on purpose so diffs against upstream stay legible, same as `agent2_explainability/`
+  above - both are excluded from ruff and mypy (`exclude`) in `pyproject.toml`; don't "fix" them.
+  Inspection-model calls go through the shared `app/shared/inference/` client (two files inside
+  the drop-in, `services/{model_lifecycle,multimodal_inference}.py`, were adapted for this - the
+  only two files in the drop-in that aren't verbatim besides the `on_step` hook).
 - **Monitoring agent** (`app/chat/agents/monitoring_agent/`): the model-health tools.
   `flag_case_for_retraining` (QA/Admin) queues a `RetrainingTicket` for a Case a reviewer believes
   the model got wrong, requiring a reason (it records the model version that made the call and,

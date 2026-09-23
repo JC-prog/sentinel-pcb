@@ -6,6 +6,7 @@ import {
   OrchestratorPlanStepEvent,
   OrchestratorRunRequest,
   OrchestratorRunResult,
+  OrchestratorStatus,
   OrchestratorStatusEvent,
   OrchestratorUploadRecord,
   WorkflowDriftReportRequest,
@@ -73,6 +74,16 @@ function parseSseFrame(raw: string): SseFrame {
 @Injectable({ providedIn: 'root' })
 export class WorkOrchestratorClient {
   constructor(private readonly authService: AuthService) {}
+
+  async getStatus(): Promise<OrchestratorStatus> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/status`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as OrchestratorStatus;
+  }
 
   async uploadDataset(file: File): Promise<string> {
     return this.upload('/api/orchestrator/uploads/dataset', file);

@@ -3,6 +3,7 @@ import {
   OrchestratorLogEntry,
   OrchestratorRunMode,
   OrchestratorRunResult,
+  OrchestratorStatus,
   OrchestratorStatusEvent,
   WorkflowDriftReportRequest,
   WorkflowDriftReportOut,
@@ -53,6 +54,10 @@ export class WorkService {
 
   uploadImageRootFiles(files: File[]): Promise<string> {
     return this.client.uploadImageRootFiles(files);
+  }
+
+  getStatus(): Promise<OrchestratorStatus> {
+    return this.client.getStatus();
   }
 
   // Thin passthroughs, like the uploads above - the component (work.ts) owns the busy/error UI

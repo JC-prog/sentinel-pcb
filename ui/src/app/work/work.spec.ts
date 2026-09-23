@@ -51,6 +51,7 @@ function fakeWorkService(): {
     log,
     running: signal(false),
     result,
+    getStatus: vi.fn().mockResolvedValue({ llm_configured: false }),
     uploadDataset: vi.fn().mockResolvedValue('dataset-1'),
     uploadXml: vi.fn().mockResolvedValue('xml-1'),
     uploadImageRootFiles: vi.fn().mockResolvedValue('root-1'),
@@ -101,6 +102,33 @@ describe('Work', () => {
       (btn as HTMLButtonElement).textContent?.includes('Run Agentic Workflow'),
     ) as HTMLButtonElement;
   }
+
+  it('shows the OPENAI_API_KEY status label once the status call resolves', async () => {
+    expect(fixture.nativeElement.textContent).not.toContain('OPENAI_API_KEY');
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // fakeWorkService()'s default getStatus() resolves { llm_configured: false }.
+    expect(fixture.nativeElement.textContent).toContain('OPENAI_API_KEY not detected');
+  });
+
+  it('shows nothing when the status call fails, rather than a stale/wrong label', async () => {
+    fake = fakeWorkService();
+    (fake.service.getStatus as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('offline'));
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Work],
+      providers: [{ provide: WorkService, useValue: fake.service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(Work);
+    fixture.detectChanges();
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('OPENAI_API_KEY');
+  });
 
   it('disables the run buttons until both a dataset and an XML file are selected', () => {
     expect(runButton().disabled).toBe(true);

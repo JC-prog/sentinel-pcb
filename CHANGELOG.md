@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Work tab (`app/workflow/`): replaced the hand-adapted `orchestrator_agent`/
+  `explainability_review_agent` port with a close-to-verbatim drop-in of the upstream
+  `pcb_agentic_inspector` project (`app/workflow/src/`), rebuilding `app/workflow/api/` and
+  `app/workflow/services/` as a thin FastAPI layer around its actual `OrchestratorAgent`/
+  `DatasetPreparationService`/`DatasetVerificationService`. Same routes, same request/response
+  shapes, same Angular UI - see `app/workflow/INTEGRATION_NOTES.md` for exactly what was moved,
+  adapted, or deleted, and why. Adds a live-progress hook to the drop-in's `OrchestratorAgent.run()`
+  (`on_step`, additive and optional) so the Work tab's Execution Log streams a run's plan steps as
+  they happen again, instead of only showing the outcome once the run finishes. Model serving now
+  goes through the `inference/` microservice (`inference_base_url`) instead of loading local ONNX
+  files, consistent with every other agent in this repo. Sample images/datasets used to smoke-test
+  the drop-in moved from `app/workflow/{data,sample_data}/` to `data/workflow/`.
+
 ### Added
 
 - Work tab: once a bulk run finishes, QA/Admin can file a drift report for the run's model and flag

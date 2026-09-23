@@ -7,6 +7,12 @@ export interface OrchestratorUploadRecord {
   id: string;
 }
 
+/** GET /api/orchestrator/status - mirrors the source tkinter app's "OpenAI key detected" label
+ * next to its Use real LLM Planner checkbox, without exposing the key itself. */
+export interface OrchestratorStatus {
+  llm_configured: boolean;
+}
+
 export interface OrchestratorStatusEvent {
   status: string;
   input_samples: number;

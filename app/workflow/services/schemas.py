@@ -9,6 +9,14 @@ class OrchestratorUploadRecord(BaseModel):
     id: str
 
 
+class OrchestratorStatus(BaseModel):
+    """GET /api/orchestrator/status - lets the Work tab mirror the source tkinter app's "OpenAI
+    key detected" indicator next to its Use real LLM Planner checkbox, without exposing the key
+    itself."""
+
+    llm_configured: bool
+
+
 class OrchestratorRunRequest(BaseModel):
     """Per-run controls, deliberately not settings.py fields - mirrors the source project's
     tkinter UI, where thresholds and LLM planner options are per-run controls, not server config."""

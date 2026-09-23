@@ -9,7 +9,9 @@ run's SSE `result` event and is sending back verbatim. That makes this data only
 the requesting QA/Admin session, not a server-verified record - acceptable for an internal,
 role-gated action, but worth stating plainly rather than leaving implicit.
 
-A sample dict is one element of orchestrator.py's `state.inference_results`, in one of two shapes:
+A sample dict is one element of the teammate's WorkflowState.inference_results
+(app/workflow/src/agent1_orchestrator/agents/orchestrator.py, state/workflow_state.py), in one of
+two shapes:
   - success (result.success=True): top-level "feature_classification"/"defect_classification"/
     "routing" keys (routing.service_model is the real inference-service model name; see
     multimodal_inference.py - NOT routing.selected_model, which is just the internal routing key).

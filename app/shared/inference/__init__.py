@@ -1,9 +1,9 @@
 """Client for the internal ONNX classification service (inference/, infra/production/inference.tf).
 
 Used by both feature modules: app/chat/agents/inspection_agent/graph.py (one image at a
-time) and app/workflow/agents/orchestrator_agent/services/ (whole datasets) for the two-stage PCB
-defect classifier, and by the model-operations code (app/shared/modelops/, app/modelops/) to list
-versions, hot-swap them, and queue retraining jobs.
+time) and app/workflow/src/agent1_orchestrator/services/multimodal_inference.py (whole datasets)
+for the two-stage PCB defect classifier, and by the model-operations code (app/shared/modelops/,
+app/modelops/) to list versions, hot-swap them, and queue retraining jobs.
 Configured via settings.inference_base_url.
 """
 

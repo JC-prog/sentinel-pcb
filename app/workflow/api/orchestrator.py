@@ -19,6 +19,7 @@ from app.workflow.services import uploads as orchestrator_uploads
 from app.workflow.services.monitoring import UnresolvableSample
 from app.workflow.services.schemas import (
     OrchestratorRunRequest,
+    OrchestratorStatus,
     OrchestratorUploadRecord,
     WorkflowDriftReportOut,
     WorkflowDriftReportRequest,
@@ -44,6 +45,19 @@ def _require_orchestrator_and_modelops_enabled(user: User) -> None:
     if not settings.modelops_enabled:
         raise HTTPException(status_code=503, detail="model operations are disabled")
     _require_qa_or_admin(user)
+
+
+@router.get("/api/orchestrator/status")
+async def orchestrator_status(
+    user: Annotated[User, Depends(get_current_user)],
+) -> OrchestratorStatus:
+    """Lets the Work tab mirror the source tkinter app's "OpenAI key detected" indicator next to
+    its Use real LLM Planner checkbox, without exposing the key itself."""
+
+    if not settings.orchestrator_agent_enabled:
+        raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
+    _require_qa_or_admin(user)
+    return OrchestratorStatus(llm_configured=bool(settings.orchestrator_openai_api_key))
 
 
 @router.post("/api/orchestrator/uploads/dataset")
@@ -84,7 +98,7 @@ async def orchestrator_upload_image_root(
     user: Annotated[User, Depends(get_current_user)],
 ) -> OrchestratorUploadRecord:
     """`relative_paths[i]` is `files[i]`'s webkitRelativePath from the Work tab's
-    <input webkitdirectory multiple> folder picker - see orchestrator_agent/uploads.py."""
+    <input webkitdirectory multiple> folder picker - see app/workflow/services/uploads.py."""
 
     if not settings.orchestrator_agent_enabled:
         raise HTTPException(status_code=503, detail="orchestrator agent is disabled")

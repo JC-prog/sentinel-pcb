@@ -158,10 +158,14 @@ agent below that took it instead.
 
 ### Explainability Review Agent
 
-A different LangGraph pipeline (`app/workflow/agents/explainability_review_agent/`), ported as-is from a
+A different LangGraph pipeline (`app/workflow/src/agent2_explainability/`), dropped in as-is from a
 separate standalone prototype (`pcb_agentic_inspector`'s "Agent 2") and unrelated to the Case
-Review Agent above despite the similar name. Never a chat tool - called in-process only by the
-Work tab's `orchestrator_agent` for REVIEW_REQUIRED samples:
+Review Agent above despite the similar name. Never a chat tool, and **currently unwired**: the
+Work tab's orchestrator agent (`src/agent1_orchestrator/`) is constructed with `enable_a2a=False`
+(`app/workflow/services/streaming.py`), so nothing calls into this pipeline yet - a REVIEW_REQUIRED
+sample stays REVIEW_REQUIRED. `explainability_review_agent_enabled` (`settings.py`) is a leftover
+kill switch nothing currently reads; wiring this agent back in is the natural next step and should
+consult it. When it does run:
 
 ```
 retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_self_check
@@ -171,8 +175,8 @@ retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_s
 
 Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
 `app/shared/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
-`settings.openai_api_key`/LiteLLM-proxy convention - a deliberate exception, since it was ported
-unchanged rather than adapted. `explainability_review_agent_enabled` is its kill switch.
+`settings.openai_api_key`/LiteLLM-proxy convention - a deliberate exception, since it was dropped
+in unchanged rather than adapted.
 
 ### Weather Agent
 
@@ -234,7 +238,7 @@ answered. `ADC_INSPECTION_AGENT_ENABLED` is its kill switch; `INSPECTION_AGENT_L
 off just the LLM stage. REVIEW_REQUIRED is terminal: the agent never calls another agent (chat agents are
 independent, enforced by `tests/chat/test_agent_boundaries.py`); a deeper diagnosis is requested
 from the Case Review Agent by case number. Not to be confused with the Work tab's bulk
-`orchestrator_agent` below.
+Orchestrator agent (`OrchestratorAgent`) below.
 
 ### Models tab (`app/modelops/`)
 
@@ -265,17 +269,25 @@ backend enforces the same rules.
 The Work tab's agents live in their own module and are unreachable from the chat tool-calling
 loop: `app/workflow/` never imports `app/chat/`, and nothing in chat imports it.
 
-- **Orchestrator agent** (`agents/orchestrator_agent/`): a port of
-  `orchestrator-agent/adc_agentic_project`'s *bulk* workflow - a CSV dataset plus inspection XML
-  and an optional image root, in three modes (`prepare`, `prepare_verify`, `run_full`). `run_full`
-  runs a Planner -> PolicyEngine -> execute -> replan loop over every sample and streams progress.
-  Served at `POST /api/orchestrator/run/stream` (SSE) with its own `/api/orchestrator/uploads/*`
-  endpoints, QA/Admin only; `ORCHESTRATOR_AGENT_ENABLED` is its kill switch.
-- **Explainability Review Agent** (`agents/explainability_review_agent/`): described above; called
-  in-process for REVIEW_REQUIRED samples.
-- `services/` holds the app-side glue (SSE run streaming, upload storage, request schemas). Both
-  agents are close ports of external projects, kept unformatted and untyped on purpose (excluded
-  from ruff, mypy `ignore_errors`).
+- **Orchestrator agent** (`src/agent1_orchestrator/`): a close-to-verbatim drop-in of
+  `pcb_agentic_inspector`'s Agent 1, the *bulk* workflow - a CSV dataset plus inspection XML and an
+  optional image root, in three modes (`prepare`, `prepare_verify`, `run_full`). `run_full` runs a
+  Planner -> PolicyEngine -> execute -> replan loop over every sample; its `OrchestratorAgent.run()`
+  is synchronous (not an async generator) and gained one additive `on_step` callback so
+  `app/workflow/services/streaming.py` can still stream progress live over SSE while running it in
+  a worker thread. Served at `POST /api/orchestrator/run/stream` (SSE) with its own
+  `/api/orchestrator/uploads/*` endpoints, QA/Admin only; `ORCHESTRATOR_AGENT_ENABLED` is its kill
+  switch. Model serving goes through the `inference/` microservice, not local ONNX files - see
+  `app/workflow/INTEGRATION_NOTES.md`.
+- **Explainability Review Agent** (`src/agent2_explainability/`): described above; present in the
+  drop-in but currently unwired (`enable_a2a=False`) - a REVIEW_REQUIRED sample stays
+  REVIEW_REQUIRED rather than escalating further, for now.
+- `api/` and `services/` hold this repo's own app-side glue (SSE run streaming, upload storage,
+  request schemas, drift/retraining-ticket routes) around the drop-in. The drop-in itself
+  (`src/`, plus sibling top-level `planner/`, `state/`, `verification/`, `adc_shared/`) is kept
+  unformatted and untyped on purpose so diffs against upstream stay legible (excluded from ruff,
+  mypy `exclude`) - see `app/workflow/INTEGRATION_NOTES.md` for what was changed from the raw
+  drop-in and why.
 
 ### Intent Router
 
