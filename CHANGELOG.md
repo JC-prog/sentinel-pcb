@@ -21,6 +21,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   goes through the `inference/` microservice (`inference_base_url`) instead of loading local ONNX
   files, consistent with every other agent in this repo. Sample images/datasets used to smoke-test
   the drop-in moved from `app/workflow/{data,sample_data}/` to `data/workflow/`.
+- The sidebar (branding, Settings, user info, log out) now shows on the Work and Models tabs too,
+  not just Chat - previously logging out was only reachable from Chat. Its "New chat" button and
+  conversation history stay chat-only (`Sidebar.showChatNav`), since Work/Models have their own
+  controls and no conversation history to show.
 
 ### Added
 

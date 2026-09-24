@@ -57,14 +57,16 @@ describe('App', () => {
     expect(compiled.querySelector('app-sidebar')).toBeFalsy();
   });
 
-  it('hides the chat sidebar on the Models tab, but keeps the mode toggle', async () => {
+  it('shows the sidebar and the mode toggle on the Models tab', async () => {
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/models');
 
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('app-sidebar')).toBeFalsy();
+    // Sidebar shows on Work/Models too now - just without its chat-specific "New chat"/history
+    // nav (Sidebar.showChatNav; see sidebar.spec.ts for that assertion).
+    expect(compiled.querySelector('app-sidebar')).toBeTruthy();
     expect(compiled.querySelector('app-mode-toggle')).toBeTruthy();
   });
 
