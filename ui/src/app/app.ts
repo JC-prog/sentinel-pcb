@@ -9,9 +9,11 @@ import { SettingsService } from './chat/settings.service';
 import { Sidebar } from './chat/sidebar/sidebar';
 import { ThemeToggle } from './theme-toggle/theme-toggle';
 
-// Work and Models have their own controls (pickers/run buttons; version/queue actions), not
-// conversation history, so they get no chat sidebar - same reasoning as login/register.
-const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register', '/work', '/models']);
+// The sidebar itself (branding, Settings, user/logout) is shown everywhere once logged in - only
+// its "New chat" button and conversation history are chat-specific (see Sidebar.showChatNav) and
+// hidden on Work/Models, which have their own controls (pickers/run buttons; version/queue
+// actions) instead. Not shown pre-login at all - there's no user/logout to offer yet.
+const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register']);
 
 // The Chat/Work/Models toggle only makes sense once logged in - login/register aren't "modes" to switch
 // between, so it stays hidden there (unlike the sidebar, it IS shown on /work and /models - that's

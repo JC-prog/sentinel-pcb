@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { Component } from '@angular/core';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { Sidebar } from './sidebar';
@@ -7,6 +8,9 @@ import { AuthService, AuthUser } from '../../auth.service';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
 import { SettingsService } from '../settings.service';
+
+@Component({ template: '', selector: 'app-test-stub' })
+class StubComponent {}
 
 const USER: AuthUser = {
   id: 'user-1',
@@ -27,7 +31,11 @@ describe('Sidebar', () => {
     await TestBed.configureTestingModule({
       imports: [Sidebar],
       providers: [
-        provideRouter([]),
+        provideRouter([
+          { path: '', component: StubComponent },
+          { path: 'work', component: StubComponent },
+          { path: 'models', component: StubComponent },
+        ]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
       ],
     }).compileComponents();
@@ -107,5 +115,42 @@ describe('Sidebar', () => {
     logoutButton.click();
 
     expect(logoutSpy).toHaveBeenCalled();
+  });
+
+  it('hides "New chat" and conversation history on the Work route, but keeps Settings/logout', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response));
+
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/work');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('New chat');
+    expect(fixture.nativeElement.querySelector('nav')).toBeFalsy();
+
+    const authService = TestBed.inject(AuthService);
+    authService.currentUser.set(USER);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('jane-qa');
+    expect(fixture.nativeElement.textContent).toContain('Log out');
+  });
+
+  it('hides "New chat" and conversation history on the Models route too', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/models');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('New chat');
+    expect(fixture.nativeElement.querySelector('nav')).toBeFalsy();
+  });
+
+  it('shows "New chat" and conversation history again after navigating back to chat', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/work');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('New chat');
+
+    await router.navigateByUrl('/');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('New chat');
   });
 });

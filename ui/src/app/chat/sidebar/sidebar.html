@@ -18,42 +18,46 @@
     <span class="truncate text-sm font-semibold tracking-tight">SentinelChat</span>
   </div>
 
-  <div class="p-3">
-    <a
-      routerLink="/chat"
-      class="flex w-full items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-    >
-      <span class="text-lg leading-none">+</span>
-      New chat
-    </a>
-  </div>
+  @if (showChatNav()) {
+    <div class="p-3">
+      <a
+        routerLink="/chat"
+        class="flex w-full items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        <span class="text-lg leading-none">+</span>
+        New chat
+      </a>
+    </div>
 
-  <nav class="flex-1 overflow-y-auto px-2 pb-3">
-    @if (conversations().length === 0) {
-      <p class="px-2 py-4 text-sm text-slate-400 dark:text-slate-500">No conversations yet.</p>
-    }
-    <ul class="flex flex-col gap-1">
-      @for (conversation of conversations(); track conversation.id) {
-        <li>
-          <a
-            [routerLink]="['/c', conversation.id]"
-            class="group flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-            [class]="isActive(conversation.id) ? 'bg-slate-100 dark:bg-slate-800' : ''"
-          >
-            <span class="truncate">{{ conversation.title }}</span>
-            <button
-              type="button"
-              class="shrink-0 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-              aria-label="Delete conversation"
-              (click)="deleteConversation($event, conversation.id)"
-            >
-              ✕
-            </button>
-          </a>
-        </li>
+    <nav class="flex-1 overflow-y-auto px-2 pb-3">
+      @if (conversations().length === 0) {
+        <p class="px-2 py-4 text-sm text-slate-400 dark:text-slate-500">No conversations yet.</p>
       }
-    </ul>
-  </nav>
+      <ul class="flex flex-col gap-1">
+        @for (conversation of conversations(); track conversation.id) {
+          <li>
+            <a
+              [routerLink]="['/c', conversation.id]"
+              class="group flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+              [class]="isActive(conversation.id) ? 'bg-slate-100 dark:bg-slate-800' : ''"
+            >
+              <span class="truncate">{{ conversation.title }}</span>
+              <button
+                type="button"
+                class="shrink-0 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                aria-label="Delete conversation"
+                (click)="deleteConversation($event, conversation.id)"
+              >
+                ✕
+              </button>
+            </a>
+          </li>
+        }
+      </ul>
+    </nav>
+  } @else {
+    <div class="flex-1"></div>
+  }
 
   <div class="flex flex-col gap-1 border-t border-slate-200 p-3 dark:border-slate-800">
     <button
