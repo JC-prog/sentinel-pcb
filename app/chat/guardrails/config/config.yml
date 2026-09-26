@@ -1,0 +1,8 @@
+# NeMo Guardrails config for the chat input rail. Deliberately has no `models:` entry - the model
+# (engine="openai", pointed at the LiteLLM proxy) is injected at runtime by nemo_checker.py's
+# _get_rails() from settings.chat_guardrails_model/openai_base_url/openai_api_key, so it always
+# reflects whatever's currently configured in .env rather than a value hardcoded here.
+rails:
+  input:
+    flows:
+      - self check input

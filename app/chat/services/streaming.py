@@ -34,6 +34,7 @@ from app.chat.agents.case_agent import ExplainabilityReviewTool
 from app.chat.agents.router_agent import Clarify, route
 from app.chat.core.chat import ChatMessage, TextDelta, ToolCallRequest
 from app.chat.db import Conversation
+from app.chat.guardrails import get_guardrails_checker
 from app.chat.memory import build_memory_preamble, maybe_extract, remember_explicit
 from app.chat.services import get_chat_service, history
 from app.chat.services.messages import build_messages
@@ -291,6 +292,23 @@ async def chat_sse(
         session, conversation.id, max_turns=settings.chat_history_max_turns
     )
     await history.append_message(session, conversation.id, "user", message, image_ids)
+
+    if settings.chat_guardrails_enabled:
+        try:
+            guardrail_result = await get_guardrails_checker().check_input(message)
+        except Exception:
+            # Fail open, same convention as every other kill-switchable agent in this repo (see
+            # CLAUDE.md) - a broken guardrails check should never block the whole product.
+            logger.exception("Guardrails input check failed - allowing the message through")
+            guardrail_result = None
+        if guardrail_result is not None and not guardrail_result.allowed:
+            reply = guardrail_result.reason or "I can't help with that here."
+            yield f"event: delta\ndata: {json.dumps({'text': reply})}\n\n"
+            await history.append_message(session, conversation.id, "assistant", reply, [])
+            await history.maybe_set_title(session, conversation, message)
+            yield "event: done\ndata: {}\n\n"
+            return
+
     system_prompt = (
         await build_memory_preamble(conversation.user_id, message, provider)
         if is_new_conversation
