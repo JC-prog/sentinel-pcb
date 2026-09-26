@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Chat guardrails: a NeMo Guardrails input rail (`app/chat/guardrails/`) checks every user message
+  for jailbreak/prompt-injection attempts and off-topic requests before it reaches the intent
+  router or any chat LLM call, short-circuiting with a refusal instead. Gated by
+  `CHAT_GUARDRAILS_ENABLED` (default on) and `CHAT_GUARDRAILS_MODEL`; fails open (allows the
+  message through) if the check itself errors, same convention as every other kill-switchable
+  agent in this repo.
+
 ### Changed
 
 - Work tab (`app/workflow/`): replaced the hand-adapted `orchestrator_agent`/
