@@ -62,6 +62,17 @@ def _intent_router_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "intent_router_enabled", False)
 
 
+@pytest.fixture(autouse=True)
+def _guardrails_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The chat guardrails check (app/chat/guardrails/) makes its own NeMo Guardrails LLM call
+    against the LiteLLM proxy - a real network call outside the mocked httpx.AsyncClient chat
+    tests use, same risk _memory_disabled_by_default/_intent_router_disabled_by_default guard
+    against. Disabled here by default; tests/chat/services/test_guardrails.py re-enables it
+    explicitly."""
+
+    monkeypatch.setattr(settings, "chat_guardrails_enabled", False)
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[None, None]:
     try:
