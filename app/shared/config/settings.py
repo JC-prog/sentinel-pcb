@@ -205,6 +205,19 @@ class Settings(BaseSettings):
     intent_router_enabled: bool = True
     intent_router_confidence_threshold: float = 0.6
 
+    # Chat guardrails (app/chat/guardrails/) - a NeMo Guardrails input rail run on the raw user
+    # message before it reaches the intent router or any chat LLM call, checking for
+    # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single
+    # combined check. Kill switch, same pattern as the others; disabling it reproduces today's
+    # behavior exactly - the message goes straight to the router with no check. Uses the shared
+    # openai_api_key/openai_base_url settings (the LiteLLM proxy), not a key of its own. Fails open
+    # on any error (proxy unreachable, NeMo internal failure) - same convention as every other
+    # kill-switchable agent in this repo.
+    chat_guardrails_enabled: bool = True
+    # A separate, independently tunable model from openai_model - the guardrails check is a small
+    # classification task, so a cheaper/faster model is usually enough.
+    chat_guardrails_model: str = "gpt-4o-mini"
+
     # LangFuse (infra/development/docker-compose.yml's "langfuse" profile) - self-hosted LLM
     # observability/tracing for the LangGraph pipelines only (app/chat/agents/{time_agent,
     # weather_agent,router_agent,case_agent,inspection_agent}) - see

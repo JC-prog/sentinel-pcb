@@ -18,6 +18,7 @@ dependencies = [
     "langchain-openai>=1.6.2",
     "langfuse>=4.15.4",
     "langgraph>=1.2.11",
+    "nemoguardrails>=0.24.1",
     "numpy>=2.5.2",
     "openai>=3.8.0",
     "opencv-python-headless>=4.9",
@@ -86,6 +87,11 @@ exclude = [
     '^app/workflow/adc_rest\.py$',
     '^app/workflow/test_rest\.py$',
 ]
+
+[[tool.mypy.overrides]]
+# Ships no py.typed marker (app/chat/guardrails/nemo_checker.py is the only importer).
+module = "nemoguardrails.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
