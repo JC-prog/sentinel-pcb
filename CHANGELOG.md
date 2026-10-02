@@ -9,12 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Chat guardrails: a NeMo Guardrails input rail (`app/chat/guardrails/`) checks every user message
-  for jailbreak/prompt-injection attempts and off-topic requests before it reaches the intent
-  router or any chat LLM call, short-circuiting with a refusal instead. Gated by
-  `CHAT_GUARDRAILS_ENABLED` (default on) and `CHAT_GUARDRAILS_MODEL`; fails open (allows the
-  message through) if the check itself errors, same convention as every other kill-switchable
-  agent in this repo.
+- Work tab (`app/workflow/`): Agent 2 review and a human-in-the-loop Review Console, from the
+  teammate's updated `pcb_agentic_inspector`. When a full run finishes, every REVIEW_REQUIRED sample
+  is sent to Agent 2 automatically (live diagnosis lines in the log), and the new Review Console
+  lists them (opened from an "Open Review Console" popup button) with the golden and defect images,
+  both verdicts and Agent 2's explanation. The
+  operator records the final call - Machine, AI or a manual IPC class, with notes - saved to a new
+  `workflow_review_decisions` table (`GET .../reviews/cases`, `GET .../reviews/image`,
+  `PUT .../reviews/decision`; Alembic migration `d7e2a4b9c015`). QA/Admin only, gated by
+  `ORCHESTRATOR_AGENT_ENABLED` and `EXPLAINABILITY_REVIEW_AGENT_ENABLED`, never a chat tool. Agent 2's
+  inputs are kept server-side per run, so a backend restart requires rerunning the dataset to review
+  its samples. See `app/workflow/INTEGRATION_NOTES.md`.
 
 ### Changed
 
@@ -269,6 +274,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Work tab: a full run that verifies no samples now lists why (e.g. `GOLDEN_IMAGE_NOT_FOUND: 47
+  sample(s)`) in the result's `errors`, instead of only the preparation errors.
 - The chat sidebar no longer appears on the login and register pages.
 - The local LiteLLM proxy silently ran with no upstream OpenAI key (every OpenAI call 401'd)
   whenever `docker compose -f infra/development/docker-compose.yml` was invoked without

@@ -109,12 +109,53 @@ where *uploaded* Work-tab runs land - unaffected by this, it was already outside
 - `app/workflow/data/{35-900032-AAA-RV1,inputs}/` -> `data/workflow/data/`
   (`app/workflow/data/qdrant_indexer.py` - code, not data - stayed in place)
 
-## Explicitly kept, not wired in this pass
+## Agent 2 review + human-in-the-loop (second pass, `feat/workflow-agent2-hitl`)
 
-- **`src/agent2_explainability/`** (Agent 2 - A2A/MCP scaffolding + review pipeline) - present in
-  the drop-in, but `OrchestratorAgent` is constructed with `enable_a2a=False` in
-  `app/workflow/services/streaming.py`, matching `ui.py`'s own current default. A sample that
-  needs review stays `REVIEW_REQUIRED`; nothing escalates it further yet.
+The teammate's updated drop-in ("UI Review Updated") adds an Agent 2 review step and a tkinter
+conflict-resolution dialog/console that persist operator decisions to a Qdrant-backed Data API.
+Here that became:
+
+- **`src/agent2_explainability/pipeline/review_graph.py`** - replaced with the updated version
+  (real precedent/telemetry/VLM/GPT-4o-with-heuristic-fallback nodes). One adaptation: its
+  `config/agent2_config.yaml` is now resolved relative to the file, not the cwd, because the web
+  backend is not launched from `app/workflow/`; and `locate_image()` no longer falls back to
+  `rglob()`-ing `.` and `../..` for a missing image (that crawled `.venv`/`node_modules` and the
+  repo's parent directory on every miss - the backend only passes absolute, already-resolved
+  paths, so a miss now just skips visual inspection). `adc_shared/*` were refreshed to the updated
+  copies too, but remain uncalled reference code (see below).
+- **`app/workflow/services/reviews.py`** + routes under `/api/orchestrator/reviews/` - the flow
+  `ui.py` intends: when a full run finishes, **every REVIEW_REQUIRED sample is sent to Agent 2
+  automatically** (`streaming._auto_review`, the equivalent of `_dispatch_agent2_reviews`), with the
+  same live log blocks (Agent 1 baseline, Agent 2 audit, full explanation, "Review Required" /
+  "agents agree") and a `review` SSE event per sample. The Agent 2 pipeline runs in-process
+  (`OrchestratorAgent` is still built with `enable_a2a=False` - A2A is a dead protocol in the
+  source project: its README says so, but its dispatcher/agent-card code was never removed). The
+  run mints a `run_id` and registers each sample's Agent 2 input **server-side**; the browser only
+  ever sends `{run_id, sample_id}`, and the golden/defect images are served by
+  `GET .../reviews/image` from that registry. A browser-supplied image path would be read from disk
+  and sent to a VLM, and the monitoring routes' "trust what the browser sends" approach is not
+  acceptable there. The registry (inputs and Agent 2 results) is in-memory and bounded, so a
+  backend restart means the dataset must be rerun to review its samples again.
+- **Nothing is auto-approved.** Like the updated `ui.py` (whose per-sample modal was replaced by a
+  persistent Review Console), agreement between the agents only changes what the log says -
+  "Operator may still review it". The operator makes the final call for every case.
+- **Decisions persist in Postgres** (`workflow_review_decisions`, one row per `(run_id, sample_id)`,
+  a later decision replaces the earlier), not the source project's Qdrant Data API - the app
+  already has Postgres, Alembic and auth. `selected_source` keeps the source's `MACHINE`/`AI`/
+  `MANUAL` vocabulary; `final_result` is the canonical lower-case IPC class.
+- **Work tab** - an "Open Review Console" button (next to Run Agentic Workflow, with a pending
+  count) opens a popup in `ui/src/app/work/` mirroring the tkinter `ReviewConsole`: an "Explanation
+  Review Queue" with a Pending/Reviewed filter and a list of the run's cases (item, machine, AI,
+  status) and, for the selected one, the golden and defect images side by side, the Machine / AI
+  results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
+  Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
+- Still chat-invisible: the routes are QA/Admin-gated, behind both `ORCHESTRATOR_AGENT_ENABLED` and
+  `EXPLAINABILITY_REVIEW_AGENT_ENABLED`, and nothing here is registered in `app/chat/`.
+
+## Explicitly kept, not wired
+
+- **`src/agent2_explainability/{a2a,mcp}/`** - the A2A server and the FastMCP tool server. Present
+  in the drop-in, unused: the review pipeline is called directly in-process.
 - **`adc_shared/`, `adc_rest.py`, `test_rest.py`, `README_rest.md`, `compose.qdrant.yaml`** - a
   separate Shared Data API + Agent 2 REST API, backed by their own dedicated Qdrant (distinct from
   both this repo's Docker Qdrant for chat memory and `data/images/qdrant_db/` for case review).
