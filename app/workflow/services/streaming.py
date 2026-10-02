@@ -16,11 +16,13 @@ import json
 import logging
 import os
 import sys
+import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
 from app.shared.config.settings import settings
+from app.workflow.services import reviews
 from app.workflow.services import uploads as orchestrator_uploads
 from app.workflow.services.schemas import OrchestratorRunRequest
 
@@ -186,12 +188,24 @@ async def _run_full(
         use_llm=request.use_llm,
         planner_model=request.llm_model or settings.orchestrator_openai_model,
         allow_llm_fallback=request.llm_fallback,
-        # Agent 2 escalation and local vector-db indexing are out of scope for this pass - see
-        # inference/MODELS.md-adjacent notes and the plan's "explicitly kept, not wired" section.
-        # Matches ui.py's own current default for both flags.
+        # Agent 2 is not escalated to over A2A (a dead protocol in the source project) -
+        # _auto_review (below) calls its pipeline in-process after the run instead. Local
+        # vector-db indexing is still out of scope. Matches ui.py's own current default.
         enable_a2a=False,
         populate_vector_db=False,
     )
+
+    # The drop-in's WorkflowState keeps only verification counts, so a run that verifies nothing
+    # reports no reason. Capture the per-sample issues here without touching the ported code.
+    verification_results: list[dict[str, Any]] = []
+    original_verify = agent.verification.verify
+
+    def capture_verify(samples: Any) -> Any:
+        result = original_verify(samples)
+        verification_results[:] = result.data.get("sample_results", [])
+        return result
+
+    agent.verification.verify = capture_verify
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
@@ -231,7 +245,15 @@ async def _run_full(
 
     state = await run_task  # re-raises if the worker thread raised
 
+    # Remember what each Agent 2 review will need - server-side, see reviews.py's docstring for
+    # why that input never round-trips through the browser. _auto_review (below) then dispatches
+    # Agent 2 for every registered sample once the result has been sent.
+    run_id = uuid.uuid4().hex
+    reviewable = reviews.register_run(run_id, state.verified_samples, state.inference_results)
+
     result_payload = {
+        "run_id": run_id,
+        "reviewable_samples": reviewable,
         "workflow_status": state.status,
         "termination_reason": state.termination_reason,
         "results": state.inference_results,
@@ -245,7 +267,75 @@ async def _run_full(
         "accepted": state.accepted,
         "review_required": state.review_required,
         "inference_aborted": state.inference_aborted,
-        "errors": state.errors,
+        "errors": [*state.errors, *_verification_issue_summary(verification_results)],
     }
     yield _frame("log", {"text": json.dumps(result_payload, indent=2, default=str)})
     yield _frame("result", result_payload)
+
+    if reviewable and settings.explainability_review_agent_enabled:
+        async for frame in _auto_review(run_id):
+            yield frame
+
+
+def _verification_issue_summary(sample_results: list[dict[str, Any]]) -> list[str]:
+    """One line per distinct verification issue, with how many samples hit it and an example id,
+    e.g. "GOLDEN_IMAGE_NOT_FOUND: 47 sample(s) (e.g. S000002)"."""
+    counts: dict[str, list[str]] = {}
+    for sample in sample_results:
+        for issue in sample.get("issues", []):
+            counts.setdefault(issue, []).append(str(sample.get("sample_id")))
+    return [
+        f"Verification {issue}: {len(ids)} sample(s) (e.g. {ids[0]})"
+        for issue, ids in sorted(counts.items(), key=lambda kv: -len(kv[1]))
+    ]
+
+
+async def _auto_review(run_id: str) -> AsyncGenerator[str, None]:
+    """Automatic Agent 2 dispatch for every REVIEW_REQUIRED sample, after the run result is out -
+    the source ui.py's _dispatch_agent2_reviews: one live log block per sample with Agent 1's call,
+    Agent 2's call and its explanation, then a `review` event so the Review Console can fill in.
+    Nothing is approved here: even agreeing samples wait for the operator in the console."""
+
+    sample_ids = reviews.sample_ids_for_run(run_id)
+    yield _frame("log", {"text": f"[Agent 2] Escalating {len(sample_ids)} sample(s) for Explainability Review..."})
+    for sample_id in sample_ids:
+        yield _frame("log", {"text": f"[Agent 2] Reviewing evidence for sample {sample_id}..."})
+        try:
+            review = await reviews.run_review(run_id, sample_id)
+        except Exception as exc:  # one bad sample must not stop the rest of the run's reviews
+            logger.exception("agent 2 review failed for sample %s", sample_id)
+            yield _frame("log", {"text": f"[Agent 2 Error] Sample {sample_id}: {type(exc).__name__}: {exc}"})
+            continue
+        yield _frame(
+            "log",
+            {
+                "text": (
+                    f"[Agent 2 Diagnosis for {sample_id}]\n"
+                    f"- Agent 1 Baseline : {review.agent1_verdict}\n"
+                    f"- Agent 2 Audit    : {review.agent2_verdict}\n"
+                    f"- Full Explanation : {review.diagnosis or 'Evidence verified.'}"
+                )
+            },
+        )
+        if review.conflict:
+            yield _frame(
+                "log",
+                {
+                    "text": (
+                        f"[Review Required] {sample_id}: Machine/AI evidence differs "
+                        f"({review.agent1_verdict} vs {review.agent2_verdict}). "
+                        "Open the Review Console for the final decision."
+                    )
+                },
+            )
+        else:
+            yield _frame(
+                "log",
+                {
+                    "text": (
+                        f"[Agent 2] {sample_id}: explanation ready; agents agree on "
+                        f"{review.agent2_verdict}. Operator may still review it."
+                    )
+                },
+            )
+        yield _frame("review", review.model_dump())

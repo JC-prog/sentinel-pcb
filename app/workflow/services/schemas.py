@@ -73,3 +73,69 @@ class WorkflowRetrainingTicketOut(BaseModel):
     sample_ref: str | None
     model_name: str | None
     status: str
+
+
+# --- Agent 2 review + human-in-the-loop conflict resolution -------------------------------------
+
+
+class WorkflowReviewRunRequest(BaseModel):
+    run_id: str = Field(min_length=1)
+    sample_id: str = Field(min_length=1)
+
+
+class WorkflowReviewOut(BaseModel):
+    """One Agent 2 review of a REVIEW_REQUIRED sample, next to Agent 1's verdict. `conflict` is
+    True when the two normalized verdicts differ (or Agent 2's own self-check failed) - the case the
+    operator must resolve; otherwise the Work tab auto-accepts the consensus."""
+
+    run_id: str
+    sample_id: str
+    agent1_verdict: str
+    agent2_verdict: str
+    conflict: bool
+    diagnosis: str
+    confidence: float
+    self_check_passed: bool
+    contradiction_detected: bool
+    ipc_citations: list[str]
+    visual_evidence: str
+    errors: list[str]
+
+
+class WorkflowReviewDecisionRequest(BaseModel):
+    run_id: str = Field(min_length=1)
+    sample_id: str = Field(min_length=1)
+    selected_source: str  # "MACHINE" | "AI" | "MANUAL"
+    final_result: str = Field(min_length=1)
+    machine_result: str | None = None
+    ai_result: str | None = None
+    ai_diagnosis: str | None = None
+    operator_notes: str | None = None
+
+
+class WorkflowReviewDecisionOut(BaseModel):
+    run_id: str
+    sample_id: str
+    selected_source: str
+    final_result: str
+    machine_result: str | None
+    ai_result: str | None
+    operator_notes: str | None
+    decided_by_user_id: str
+
+
+class WorkflowReviewCaseOut(BaseModel):
+    """One row of the Work tab's Review Console: a REVIEW_REQUIRED sample of a run, Agent 1's call,
+    Agent 2's review once it ran (`review`) and the operator's decision once saved (`decision`)."""
+
+    run_id: str
+    sample_id: str
+    board_id: str
+    component_ref: str
+    feature_type: str
+    agent1_verdict: str
+    agent1_confidence: float
+    has_golden_image: bool
+    has_defect_image: bool
+    review: WorkflowReviewOut | None
+    decision: WorkflowReviewDecisionOut | None

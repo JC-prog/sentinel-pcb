@@ -125,3 +125,26 @@ class Repository:
             record = {'run_id': run_id, 'sample_id': sample_id, 'saved_at_utc': now(), 'result': result}
             self.put(REVIEWS, (run_id, sample_id), record)
             return record
+
+    def save_decision(self, run_id, sample_id, decision):
+        """Persist/replace the operator decision without changing Agent 2 evidence."""
+        self.sample(run_id, sample_id)
+        with self.lock:
+            try:
+                record = self.get(REVIEWS, run_id, sample_id)
+            except KeyError:
+                record = {
+                    'run_id': run_id, 'sample_id': sample_id,
+                    'saved_at_utc': now(), 'result': None
+                }
+            record['human_decision'] = decision
+            record['review_status'] = 'COMPLETED'
+            record['reviewed_at_utc'] = now()
+            self.put(REVIEWS, (run_id, sample_id), record)
+            return record
+
+    def reviews_for_run(self, run_id, limit=500, cursor=None):
+        self.ready_run(run_id)
+        conditions = [models.FieldCondition(key='run_id', match=models.MatchValue(value=run_id))]
+        items, next_cursor = self.page(REVIEWS, limit, cursor, conditions)
+        return {'items': items, 'next_cursor': next_cursor}

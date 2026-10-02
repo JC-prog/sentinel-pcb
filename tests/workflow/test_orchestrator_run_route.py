@@ -127,3 +127,19 @@ def test_prepare_run_streams_status_and_result(authenticated_client: TestClient)
     # The sample's feature/inspection match the XML fixture, so preparation succeeds even though
     # the referenced image files don't exist on disk (that's a verification-stage concern).
     assert status_data["preparation_ready"] == 1
+
+
+def test_verification_issue_summary_groups_by_issue() -> None:
+    from app.workflow.services.streaming import _verification_issue_summary
+
+    summary = _verification_issue_summary(
+        [
+            {"sample_id": "S1", "issues": ["GOLDEN_IMAGE_NOT_FOUND"]},
+            {"sample_id": "S2", "issues": ["GOLDEN_IMAGE_NOT_FOUND", "DEFECT_IMAGE_NOT_FOUND"]},
+            {"sample_id": "S3", "issues": []},
+        ]
+    )
+    assert summary == [
+        "Verification GOLDEN_IMAGE_NOT_FOUND: 2 sample(s) (e.g. S1)",
+        "Verification DEFECT_IMAGE_NOT_FOUND: 1 sample(s) (e.g. S2)",
+    ]

@@ -13,6 +13,13 @@ class Workflow(BaseModel):
 class Review(BaseModel):
     result: dict
 
+class HumanDecision(BaseModel):
+    selected_source: str
+    final_result: str
+    operator_notes: str | None = None
+    machine_result: str | None = None
+    ai_result: str | None = None
+
 
 def create_app(repository=None):
     @asynccontextmanager
@@ -77,6 +84,19 @@ def create_app(repository=None):
     def get_review(run_id: str, sample_id: str):
         api.state.repo.ready_run(run_id)
         return api.state.repo.get(REVIEWS, run_id, sample_id)
+
+    @api.get('/runs/{run_id}/reviews')
+    def reviews(run_id: str, limit: int = Query(500, ge=1, le=500), cursor: str | None = None):
+        return api.state.repo.reviews_for_run(run_id, limit, cursor)
+
+    @api.put('/runs/{run_id}/reviews/{sample_id}/decision')
+    def save_decision(run_id: str, sample_id: str, body: HumanDecision):
+        decision = body.model_dump()
+        if decision['selected_source'] not in {'MACHINE', 'AI', 'MANUAL'}:
+            raise HTTPException(422, 'selected_source must be MACHINE, AI, or MANUAL')
+        if not decision['final_result'].strip():
+            raise HTTPException(422, 'final_result is required')
+        return api.state.repo.save_decision(run_id, sample_id, decision)
 
     return api
 

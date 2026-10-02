@@ -29,3 +29,16 @@ class DataClient:
             cursor = page['next_cursor']
             if not cursor:
                 return
+
+    def get_review(self, run_id, sample_id):
+        return self.request('GET', f'/runs/{quote(run_id, safe="")}/reviews/{quote(sample_id, safe="")}')
+
+    def reviews(self, run_id):
+        return self.request('GET', f'/runs/{quote(run_id, safe="")}/reviews')['items']
+
+    def save_decision(self, run_id, sample_id, selected_source, final_result, operator_notes=None, machine_result=None, ai_result=None):
+        path = f'/runs/{quote(run_id, safe="")}/reviews/{quote(sample_id, safe="")}/decision'
+        return self.request('PUT', path, json={
+            'selected_source': selected_source, 'final_result': final_result,
+            'operator_notes': operator_notes, 'machine_result': machine_result, 'ai_result': ai_result
+        })
