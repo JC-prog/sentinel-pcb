@@ -9,6 +9,9 @@ import {
   WorkflowDriftReportOut,
   WorkflowRetrainingTicketOut,
   WorkflowRetrainingTicketsRequest,
+  WorkflowReviewCaseOut,
+  WorkflowReviewDecisionOut,
+  WorkflowReviewDecisionRequest,
 } from './models/orchestrator.models';
 import { WorkOrchestratorClient } from './work-orchestrator-client';
 
@@ -36,11 +39,15 @@ export class WorkService {
   private readonly _log = signal<OrchestratorLogEntry[]>([]);
   private readonly _running = signal(false);
   private readonly _result = signal<OrchestratorRunResult | null>(null);
+  private readonly _reviewTick = signal(0);
 
   readonly status: Signal<OrchestratorStatusEvent> = this._status.asReadonly();
   readonly log: Signal<OrchestratorLogEntry[]> = this._log.asReadonly();
   readonly running: Signal<boolean> = this._running.asReadonly();
   readonly result: Signal<OrchestratorRunResult | null> = this._result.asReadonly();
+  /** Bumped each time Agent 2 finishes a sample during a run - the Review Console refetches its
+   * cases on it. */
+  readonly reviewTick: Signal<number> = this._reviewTick.asReadonly();
 
   constructor(private readonly client: WorkOrchestratorClient) {}
 
@@ -70,6 +77,24 @@ export class WorkService {
     request: WorkflowRetrainingTicketsRequest,
   ): Promise<WorkflowRetrainingTicketOut[]> {
     return this.client.flagForRetraining(request);
+  }
+
+  getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {
+    return this.client.getReviewCases(runId);
+  }
+
+  getReviewImageUrl(
+    runId: string,
+    sampleId: string,
+    kind: 'golden' | 'defect',
+  ): Promise<string | null> {
+    return this.client.getReviewImageUrl(runId, sampleId, kind);
+  }
+
+  saveReviewDecision(
+    request: WorkflowReviewDecisionRequest,
+  ): Promise<WorkflowReviewDecisionOut> {
+    return this.client.saveReviewDecision(request);
   }
 
   clearLog(): void {
@@ -112,6 +137,8 @@ export class WorkService {
             this._log.update((entries) => [...entries, { kind: 'plan_step', step: event.step }]);
           } else if (event.type === 'result') {
             this._result.set(event.result);
+          } else if (event.type === 'review') {
+            this._reviewTick.update((tick) => tick + 1);
           } else if (event.type === 'error') {
             this._log.update((entries) => [...entries, { kind: 'error', message: event.message }]);
           }

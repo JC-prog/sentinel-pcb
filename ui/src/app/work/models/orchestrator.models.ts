@@ -94,6 +94,8 @@ export interface OrchestratorInferenceResult {
  * (Signal<unknown>). Only `results` is used by the UI today; the rest is kept loose since nothing
  * reads it besides the raw JSON download. */
 export interface OrchestratorRunResult {
+  /** Identifies this run to the Agent 2 review routes - the server keeps what a review needs. */
+  run_id?: string;
   workflow_status: string;
   termination_reason: string | null;
   results: OrchestratorInferenceResult[];
@@ -129,4 +131,62 @@ export interface WorkflowRetrainingTicketOut {
   sample_ref: string | null;
   model_name: string | null;
   status: string;
+}
+
+/** One Agent 2 review next to Agent 1's verdict, pushed over the run stream as a `review` event and
+ * returned inside a case by GET /api/orchestrator/reviews/cases. `conflict` only flags that the two
+ * agents differ (or Agent 2's self-check failed) - every case still waits for the operator. */
+export interface WorkflowReviewOut {
+  run_id: string;
+  sample_id: string;
+  agent1_verdict: string;
+  agent2_verdict: string;
+  conflict: boolean;
+  diagnosis: string;
+  confidence: number;
+  self_check_passed: boolean;
+  contradiction_detected: boolean;
+  ipc_citations: string[];
+  visual_evidence: string;
+  errors: string[];
+}
+
+export type WorkflowDecisionSource = 'MACHINE' | 'AI' | 'MANUAL';
+
+export interface WorkflowReviewDecisionRequest {
+  run_id: string;
+  sample_id: string;
+  selected_source: WorkflowDecisionSource;
+  final_result: string;
+  machine_result?: string | null;
+  ai_result?: string | null;
+  ai_diagnosis?: string | null;
+  operator_notes?: string | null;
+}
+
+export interface WorkflowReviewDecisionOut {
+  run_id: string;
+  sample_id: string;
+  selected_source: WorkflowDecisionSource;
+  final_result: string;
+  machine_result: string | null;
+  ai_result: string | null;
+  operator_notes: string | null;
+  decided_by_user_id: string;
+}
+
+/** One row of the Review Console: a REVIEW_REQUIRED sample of a run, with Agent 2's review (null
+ * while it is still pending) and the operator's decision (null until saved). */
+export interface WorkflowReviewCaseOut {
+  run_id: string;
+  sample_id: string;
+  board_id: string;
+  component_ref: string;
+  feature_type: string;
+  agent1_verdict: string;
+  agent1_confidence: number;
+  has_golden_image: boolean;
+  has_defect_image: boolean;
+  review: WorkflowReviewOut | null;
+  decision: WorkflowReviewDecisionOut | null;
 }
