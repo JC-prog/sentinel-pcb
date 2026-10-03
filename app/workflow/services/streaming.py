@@ -174,11 +174,14 @@ async def _run_full(
     from agents.orchestrator import OrchestratorAgent  # type: ignore[import-not-found]
     from state.workflow_state import WorkflowState  # type: ignore[import-not-found]
 
-    if request.use_llm and settings.orchestrator_openai_api_key:
-        # agent1_orchestrator's planner (planner/llm_planner.py) reads OPENAI_API_KEY straight
-        # from the environment - its own ported code, not settings. Mirror settings' key into it,
-        # the same carve-out CLAUDE.md documents for the sibling explainability agent; never
-        # overwrite a key already present in the process environment.
+    if settings.orchestrator_openai_api_key:
+        # agent1_orchestrator's planner (planner/llm_planner.py) and data/qdrant_indexer.py's
+        # get_embeddings() both read OPENAI_API_KEY straight from the environment - their own
+        # ported code, not settings. Mirror settings' key into it, the same carve-out CLAUDE.md
+        # documents for the sibling explainability agent; never overwrite a key already present
+        # in the process environment. Set unconditionally (not just when request.use_llm) since
+        # vector-db indexing below needs a real key for real embeddings regardless of whether
+        # this particular run also uses the LLM planner.
         os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_openai_api_key)
 
     agent = OrchestratorAgent(
@@ -189,10 +192,12 @@ async def _run_full(
         planner_model=request.llm_model or settings.orchestrator_openai_model,
         allow_llm_fallback=request.llm_fallback,
         # Agent 2 is not escalated to over A2A (a dead protocol in the source project) -
-        # _auto_review (below) calls its pipeline in-process after the run instead. Local
-        # vector-db indexing is still out of scope. Matches ui.py's own current default.
+        # _auto_review (below) calls its pipeline in-process after the run instead.
         enable_a2a=False,
-        populate_vector_db=False,
+        # Indexes prepared samples into this app's shared Qdrant (settings.qdrant_url) via
+        # data/qdrant_indexer.py - see that module's docstring and INTEGRATION_NOTES.md for the
+        # local-embedded-store -> shared-Docker-instance adaptation.
+        populate_vector_db=True,
     )
 
     # The drop-in's WorkflowState keeps only verification counts, so a run that verifies nothing

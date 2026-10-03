@@ -1,7 +1,11 @@
 """
 Qdrant Vector Database Indexer for Agent 1.
 Ingests prepared PCB inspection records (XML telemetry, CSV metadata, and image pairs),
-generates vector embeddings, and stores them in local persistent storage (qdrant_db).
+generates vector embeddings, and stores them in this app's shared Qdrant instance
+(app.shared.config.settings.settings.qdrant_url) - the same Docker container chat's long-term
+memory uses, in its own COLLECTION_NAME collection so the two never collide. Adapted from the
+source project's local embedded store (a throwaway qdrant_db/ directory on disk that nothing
+else in this app could read) - see app/workflow/INTEGRATION_NOTES.md.
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+
+from app.shared.config.settings import settings
 
 load_dotenv()
 logger = logging.getLogger("QdrantIndexer")
@@ -83,21 +89,18 @@ def build_sample_document(sample: Dict[str, Any]) -> str:
 
 def populate_qdrant_db(
     samples: List[Dict[str, Any]],
-    db_path: str = "qdrant_db",
+    db_path: str = "qdrant_db",  # unused - kept so agents/orchestrator.py's untouched call site
+                                  # (db_path="qdrant_db") doesn't need editing; see module docstring.
     collection_name: str = COLLECTION_NAME
 ) -> int:
     """
-    Persists prepared samples into local embedded Qdrant vector database.
+    Persists prepared samples into this app's shared Qdrant instance (settings.qdrant_url).
     """
     if not samples:
         logger.warning("No samples provided to populate Qdrant.")
         return 0
 
-    target_dir = Path(db_path)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # Initialize local persistent client
-    client = QdrantClient(path=str(target_dir))
+    client = QdrantClient(url=settings.qdrant_url)
 
     # Create collection if it does not exist
     existing = [c.name for c in client.get_collections().collections]
@@ -148,7 +151,10 @@ def populate_qdrant_db(
         client.upsert(collection_name=collection_name, points=batch)
 
     count = client.count(collection_name=collection_name).count
-    logger.info(f"Successfully populated Qdrant at '{db_path}'. Total indexed records: {count}")
+    logger.info(
+        f"Successfully populated Qdrant collection '{collection_name}' at "
+        f"'{settings.qdrant_url}'. Total indexed records: {count}"
+    )
     client.close()
     return len(points)
 

@@ -55,6 +55,23 @@ closer-to-source drop-in). Then:
   worker thread (which has no event loop of its own), calling `asyncio.run()` once per classify
   call from inside it is safe and keeps `agents/orchestrator.py` itself unchanged.
 
+## Adapted (not verbatim) - vector-db indexing now writes to this app's shared Qdrant
+
+- **`data/qdrant_indexer.py`** - originally opened a *local embedded* Qdrant at a `db_path`
+  directory (`qdrant_db/`, a throwaway store on disk nothing else in this app could read).
+  `populate_qdrant_db()` now connects to this app's own Docker Qdrant instance instead
+  (`QdrantClient(url=settings.qdrant_url)`) - the same container `app/chat/memory/qdrant_store.py`
+  uses for chat's long-term memory, just a different collection (`ipc_defect_precedents`, 1536-dim
+  OpenAI `text-embedding-3-small`, vs. chat memory's own collection/dimension), so the two never
+  collide. The `db_path` parameter is kept (unused) purely so `agents/orchestrator.py`'s untouched
+  call site (`populate_qdrant_db(state.prepared_samples, db_path="qdrant_db")`) didn't need editing.
+- **`app/workflow/services/streaming.py`** - `_run_full` now builds `OrchestratorAgent` with
+  `populate_vector_db=True` (was `False`), and mirrors `settings.orchestrator_openai_api_key` into
+  `OPENAI_API_KEY` unconditionally (was only when `request.use_llm`) - `get_embeddings()` needs a
+  real key for real embeddings on every run, not just ones that also use the LLM planner. Without
+  a valid key it still runs - `get_embeddings()` falls back to deterministic hash-based vectors,
+  same as the source project offline.
+
 ## Adapted (not verbatim) - the live-progress hook
 
 `src/agent1_orchestrator/agents/orchestrator.py`'s `OrchestratorAgent.run()` is the one other
@@ -87,8 +104,9 @@ had nothing left calling them:
 - `src/agent1_orchestrator/inference/onnx_classifier.py`, `config/models.yaml` - unused after the
   inference swap above (grep-verified nothing else referenced either).
 - `qdrant_db/`, `outputs/` - runtime-generated artifacts (an embedded-Qdrant scaffold, an example
-  `result.json`), not real inputs; neither is written by the new routing layer either
-  (`populate_vector_db=False` by default, same as `ui.py`'s own default - see "not wired" below).
+  `result.json`), not real inputs. Nothing writes an `outputs/result.json` file in this app - a
+  run's results are streamed live (SSE) and, where a human reviews one, persisted to Postgres
+  (see the Agent 2 review section below), never dumped to a JSON file on disk.
 - `tests/workflow/agents/{test_multimodal_inference,test_orchestrator_escalation,
   test_review_agent_pure_nodes}.py` (repo-root `tests/`, not this drop-in's own `tests/`) tested
   the old hand-port's internals directly and don't apply to this drop-in's different shape -
