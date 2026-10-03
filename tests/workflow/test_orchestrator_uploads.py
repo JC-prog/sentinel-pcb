@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.shared.config.settings import settings
+from app.workflow.services import uploads as orchestrator_uploads
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +92,40 @@ def test_image_root_upload_rejects_path_traversal(authenticated_client: TestClie
         data={"relative_paths": ["../../etc/passwd"]},
     )
     assert response.status_code == 422
+
+
+def test_image_root_upload_rejects_leading_dotdot_disguised_as_folder_name(
+    authenticated_client: TestClient,
+) -> None:
+    """A single ".." segment must not be silently treated as "the picked folder's own name" and
+    stripped - that would turn it into an escape (see save_image_root_files's leading-segment
+    strip)."""
+
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("evil.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["../evil.jpg"]},
+    )
+    assert response.status_code == 422
+
+
+def test_image_root_upload_strips_picked_folder_name(authenticated_client: TestClient) -> None:
+    """webkitRelativePath always starts with the picked folder's own name (e.g.
+    "Sample_data_2/..."), which isn't part of the real tree underneath it - it must be stripped so
+    resolve_image_root_path() lines up with DatasetPreparationService's image-root remapping."""
+
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("image.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["Sample_data_2/35-abc/Golden/image.jpg"]},
+    )
+    assert response.status_code == 200
+    upload_id = response.json()["id"]
+
+    image_root = orchestrator_uploads.resolve_image_root_path(upload_id)
+    assert image_root is not None
+    assert (image_root / "35-abc" / "Golden" / "image.jpg").is_file()
+    assert not (image_root / "Sample_data_2").exists()
 
 
 def test_image_root_upload_rejects_mismatched_lengths(authenticated_client: TestClient) -> None:

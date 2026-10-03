@@ -40,16 +40,24 @@ async def save_inspection_xml(file: UploadFile) -> str:
 
 async def save_image_root_files(files: list[UploadFile], relative_paths: list[str]) -> str:
     """`relative_paths[i]` is `files[i]`'s browser-reported webkitRelativePath (e.g.
-    "sample_data/35-.../Golden/image.jpg"), preserved so DatasetPreparationService's image-root
-    remapping works the same way it does against a real folder on disk. Rejects any relative path
-    that would escape the upload directory (e.g. "../../etc/passwd")."""
+    "sample_data/35-.../Golden/image.jpg"). Unlike a real folder on disk, that path always starts
+    with the picked folder's own name - stripped here so the stored tree's root matches what a
+    desktop filedialog.askdirectory() selection would give DatasetPreparationService's image-root
+    remapping (resolve_image_root_path() below returns the upload id's directory *as* image_root,
+    i.e. already "inside" the picked folder). Rejects any relative path that would escape the
+    upload directory (e.g. "../../etc/passwd")."""
 
     upload_id = uuid.uuid4().hex
     root = (_upload_root() / upload_id).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
     for file, relative_path in zip(files, relative_paths, strict=True):
-        candidate = (root / relative_path).resolve()
+        parts = [part for part in relative_path.replace("\\", "/").split("/") if part]
+        if ".." in parts:
+            raise ValueError(f"path traversal attempt in upload: {relative_path!r}")
+        if len(parts) > 1:
+            parts = parts[1:]
+        candidate = (root / Path(*parts)).resolve()
         if not candidate.is_relative_to(root):
             raise ValueError(f"path traversal attempt in upload: {relative_path!r}")
         candidate.parent.mkdir(parents=True, exist_ok=True)
