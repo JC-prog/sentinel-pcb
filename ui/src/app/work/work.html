@@ -206,6 +206,16 @@
       </button>
       <button
         type="button"
+        (click)="openConsole()"
+        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Open Review Console
+        @if (pendingCount() > 0) {
+          <span class="ml-1 rounded-full bg-amber-200 px-1.5 text-xs text-amber-900">{{ pendingCount() }}</span>
+        }
+      </button>
+      <button
+        type="button"
         (click)="clearLog()"
         class="ml-auto rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
       >
@@ -269,6 +279,257 @@
         }
       </div>
     </section>
+
+    <!-- Review Console popup: Agent 1 vs Agent 2 for every REVIEW_REQUIRED sample -->
+    @if (consoleOpen()) {
+      <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        data-testid="review-console-backdrop"
+        (click)="closeConsole()"
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-console-title"
+          data-testid="review-console"
+          class="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          (click)="$event.stopPropagation()"
+        >
+          <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-300 px-4 py-3 dark:border-slate-700">
+            <h2 id="review-console-title" class="text-lg font-bold">Explanation Review Queue</h2>
+            <span class="font-mono text-xs text-slate-500 dark:text-slate-400">Run: {{ runId() ?? '-' }}</span>
+            <div class="ml-auto flex items-center gap-2 text-sm">
+              <button
+                type="button"
+                (click)="refreshCases()"
+                class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Refresh
+              </button>
+              <label class="flex items-center gap-1">
+                <span class="text-slate-500 dark:text-slate-400">Show:</span>
+                <select
+                  [ngModel]="caseFilter()"
+                  (ngModelChange)="caseFilter.set($event)"
+                  name="caseFilter"
+                  aria-label="show"
+                  class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+                >
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="reviewed">Reviewed</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                (click)="closeConsole()"
+                aria-label="close review console"
+                class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </header>
+
+          <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <!-- Items needing explanation -->
+            <section class="rounded border border-slate-200 dark:border-slate-700">
+              <h3 class="border-b border-slate-200 px-3 py-2 text-sm font-semibold dark:border-slate-700">
+                Items Needing Explanation ({{ reviewedCount() }} of {{ reviewCases().length }} reviewed)
+              </h3>
+              <table class="w-full text-left text-xs">
+                <thead class="text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th class="px-3 py-1 font-medium">Item</th>
+                    <th class="px-3 py-1 font-medium">Machine</th>
+                    <th class="px-3 py-1 font-medium">AI</th>
+                    <th class="px-3 py-1 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reviewCase of filteredCases(); track reviewCase.sample_id) {
+                    <tr
+                      class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                      [class.bg-sky-100]="reviewCase.sample_id === selectedCaseId()"
+                      [class.dark:bg-sky-900]="reviewCase.sample_id === selectedCaseId()"
+                      [attr.data-testid]="'case-' + reviewCase.sample_id"
+                      (click)="selectCase(reviewCase.sample_id)"
+                    >
+                      <td class="px-3 py-1.5">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
+                      <td class="px-3 py-1.5 capitalize">{{ reviewCase.agent1_verdict }}</td>
+                      <td class="px-3 py-1.5 capitalize">
+                        {{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}
+                        @if (reviewCase.review?.conflict) {
+                          <span class="text-amber-700 dark:text-amber-300" title="Machine and AI differ">⚠</span>
+                        }
+                      </td>
+                      <td class="px-3 py-1.5">{{ reviewCase.decision ? 'Reviewed' : 'Pending' }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="4" class="px-3 py-4 text-center text-slate-400 dark:text-slate-500">
+                        {{ emptyMessage() }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </section>
+
+            <!-- Selected inspection -->
+            <div class="space-y-3">
+              @if (reviewError()) {
+                <p
+                  role="alert"
+                  class="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                >
+                  {{ reviewError() }}
+                </p>
+              }
+              @if (reviewMessage()) {
+                <p
+                  role="status"
+                  class="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                >
+                  {{ reviewMessage() }}
+                </p>
+              }
+
+              @if (selectedCase(); as reviewCase) {
+                <div data-testid="review-detail" class="space-y-3">
+                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Selected Inspection</h3>
+                    <p class="font-semibold">
+                      Sample: {{ reviewCase.sample_id }} | Board: {{ reviewCase.board_id || '-' }} | Component:
+                      {{ reviewCase.component_ref || '-' }} | Feature: {{ reviewCase.feature_type || '-' }}
+                    </p>
+                  </section>
+
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
+                      <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Golden Image</h3>
+                      <div class="flex min-h-40 items-center justify-center">
+                        @if (goldenImageUrl(); as url) {
+                          <img [src]="url" alt="golden reference" class="max-h-64 max-w-full" />
+                        } @else {
+                          <p class="text-xs text-slate-400 dark:text-slate-500">No image available</p>
+                        }
+                      </div>
+                    </section>
+                    <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
+                      <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Defect Image</h3>
+                      <div class="flex min-h-40 items-center justify-center">
+                        @if (defectImageUrl(); as url) {
+                          <img [src]="url" alt="defect crop" class="max-h-64 max-w-full" />
+                        } @else {
+                          <p class="text-xs text-slate-400 dark:text-slate-500">No image available</p>
+                        }
+                      </div>
+                    </section>
+                  </div>
+
+                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Machine / AI Results</h3>
+                    <p class="flex flex-wrap gap-x-6">
+                      <span><b>Machine defect:</b> <span class="capitalize">{{ reviewCase.agent1_verdict }}</span></span>
+                      <span><b>AI defect:</b> <span class="capitalize">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span></span>
+                      <span>
+                        <b>Confidence:</b>
+                        {{ reviewCase.review ? reviewCase.review.confidence.toFixed(3) : '-' }}
+                      </span>
+                    </p>
+                  </section>
+
+                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Explanation Agent Output</h3>
+                    <div class="max-h-40 min-h-16 overflow-y-auto whitespace-pre-wrap text-sm">
+                      @if (reviewCase.review; as review) {
+                        <p>{{ review.diagnosis || 'No detailed diagnosis provided by Agent 2.' }}</p>
+                        @if (review.visual_evidence) {
+                          <p class="mt-2"><b>Visual evidence:</b> {{ review.visual_evidence }}</p>
+                        }
+                        @if (review.ipc_citations.length > 0) {
+                          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ review.ipc_citations.join('; ') }}</p>
+                        }
+                      } @else {
+                        <p>Agent 2 review is still pending. Click Refresh after Agent 2 finishes.</p>
+                      }
+                    </div>
+                  </section>
+
+                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                    <h3 class="mb-2 text-xs text-slate-500 dark:text-slate-400">User Final Decision</h3>
+                    <div class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1">
+                      <label class="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="decisionSource"
+                          [checked]="decisionSource() === 'MACHINE'"
+                          (change)="decisionSource.set('MACHINE')"
+                        />
+                        Accept Machine
+                      </label>
+                      <label class="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="decisionSource"
+                          [disabled]="!reviewCase.review"
+                          [checked]="decisionSource() === 'AI'"
+                          (change)="decisionSource.set('AI')"
+                        />
+                        Accept AI
+                      </label>
+                      <label class="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="decisionSource"
+                          [checked]="decisionSource() === 'MANUAL'"
+                          (change)="decisionSource.set('MANUAL')"
+                        />
+                        Manual:
+                        <select
+                          [ngModel]="manualClass()"
+                          (ngModelChange)="manualClass.set($event); decisionSource.set('MANUAL')"
+                          name="manualClass"
+                          aria-label="manual IPC class"
+                          class="rounded border border-slate-300 bg-transparent px-2 py-1 capitalize dark:border-slate-700"
+                        >
+                          @for (ipcClass of ipcClasses; track ipcClass) {
+                            <option [value]="ipcClass">{{ ipcClass }}</option>
+                          }
+                        </select>
+                      </label>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <label class="flex flex-1 items-center gap-2">
+                        Notes:
+                        <input
+                          type="text"
+                          [ngModel]="operatorNotes()"
+                          (ngModelChange)="operatorNotes.set($event)"
+                          name="operatorNotes"
+                          class="w-full rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
+                        (click)="submitDecision()"
+                        class="rounded border border-slate-300 px-4 py-2 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                      >
+                        Confirm Decision
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              } @else {
+                <p class="text-sm text-slate-500 dark:text-slate-400">Select an item to review.</p>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    }
 
     <!-- Per-sample results: report drift / flag samples for retraining -->
     @if (results().length > 0) {

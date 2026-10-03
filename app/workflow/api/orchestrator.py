@@ -8,13 +8,13 @@ function-calling loop can never reach any of this.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.shared.auth import get_current_user
 from app.shared.auth.dependencies import SessionDep
 from app.shared.config.settings import settings
 from app.shared.db import User, UserRole
-from app.workflow.services import monitoring
+from app.workflow.services import monitoring, reviews
 from app.workflow.services import uploads as orchestrator_uploads
 from app.workflow.services.monitoring import UnresolvableSample
 from app.workflow.services.schemas import (
@@ -25,6 +25,11 @@ from app.workflow.services.schemas import (
     WorkflowDriftReportRequest,
     WorkflowRetrainingTicketOut,
     WorkflowRetrainingTicketsRequest,
+    WorkflowReviewCaseOut,
+    WorkflowReviewDecisionOut,
+    WorkflowReviewDecisionRequest,
+    WorkflowReviewOut,
+    WorkflowReviewRunRequest,
 )
 from app.workflow.services.streaming import orchestrator_sse
 
@@ -156,3 +161,93 @@ async def orchestrator_flag_samples_for_retraining(
         return await monitoring.flag_samples_for_retraining(session, request=request, user=user)
     except UnresolvableSample as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _require_review_enabled(user: User) -> None:
+    """Agent 2 reviews and decisions sit on top of a finished orchestrator run, so both the
+    orchestrator and the explainability-review switches gate them."""
+
+    if not settings.orchestrator_agent_enabled:
+        raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
+    if not settings.explainability_review_agent_enabled:
+        raise HTTPException(status_code=503, detail="explainability review agent is disabled")
+    _require_qa_or_admin(user)
+
+
+@router.post("/api/orchestrator/reviews/run")
+async def orchestrator_run_review(
+    request: WorkflowReviewRunRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> WorkflowReviewOut:
+    """Runs Agent 2 on one REVIEW_REQUIRED sample of a finished run and returns its verdict next
+    to Agent 1's. Never registered as a chat Tool, same as the rest of this file."""
+
+    _require_review_enabled(user)
+    try:
+        return await reviews.run_review(request.run_id, request.sample_id)
+    except reviews.UnknownReviewCase as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No review input for sample {request.sample_id} - the run is unknown or the "
+                "backend restarted since it finished. Rerun the dataset to review it."
+            ),
+        ) from exc
+
+
+@router.put("/api/orchestrator/reviews/decision")
+async def orchestrator_save_review_decision(
+    request: WorkflowReviewDecisionRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> WorkflowReviewDecisionOut:
+    _require_review_enabled(user)
+    if request.selected_source not in reviews.SELECTED_SOURCES:
+        raise HTTPException(
+            status_code=422, detail="selected_source must be MACHINE, AI, or MANUAL"
+        )
+    if not request.final_result.strip():
+        raise HTTPException(status_code=422, detail="final_result is required")
+    return await reviews.save_decision(session, request=request, user=user)
+
+
+@router.get("/api/orchestrator/reviews/decisions")
+async def orchestrator_list_review_decisions(
+    run_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> list[WorkflowReviewDecisionOut]:
+    _require_review_enabled(user)
+    return await reviews.list_decisions(session, run_id=run_id)
+
+
+@router.get("/api/orchestrator/reviews/cases")
+async def orchestrator_list_review_cases(
+    run_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> list[WorkflowReviewCaseOut]:
+    """The Review Console's list: every REVIEW_REQUIRED sample of a run with its Agent 2 review and
+    operator decision, where they exist."""
+
+    _require_review_enabled(user)
+    return await reviews.list_cases(session, run_id=run_id)
+
+
+@router.get("/api/orchestrator/reviews/image")
+async def orchestrator_review_image(
+    run_id: str,
+    sample_id: str,
+    kind: str,
+    user: Annotated[User, Depends(get_current_user)],
+) -> FileResponse:
+    """The golden or defect crop of a registered review case. The file is looked up in the
+    server-side registry by (run_id, sample_id), never from a client-supplied path."""
+
+    _require_review_enabled(user)
+    if kind not in {"golden", "defect"}:
+        raise HTTPException(status_code=422, detail="kind must be golden or defect")
+    path = reviews.image_path(run_id, sample_id, kind)
+    if path is None:
+        raise HTTPException(status_code=404, detail="image not available")
+    return FileResponse(path)

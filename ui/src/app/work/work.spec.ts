@@ -8,6 +8,8 @@ import {
   OrchestratorLogEntry,
   OrchestratorRunResult,
   OrchestratorStatusEvent,
+  WorkflowReviewCaseOut,
+  WorkflowReviewOut,
 } from './models/orchestrator.models';
 
 const IDLE_STATUS: OrchestratorStatusEvent = {
@@ -28,6 +30,10 @@ function fakeWorkService(): {
   clearLog: ReturnType<typeof vi.fn>;
   reportDrift: ReturnType<typeof vi.fn>;
   flagForRetraining: ReturnType<typeof vi.fn>;
+  getReviewCases: ReturnType<typeof vi.fn>;
+  getReviewImageUrl: ReturnType<typeof vi.fn>;
+  saveReviewDecision: ReturnType<typeof vi.fn>;
+  reviewTick: ReturnType<typeof signal<number>>;
 } {
   const log = signal<OrchestratorLogEntry[]>([]);
   const result = signal<OrchestratorRunResult | null>(null);
@@ -46,6 +52,19 @@ function fakeWorkService(): {
     .fn()
     .mockResolvedValue([{ id: 't1', sample_ref: 'S1', model_name: 'pcb_body_defect', status: 'open' }]);
 
+  const reviewTick = signal(0);
+  const getReviewCases = vi.fn().mockResolvedValue([]);
+  const getReviewImageUrl = vi
+    .fn()
+    .mockImplementation(async (runId: string, sampleId: string, kind: string) => `blob:${runId}-${sampleId}-${kind}`);
+  const saveReviewDecision = vi.fn().mockImplementation(async (request) => ({
+    ...request,
+    machine_result: request.machine_result ?? null,
+    ai_result: request.ai_result ?? null,
+    operator_notes: request.operator_notes ?? null,
+    decided_by_user_id: 'u1',
+  }));
+
   const service = {
     status: signal(IDLE_STATUS),
     log,
@@ -59,9 +78,25 @@ function fakeWorkService(): {
     clearLog,
     reportDrift,
     flagForRetraining,
+    reviewTick,
+    getReviewCases,
+    getReviewImageUrl,
+    saveReviewDecision,
   } as unknown as WorkService;
 
-  return { service, log, result, run, clearLog, reportDrift, flagForRetraining };
+  return {
+    service,
+    log,
+    result,
+    run,
+    clearLog,
+    reportDrift,
+    flagForRetraining,
+    getReviewCases,
+    getReviewImageUrl,
+    saveReviewDecision,
+    reviewTick,
+  };
 }
 
 function file(name: string): File {
@@ -355,6 +390,388 @@ describe('Work', () => {
       fixture.detectChanges();
 
       expect(checkedCount()).toBe(0);
+    });
+  });
+
+  describe('Review Console', () => {
+    function reviewOut(overrides: Partial<WorkflowReviewOut> = {}): WorkflowReviewOut {
+      return {
+        run_id: 'run-1',
+        sample_id: 'S1',
+        agent1_verdict: 'wrong part',
+        agent2_verdict: 'missing part',
+        conflict: true,
+        diagnosis: 'Laser height is ~0 - the body is absent.',
+        confidence: 0.91,
+        self_check_passed: true,
+        contradiction_detected: false,
+        ipc_citations: ['IPC-A-610 Section 8.3.1'],
+        visual_evidence: 'bare pads',
+        errors: [],
+        ...overrides,
+      };
+    }
+
+    function reviewCase(overrides: Partial<WorkflowReviewCaseOut> = {}): WorkflowReviewCaseOut {
+      return {
+        run_id: 'run-1',
+        sample_id: 'S1',
+        board_id: 'Board1',
+        component_ref: 'C978',
+        feature_type: 'Body',
+        agent1_verdict: 'wrong part',
+        agent1_confidence: 0.6,
+        has_golden_image: true,
+        has_defect_image: true,
+        review: reviewOut(),
+        decision: null,
+        ...overrides,
+      };
+    }
+
+    async function showRun(cases: WorkflowReviewCaseOut[]): Promise<void> {
+      fake.getReviewCases.mockResolvedValue(cases);
+      fake.result.set({ ...runResult([sample()]), run_id: 'run-1' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function consoleButton(): HTMLButtonElement {
+      return Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
+        (btn) => btn.textContent?.includes('Open Review Console'),
+      ) as HTMLButtonElement;
+    }
+
+    function popup(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[data-testid="review-console"]');
+    }
+
+    async function openConsole(): Promise<void> {
+      consoleButton().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    async function openCase(sampleId = 'S1'): Promise<void> {
+      if (popup() === null) {
+        await openConsole();
+      }
+      (fixture.nativeElement.querySelector(`[data-testid="case-${sampleId}"]`) as HTMLElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function text(): string {
+      return (fixture.nativeElement as HTMLElement).textContent ?? '';
+    }
+
+    function radios(): HTMLInputElement[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('input[name="decisionSource"]'));
+    }
+
+    function submit(): HTMLButtonElement {
+      return Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
+        (btn) => btn.textContent?.includes('Confirm Decision'),
+      ) as HTMLButtonElement;
+    }
+
+    beforeEach(() => {
+      Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true, writable: true });
+    });
+
+    it('opens an explanatory empty popup when there is no run, or the run has nothing to review', async () => {
+      await openConsole();
+      expect(text()).toContain('no run to review yet');
+      expect(fake.getReviewCases).not.toHaveBeenCalled();
+
+      fake.result.set(runResult([sample()])); // no run_id
+      fixture.detectChanges();
+      expect(text()).toContain('no run to review yet');
+
+      await showRun([]);
+      expect(popup()).not.toBeNull();
+      expect(text()).toContain('No samples in this run need review');
+    });
+
+    it('shows why the queue could not be loaded inside the popup', async () => {
+      fake.getReviewCases.mockRejectedValue(new Error('explainability review agent is disabled'));
+      fake.result.set({ ...runResult([sample()]), run_id: 'run-1' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      await openConsole();
+
+      expect(text()).toContain('explainability review agent is disabled');
+    });
+
+    it('opens the popup from the button, with a pending badge, and closes it again', async () => {
+      await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
+      expect(consoleButton().textContent).toContain('2');
+      expect(popup()).toBeNull(); // not shown until asked for
+
+      await openConsole();
+      expect(popup()?.getAttribute('aria-modal')).toBe('true');
+      expect(text()).toContain('Explanation Review Queue');
+      expect(text()).toContain('Run: run-1');
+
+      (fixture.nativeElement.querySelector('button[aria-label="close review console"]') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(popup()).toBeNull();
+
+      await openConsole();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(popup()).toBeNull();
+    });
+
+    it('closes when the backdrop is clicked but not when the dialog itself is', async () => {
+      await showRun([reviewCase()]);
+      await openConsole();
+
+      popup()?.click();
+      fixture.detectChanges();
+      expect(popup()).not.toBeNull();
+
+      (fixture.nativeElement.querySelector('[data-testid="review-console-backdrop"]') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(popup()).toBeNull();
+    });
+
+    it('selects the first pending case when opened', async () => {
+      await showRun([
+        reviewCase({
+          sample_id: 'S1',
+          decision: {
+            run_id: 'run-1',
+            sample_id: 'S1',
+            selected_source: 'MACHINE',
+            final_result: 'wrong part',
+            machine_result: 'wrong part',
+            ai_result: null,
+            operator_notes: null,
+            decided_by_user_id: 'u1',
+          },
+        }),
+        reviewCase({ sample_id: 'S2' }),
+      ]);
+
+      await openConsole();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="review-detail"]')?.textContent).toContain(
+        'Sample: S2',
+      );
+    });
+
+    it('filters the queue by pending and reviewed', async () => {
+      await showRun([
+        reviewCase({ sample_id: 'S1' }),
+        reviewCase({
+          sample_id: 'S2',
+          decision: {
+            run_id: 'run-1',
+            sample_id: 'S2',
+            selected_source: 'AI',
+            final_result: 'missing part',
+            machine_result: 'wrong part',
+            ai_result: 'missing part',
+            operator_notes: null,
+            decided_by_user_id: 'u1',
+          },
+        }),
+      ]);
+      await openConsole();
+      const select = fixture.nativeElement.querySelector('select[name="caseFilter"]') as HTMLSelectElement;
+      const rows = (): string[] =>
+        Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="case-"]')).map(
+          (row) => (row as HTMLElement).getAttribute('data-testid') ?? '',
+        );
+      expect(rows()).toEqual(['case-S1', 'case-S2']);
+
+      select.value = 'pending';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(rows()).toEqual(['case-S1']);
+
+      select.value = 'reviewed';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(rows()).toEqual(['case-S2']);
+    });
+
+    it('lists every case with the machine verdict, Agent 2 verdict and status', async () => {
+      await showRun([
+        reviewCase(),
+        reviewCase({ sample_id: 'S2', review: null }),
+        reviewCase({
+          sample_id: 'S3',
+          decision: {
+            run_id: 'run-1',
+            sample_id: 'S3',
+            selected_source: 'AI',
+            final_result: 'missing part',
+            machine_result: 'wrong part',
+            ai_result: 'missing part',
+            operator_notes: null,
+            decided_by_user_id: 'u1',
+          },
+        }),
+      ]);
+
+      expect(fake.getReviewCases).toHaveBeenCalledWith('run-1');
+      await openConsole();
+      expect(text()).toContain('Items Needing Explanation (1 of 3 reviewed)');
+      expect(text()).toContain('Unknown'); // S2: Agent 2 has not finished
+      expect(text()).toContain('Reviewed');
+      expect(text()).toContain('Pending');
+    });
+
+    it('refetches the cases each time Agent 2 finishes a sample', async () => {
+      await showRun([reviewCase({ review: null })]);
+      await openConsole();
+      expect(text()).toContain('Unknown');
+      const callsBefore = fake.getReviewCases.mock.calls.length;
+
+      fake.getReviewCases.mockResolvedValue([reviewCase()]);
+      fake.reviewTick.set(1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fake.getReviewCases.mock.calls.length).toBeGreaterThan(callsBefore);
+      expect(text()).toContain('missing part');
+      expect(text()).not.toContain('Unknown');
+    });
+
+    it('opens a case with its images and Agent 2 explanation', async () => {
+      await showRun([reviewCase()]);
+
+      await openCase();
+
+      expect(fake.getReviewImageUrl).toHaveBeenCalledWith('run-1', 'S1', 'golden');
+      expect(fake.getReviewImageUrl).toHaveBeenCalledWith('run-1', 'S1', 'defect');
+      expect(fixture.nativeElement.querySelector('img[alt="golden reference"]')?.getAttribute('src')).toBe(
+        'blob:run-1-S1-golden',
+      );
+      expect(fixture.nativeElement.querySelector('img[alt="defect crop"]')).not.toBeNull();
+      expect(text()).toContain('Laser height is ~0');
+      expect(text()).toContain('IPC-A-610 Section 8.3.1');
+    });
+
+    it('does not request images the server does not have', async () => {
+      await showRun([reviewCase({ has_golden_image: false })]);
+
+      await openCase();
+
+      expect(fake.getReviewImageUrl).not.toHaveBeenCalledWith('run-1', 'S1', 'golden');
+      expect(fixture.nativeElement.querySelector('img[alt="golden reference"]')).toBeNull();
+      expect(text()).toContain('No image available');
+    });
+
+    it('defaults to the machine verdict and saves it with the notes', async () => {
+      await showRun([reviewCase()]);
+      await openCase();
+      expect(radios()[0].checked).toBe(true);
+      const notes = fixture.nativeElement.querySelector('input[name="operatorNotes"]') as HTMLInputElement;
+      notes.value = ' looks fine ';
+      notes.dispatchEvent(new Event('input'));
+
+      submit().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fake.saveReviewDecision).toHaveBeenCalledWith({
+        run_id: 'run-1',
+        sample_id: 'S1',
+        selected_source: 'MACHINE',
+        final_result: 'wrong part',
+        machine_result: 'wrong part',
+        ai_result: 'missing part',
+        ai_diagnosis: 'Laser height is ~0 - the body is absent.',
+        operator_notes: 'looks fine',
+      });
+      expect(text()).toContain('Saved S1: wrong part');
+    });
+
+    it('saves Agent 2 or a manual IPC class when picked', async () => {
+      await showRun([reviewCase()]);
+      await openCase();
+
+      radios()[1].click(); // AI
+      submit().click();
+      await fixture.whenStable();
+      expect(fake.saveReviewDecision).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selected_source: 'AI', final_result: 'missing part' }),
+      );
+
+      const select = fixture.nativeElement.querySelector('select[name="manualClass"]') as HTMLSelectElement;
+      select.value = 'tombstone';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      submit().click();
+      await fixture.whenStable();
+      expect(fake.saveReviewDecision).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selected_source: 'MANUAL', final_result: 'tombstone' }),
+      );
+    });
+
+    it('cannot pick Agent 2 while its review is still pending', async () => {
+      await showRun([reviewCase({ review: null })]);
+      await openCase();
+
+      expect(radios()[1].disabled).toBe(true);
+      expect(text()).toContain('Agent 2 review is still pending');
+    });
+
+    it('pre-fills the form from a saved decision', async () => {
+      await showRun([
+        reviewCase({
+          decision: {
+            run_id: 'run-1',
+            sample_id: 'S1',
+            selected_source: 'MANUAL',
+            final_result: 'tombstone',
+            machine_result: 'wrong part',
+            ai_result: 'missing part',
+            operator_notes: 'seen under scope',
+            decided_by_user_id: 'u1',
+          },
+        }),
+      ]);
+
+      await openCase();
+
+      expect(radios()[2].checked).toBe(true);
+      expect((fixture.nativeElement.querySelector('select[name="manualClass"]') as HTMLSelectElement).value).toBe(
+        'tombstone',
+      );
+      expect((fixture.nativeElement.querySelector('input[name="operatorNotes"]') as HTMLInputElement).value).toBe(
+        'seen under scope',
+      );
+    });
+
+    it('shows the server error when saving fails', async () => {
+      fake.saveReviewDecision.mockRejectedValueOnce(new Error('selected_source must be MACHINE, AI, or MANUAL'));
+      await showRun([reviewCase()]);
+      await openCase();
+
+      submit().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(text()).toContain('selected_source must be');
+    });
+
+    it('clearing the log empties the console', async () => {
+      await showRun([reviewCase()]);
+      await openCase();
+
+      fixture.componentInstance.clearLog();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(popup()).toBeNull();
     });
   });
 });

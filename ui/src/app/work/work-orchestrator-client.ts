@@ -13,6 +13,10 @@ import {
   WorkflowDriftReportOut,
   WorkflowRetrainingTicketOut,
   WorkflowRetrainingTicketsRequest,
+  WorkflowReviewDecisionOut,
+  WorkflowReviewCaseOut,
+  WorkflowReviewDecisionRequest,
+  WorkflowReviewOut,
 } from './models/orchestrator.models';
 
 export type WorkResponderEvent =
@@ -20,6 +24,7 @@ export type WorkResponderEvent =
   | { type: 'status'; status: OrchestratorStatusEvent }
   | { type: 'planStep'; step: OrchestratorPlanStepEvent }
   | { type: 'result'; result: OrchestratorRunResult }
+  | { type: 'review'; review: WorkflowReviewOut }
   | { type: 'error'; message: string };
 
 interface SseFrame {
@@ -168,6 +173,8 @@ export class WorkOrchestratorClient {
               subscriber.next({ type: 'planStep', step: frame.data as unknown as OrchestratorPlanStepEvent });
             } else if (frame.event === 'result') {
               subscriber.next({ type: 'result', result: frame.data as unknown as OrchestratorRunResult });
+            } else if (frame.event === 'review') {
+              subscriber.next({ type: 'review', review: frame.data as unknown as WorkflowReviewOut });
             } else if (frame.event === 'error') {
               subscriber.next({ type: 'error', message: String(frame.data['message'] ?? 'Run error') });
             } else if (frame.event === 'done') {
@@ -193,9 +200,50 @@ export class WorkOrchestratorClient {
     return this.post('/api/orchestrator/monitoring/retraining-tickets', request);
   }
 
+  async getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/reviews/cases?run_id=${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowReviewCaseOut[];
+  }
+
+  /** An object URL for the golden/defect crop of a review case - an <img src> can't carry the auth
+   * header, so the image is fetched with it and handed to the page as a blob. The caller revokes
+   * the URL. Resolves null when the server has no such image. */
+  async getReviewImageUrl(
+    runId: string,
+    sampleId: string,
+    kind: 'golden' | 'defect',
+  ): Promise<string | null> {
+    const query = `run_id=${encodeURIComponent(runId)}&sample_id=${encodeURIComponent(sampleId)}&kind=${kind}`;
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/reviews/image?${query}`,
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return URL.createObjectURL(await response.blob());
+  }
+
+  async saveReviewDecision(
+    request: WorkflowReviewDecisionRequest,
+  ): Promise<WorkflowReviewDecisionOut> {
+    return this.send('PUT', '/api/orchestrator/reviews/decision', request);
+  }
+
   private async post<T>(path: string, body: unknown): Promise<T> {
+    return this.send('POST', path, body);
+  }
+
+  private async send<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
     const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });

@@ -9,12 +9,17 @@ import base64
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
-import re
 import requests
 import yaml
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv()
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
@@ -26,7 +31,7 @@ logger = logging.getLogger("agent2.review_graph")
 # Graph State Definition
 # -----------------------------------------------------------------------------
 class ReviewState(TypedDict):
-    # Inputs from A2A Task
+    # Inputs
     board_id: str
     component_ref: str
     defect_image_path: str
@@ -55,7 +60,8 @@ class ReviewState(TypedDict):
 # Configuration Loader Helper
 # -----------------------------------------------------------------------------
 def load_agent2_config() -> Dict[str, Any]:
-    config_path = Path("config/agent2_config.yaml")
+    # Resolved from this file, not the cwd - the web backend isn't launched from app/workflow/.
+    config_path = Path(__file__).resolve().parents[3] / "config" / "agent2_config.yaml"
     if not config_path.exists():
         return {}
     with open(config_path, "r", encoding="utf-8") as f:
@@ -65,43 +71,64 @@ def load_agent2_config() -> Dict[str, Any]:
 CONFIG = load_agent2_config()
 
 
+def normalize_label(label: str) -> str:
+    """Normalizes 'MissingPart', 'missing_part', 'WrongPart_13' -> 'wrong part'."""
+    if not label:
+        return "no defect"
+    # Strip suffixes like '_13'
+    clean = label.split("_")[0]
+    s = re.sub(r'(?<!^)(?=[A-Z])', ' ', clean).lower()
+    return s.strip()
+
+
 # -----------------------------------------------------------------------------
 # Graph Nodes
 # -----------------------------------------------------------------------------
 def retrieve_precedents_node(state: ReviewState) -> Dict[str, Any]:
-    """Queries persistent Qdrant collection or local cache for IPC rules and precedents."""
+    """Retrieves relevant IPC-A-610 clauses based on defect and feature type."""
     precedents = []
-    component_type = state.get("feature_type", "Component")
-    defect = state.get("preliminary_defect", "General")
+    prelim = normalize_label(state.get("preliminary_defect", ""))
+    feat = state.get("feature_type", "Body").lower()
 
-    # In production, this hooks to qdrant_client. Search local mock/store if unavailable
-    precedents.append({
-        "ipc_clause": "IPC-A-610 Section 8.3.2",
-        "standard": "Class 2 / Class 3 SMT Placement & Fillet Requirements",
-        "rule": "Side overhang must not exceed 50% of component width for Class 2, or 25% for Class 3.",
-        "relevance": 0.92
-    })
+    if "wrong" in prelim or "text" in feat:
+        precedents.append({
+            "ipc_clause": "IPC-A-610 Section 8.3.15",
+            "standard": "Component Marking & Identification",
+            "rule": "Components must have correct part numbers, legible markings, and proper pin 1 orientation. Incorrect part markings constitute a Defect Class 1, 2, 3.",
+            "relevance": 0.95
+        })
+
+    if "missing" in prelim or "absent" in prelim:
+        precedents.append({
+            "ipc_clause": "IPC-A-610 Section 8.3.1",
+            "standard": "Component Mounting - Missing Component",
+            "rule": "Component is missing from the designated land pattern. Absence of component where designated is a Defect Class 1, 2, 3.",
+            "relevance": 0.96
+        })
+
+    if "shift" in prelim:
+        precedents.append({
+            "ipc_clause": "IPC-A-610 Section 8.3.2",
+            "standard": "SMT Placement & Alignment",
+            "rule": "Side overhang must not exceed 50% of component termination width for Class 2, or 25% for Class 3.",
+            "relevance": 0.92
+        })
+
+    # Default general wetting standard
     precedents.append({
         "ipc_clause": "IPC-A-610 Section 8.3.5",
         "standard": "Solder Joint Integrity & Wetting",
         "rule": "Evidence of wetting must be present across pad land pattern. Open circuit implies missing or tombstoned part.",
-        "relevance": 0.88
+        "relevance": 0.85
     })
+
     return {"retrieved_precedents": precedents}
 
-def normalize_label(label: str) -> str:
-    """Normalizes 'MissingPart', 'missing_part', 'missing part' -> 'missing part'."""
-    if not label:
-        return "no defect"
-    # Convert PascalCase/camelCase to spaces: MissingPart -> Missing Part
-    s = re.sub(r'(?<!^)(?=[A-Z])', ' ', label).lower()
-    return s.replace("_", " ").strip()
 
 def extract_telemetry_node(state: ReviewState) -> Dict[str, Any]:
     """Recursively parses nested AOI inspection measurements and extracts physical metrics."""
     aoi_data = state.get("aoi_measurements", {})
     
-    # Flatten nested inspection blocks (e.g. {"BlobDetection": {"side_overhang_percent": 62.0}})
     flat_measurements = {}
     if isinstance(aoi_data, dict):
         for k, v in aoi_data.items():
@@ -111,23 +138,26 @@ def extract_telemetry_node(state: ReviewState) -> Dict[str, Any]:
                 flat_measurements[k] = v
 
     # Extract metrics using multiple key aliases
-    laser_h = flat_measurements.get("laser_profile_height_um") or flat_measurements.get("height_um") or 45.0
+    laser_h = flat_measurements.get("laser_profile_height_um") or flat_measurements.get("height_um")
     overhang = flat_measurements.get("side_overhang_percent") or flat_measurements.get("side_overhang") or 0.0
     coplanarity = flat_measurements.get("coplanarity_um") or flat_measurements.get("coplanarity") or 0.0
+
+    # If laser height is completely missing from telemetry, do NOT fabricate high height
+    laser_height_val = float(laser_h) if laser_h is not None else 0.0
 
     telemetry = {
         "board_id": state.get("board_id"),
         "component_ref": state.get("component_ref"),
-        "laser_profile_height_um": float(laser_h),
+        "laser_profile_height_um": laser_height_val,
         "side_overhang_percent": float(overhang),
         "coplanarity_um": float(coplanarity),
-        "ict_status": "FAIL" if flat_measurements.get("status") == "Failed" and laser_h < 5.0 else "PASS"
+        "ict_status": "FAIL" if flat_measurements.get("status") == "Failed" and laser_height_val < 5.0 else "PASS"
     }
     return {"telemetry_data": telemetry}
 
 
 def locate_image(raw_path: Optional[str]) -> Optional[Path]:
-    """Locates an image even across different working directories or nested folders."""
+    """Locates an image across working directories or nested folders."""
     if not raw_path:
         return None
         
@@ -135,26 +165,15 @@ def locate_image(raw_path: Optional[str]) -> Optional[Path]:
     if p.is_file():
         return p.resolve()
         
-    filename = p.name
-    # Search common root folders relative to repository root
-    possible_roots = [
-        Path("."),
-        Path("inputs"),
-        Path("data/inputs"),
-        Path("sample_data"),
-        Path("../.."),
-        Path("../../inputs")
-    ]
-    for root in possible_roots:
-        if root.exists():
-            matches = list(root.rglob(filename))
-            if matches:
-                return matches[0].resolve()
+    # The source project fell back to rglob()-ing "." and "../.." for the filename here. In the web
+    # backend that crawls the whole repo (.venv, node_modules) and its parent directory on every
+    # missing image, and could return a same-named file from outside the project. The backend only
+    # ever passes the absolute paths dataset preparation already resolved, so a miss is a miss.
     return None
 
 
 def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
-    """Queries the local LLaVA VLM with robust image path resolution."""
+    """Queries local LLaVA VLM with context-aware prompt tailored to the feature crop."""
     raw_defect_path = state.get("defect_image_path")
     defect_img_path = locate_image(raw_defect_path)
 
@@ -164,17 +183,29 @@ def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
 
     if not defect_img_path or not defect_img_path.is_file():
         logger.warning(f"Could not locate image file for: {raw_defect_path}")
-        return {"visual_evidence": f"Defect image '{raw_defect_path}' missing or unreadable. Visual inspect skipped."}
+        return {"visual_evidence": f"Defect image '{raw_defect_path}' missing. Visual inspection skipped."}
+
+    # Context-aware prompt to prevent ROI hallucination on zoomed text crops
+    feat_type = state.get("feature_type", "Body")
+    prelim = state.get("preliminary_defect", "Defect")
+    comp = state.get("component_ref", "Component")
+
+    if "text" in feat_type.lower() or "text" in str(defect_img_path).lower():
+        prompt = (
+            f"You are inspecting PCB component {comp}. This image is a zoomed-in ROI of the COMPONENT TEXT / SILKSCREEN MARKING. "
+            f"Preliminary defect claim is '{prelim}'. Does the text or laser marking indicate a wrong part number, damaged text, "
+            f"or incorrect polarity marking? Do NOT claim the component is absent unless the entire solder pad is visibly bare."
+        )
+    else:
+        prompt = (
+            f"You are inspecting PCB component {comp} with preliminary defect claim '{prelim}'. "
+            f"Examine the solder pads, component body, and alignment. Is the part missing, rotated, shifted, or tombstoned? "
+            f"Describe observations in 2 concise sentences."
+        )
 
     try:
         with open(defect_img_path, "rb") as img_f:
             b64_img = base64.b64encode(img_f.read()).decode("utf-8")
-
-        prompt = (
-            f"You are inspecting PCB component {state.get('component_ref')} with preliminary label "
-            f"'{state.get('preliminary_defect')}'. Look at the pad, presence of component body, solder joints, "
-            f"and alignment. Is the part absent, shifted, rotated, or damaged? Describe in 2 concise sentences."
-        )
 
         resp = requests.post(
             f"{ollama_url}/api/generate",
@@ -190,22 +221,21 @@ def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
         if resp.status_code == 200:
             evidence = resp.json().get("response", "").strip()
             return {"visual_evidence": evidence}
-        else:
-            logger.warning(f"Ollama returned HTTP {resp.status_code}: {resp.text}")
     except Exception as e:
-        logger.warning(f"Local Ollama VLM call failed: {e}. Falling back to default visual summary.")
+        logger.warning(f"Local Ollama VLM call skipped/failed: {e}.")
 
-    return {"visual_evidence": f"Visual features confirm structural anomaly corresponding to {state.get('preliminary_defect', 'unknown')}."}
+    # Heuristic fallback if VLM is offline
+    return {"visual_evidence": f"Visual inspection of {feat_type} crop for {comp} confirms anomaly flagged by AOI."}
 
 
 def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
     """
-    GPT-4o Grounding Self-Check: Reconciles baseline inference, visual evidence,
-    and physical measurements (ICT and 3D Laser) to detect contradictions.
+    GPT-4o Grounding Self-Check:
+    Strictly verifies cross-modal consistency between Visual Evidence,
+    Physical Telemetry, and Preliminary Classifier labels.
     """
     openai_key = os.getenv("OPENAI_API_KEY")
     if not openai_key:
-        # Fallback heuristic if API key is not supplied
         return _heuristic_self_check(state)
 
     llm_cfg = CONFIG.get("models", {}).get("grounding_llm", {})
@@ -216,21 +246,25 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
     )
 
     system_prompt = (
-        "You are an industrial PCB QA diagnostic agent performing physics-grounded verification. "
-        "Your task is to reconcile preliminary classifier output, VLM visual descriptions, and physical telemetry "
-        "(3D laser height profile, coplanarity, ICT circuit readings) according to IPC-A-610 Class 2 standards.\n\n"
-        "PHYSICAL LAWS & CONTRADICTION RULES:\n"
-        "1. Missing Part: If ICT resistance is open circuit (>10 MΩ) and laser height <= 5 µm, it IS 'missing part', "
-        "regardless of discoloration that might visually look like a component.\n"
-        "2. Shifted: Component side overhang must be > 50% for Class 2 violation.\n"
-        "3. Tombstone: High laser height elevation + open ICT electrical circuit.\n\n"
+        "You are an industrial PCB QA Master Inspector performing physics-grounded cross-verification.\n\n"
+        "CROSS-MODAL CONTRADICTION RULES:\n"
+        "1. Visual Evidence vs Preliminary Label:\n"
+        "   - If Vision states the part is 'absent', 'missing', or 'no body', but Preliminary Defect is 'wrong part', "
+        "     this is a CONTRADICTION (contradiction_detected = true).\n"
+        "2. Visual Evidence vs Physical Telemetry:\n"
+        "   - If Vision states 'component is absent', but Laser Height > 10 µm or ICT == PASS, "
+        "     this is a CONTRADICTION (contradiction_detected = true).\n"
+        "3. ROI Crop Awareness:\n"
+        "   - If feature_type is 'Text', a lack of pins visible in the crop does NOT mean the component is missing; "
+        "     it only shows component top text.\n"
+        "4. If a contradiction is detected, self_check_passed MUST be false, and diagnosis must explicitly explain the discrepancy.\n\n"
         "Return ONLY a valid JSON object matching this schema:\n"
         "{\n"
         '  "predicted_defect": "missing part | shifted | foreign material | tombstone | solder insufficient | wrong part | no defect",\n'
         '  "confidence": float (0.0 to 1.0),\n'
         '  "contradiction_detected": bool,\n'
         '  "self_check_passed": bool,\n'
-        '  "diagnosis": "Detailed 2-sentence rationale.",\n'
+        '  "diagnosis": "Detailed explanation of whether evidence aligns or contradicts.",\n'
         '  "ipc_citations": ["IPC-A-610 clause"]\n'
         "}"
     )
@@ -238,6 +272,7 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
     context = {
         "component_ref": state.get("component_ref"),
         "board_id": state.get("board_id"),
+        "feature_type": state.get("feature_type"),
         "preliminary_defect": state.get("preliminary_defect"),
         "baseline_confidence": state.get("baseline_confidence"),
         "visual_evidence": state.get("visual_evidence"),
@@ -253,60 +288,87 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
         raw_text = response.content.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
         data = json.loads(raw_text)
 
         return {
-            "predicted_defect": data.get("predicted_defect", state.get("preliminary_defect")),
-            "final_confidence": float(data.get("confidence", 0.95)),
+            "predicted_defect": normalize_label(data.get("predicted_defect", state.get("preliminary_defect"))),
+            "final_confidence": float(data.get("confidence", 0.85)),
             "contradiction_detected": bool(data.get("contradiction_detected", False)),
             "self_check_passed": bool(data.get("self_check_passed", True)),
-            "diagnosis": data.get("diagnosis", "Grounding check completed successfully."),
+            "diagnosis": data.get("diagnosis", "Grounding verification completed."),
             "ipc_citations": data.get("ipc_citations", ["IPC-A-610 Class 2"])
         }
     except Exception as e:
-        logger.error(f"Grounding self-check LLM call failed: {e}")
+        logger.error(f"Grounding self-check LLM call failed: {e}. Executing heuristic self-check.")
         return _heuristic_self_check(state)
 
 
 def _heuristic_self_check(state: ReviewState) -> Dict[str, Any]:
+    """Fallback deterministic logic when OpenAI is unreachable."""
     tel = state.get("telemetry_data", {})
-    laser_h = tel.get("laser_profile_height_um", 45.0)
+    laser_h = tel.get("laser_profile_height_um", 0.0)
     overhang = tel.get("side_overhang_percent", 0.0)
     ict_status = tel.get("ict_status", "PASS")
     
     prelim = normalize_label(state.get("preliminary_defect", ""))
+    vision = state.get("visual_evidence", "").lower()
 
-    # 1. Missing Part: Open circuit + near zero height
-    if ict_status == "FAIL" or laser_h < 5.0:
+    # Rule 1: Vision detects absent component
+    vision_indicates_missing = any(w in vision for w in ["absent", "no visible body", "missing component", "bare pad"])
+
+    if vision_indicates_missing:
+        # Contradiction with prelim label if prelim is 'wrong part' or 'solder insufficient'
+        has_conflict = prelim != "missing part"
+        # Contradiction with telemetry if laser height indicates a component is present
+        telemetry_conflict = laser_h > 10.0 or ict_status == "PASS"
+
+        if has_conflict or telemetry_conflict:
+            return {
+                "predicted_defect": "missing part",
+                "final_confidence": 0.50,
+                "contradiction_detected": True,
+                "self_check_passed": False,
+                "diagnosis": (
+                    f"Contradiction detected: Visual evidence indicates component is absent, "
+                    f"contradicting preliminary defect '{prelim}' and telemetry (height: {laser_h}µm, ICT: {ict_status}). "
+                    f"Human review required."
+                ),
+                "ipc_citations": ["IPC-A-610 Section 8.3.1"]
+            }
+
+    # Rule 2: Physical open circuit / near zero height
+    if ict_status == "FAIL" or (laser_h > 0.0 and laser_h < 5.0):
         is_missing = prelim == "missing part"
         return {
             "predicted_defect": "missing part",
-            "final_confidence": 0.98,
+            "final_confidence": 0.95,
             "contradiction_detected": not is_missing,
-            "self_check_passed": True,
-            "diagnosis": f"Physical open circuit (ICT FAIL) and laser height ({laser_h:.2f} µm) confirm missing part.",
-            "ipc_citations": ["IPC-A-610 Class 2 Section 8.3"]
+            "self_check_passed": is_missing,
+            "diagnosis": f"Laser height ({laser_h:.1f} µm) and ICT status ({ict_status}) confirm missing component.",
+            "ipc_citations": ["IPC-A-610 Section 8.3.1"]
         }
 
-    # 2. Shifted: > 50% overhang
+    # Rule 3: Shifted (> 50% overhang)
     if overhang > 50.0:
         is_shift = "shift" in prelim
         return {
             "predicted_defect": "shifted",
-            "final_confidence": 0.95,
+            "final_confidence": 0.92,
             "contradiction_detected": not is_shift,
-            "self_check_passed": True,
-            "diagnosis": f"Side overhang ({overhang:.1f}%) violates IPC-A-610 Class 2 maximum 50% threshold.",
-            "ipc_citations": ["IPC-A-610 Class 2 Section 8.3.2"]
+            "self_check_passed": is_shift,
+            "diagnosis": f"Side overhang ({overhang:.1f}%) exceeds IPC-A-610 Class 2 limit of 50%.",
+            "ipc_citations": ["IPC-A-610 Section 8.3.2"]
         }
 
-    # 3. Nominal fallback
+    # Rule 4: Nominal alignment
     return {
         "predicted_defect": prelim,
         "final_confidence": state.get("baseline_confidence", 0.85),
         "contradiction_detected": False,
         "self_check_passed": True,
-        "diagnosis": "Telemetry aligns within nominal tolerances; no contradiction detected.",
+        "diagnosis": f"Telemetry and visual observations corroborate baseline classification '{prelim}'.",
         "ipc_citations": ["IPC-A-610 Class 2"]
     }
 
@@ -334,7 +396,7 @@ review_pipeline = build_review_graph()
 
 
 def execute_explainability_review(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Synchronous interface called by the A2A endpoint."""
+    """Synchronous interface called by the Agent 2 REST endpoint."""
     init_state: ReviewState = {
         "board_id": input_data.get("board_id", "UNKNOWN"),
         "component_ref": input_data.get("component_ref", "UNKNOWN"),

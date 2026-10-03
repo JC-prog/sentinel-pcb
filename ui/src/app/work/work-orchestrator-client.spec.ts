@@ -157,6 +157,69 @@ describe('WorkOrchestratorClient', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/monitoring/retraining-tickets');
   });
 
+  it('fetches the review cases of a run', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([{ sample_id: 'S1', review: null, decision: null }]),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new WorkOrchestratorClient(authService).getReviewCases('run 1');
+
+    expect(result).toEqual([{ sample_id: 'S1', review: null, decision: null }]);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/reviews/cases?run_id=run%201');
+  });
+
+  it('turns a review image into an object URL, or null when the server has none', async () => {
+    const blob = new Blob(['x']);
+    const createObjectURL = vi.fn().mockReturnValue('blob:img');
+    Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true, writable: true });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, blob: () => Promise.resolve(blob) } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new WorkOrchestratorClient(authService);
+
+    expect(await client.getReviewImageUrl('run-1', 'S1', 'golden')).toBe('blob:img');
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(fetchMock.mock.calls[0][0]).toContain('reviews/image?run_id=run-1&sample_id=S1&kind=golden');
+    expect(await client.getReviewImageUrl('run-1', 'S1', 'defect')).toBeNull();
+  });
+
+  it('puts the operator decision to the decision route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sample_id: 'S1', final_result: 'missing part' }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new WorkOrchestratorClient(authService).saveReviewDecision({
+      run_id: 'run-1',
+      sample_id: 'S1',
+      selected_source: 'AI',
+      final_result: 'missing part',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/orchestrator/reviews/decision');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toMatchObject({ selected_source: 'AI', final_result: 'missing part' });
+  });
+
+  it('surfaces the error detail when the review cases cannot be loaded', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ detail: 'explainability review agent is disabled' }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new WorkOrchestratorClient(authService).getReviewCases('run-1')).rejects.toThrow(
+      'explainability review agent is disabled',
+    );
+  });
+
   it('throws the error detail when either monitoring route fails', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

@@ -115,10 +115,10 @@ class Settings(BaseSettings):
     # Explainability Review Agent (app/workflow/src/agent2_explainability/, Work-tab-only) -
     # dropped in as-is from a teammate's standalone pcb_agentic_inspector prototype's "Agent 2"
     # (its own config/agent2_config.yaml and OPENAI_API_KEY env var read are kept unchanged, not
-    # routed through settings). Never a chat tool. Currently a leftover kill switch: the
-    # orchestrator agent (app/workflow/src/agent1_orchestrator/) is constructed with
-    # enable_a2a=False (app/workflow/services/streaming.py), so nothing reads this setting yet -
-    # wiring Agent 2 back in should consult it, the same way orchestrator.py used to. Not to be
+    # routed through settings). Never a chat tool. Gates the Work tab's automatic Agent 2 review of a
+    # finished run's REVIEW_REQUIRED samples and its Review Console routes
+    # (/api/orchestrator/reviews/*, app/workflow/services/reviews.py) - alongside
+    # orchestrator_agent_enabled, since they act on a finished orchestrator run. Not to be
     # confused with explainability_agent_enabled above, which gates the renamed chat agent -
     # similar names, different agents.
     explainability_review_agent_enabled: bool = True
