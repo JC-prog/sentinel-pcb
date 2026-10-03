@@ -39,6 +39,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not just Chat - previously logging out was only reachable from Chat. Its "New chat" button and
   conversation history stay chat-only (`Sidebar.showChatNav`), since Work/Models have their own
   controls and no conversation history to show.
+- Work tab: a full run now indexes its prepared samples into this app's own Docker Qdrant
+  (`QDRANT_URL`) instead of a local, throwaway embedded store nothing else could read - same
+  container chat's long-term memory uses, its own `ipc_defect_precedents` collection. See
+  `app/workflow/INTEGRATION_NOTES.md`'s "vector-db indexing" section.
 
 ### Added
 
