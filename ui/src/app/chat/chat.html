@@ -44,23 +44,32 @@
       <div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
         @for (message of conversation()!.messages; track message.id) {
           <div class="flex flex-col gap-2" [class.items-end]="message.role === 'user'">
-            <div
-              class="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
-              [class]="
-                message.role === 'user'
-                  ? 'bg-slate-200 dark:bg-slate-700'
-                  : 'bg-slate-100 dark:bg-slate-800'
-              "
-            >
-              @if (message.imageUrls?.length) {
-                <div class="mb-2 flex flex-wrap gap-2">
-                  @for (url of message.imageUrls; track url) {
-                    <img [src]="url" alt="Attached image" class="h-32 w-32 rounded-lg object-cover" />
-                  }
-                </div>
-              }
-              {{ message.content }}
-            </div>
+            @if (message.toolResults?.length) {
+              <div class="flex w-full max-w-[80%] flex-col gap-2">
+                @for (toolResult of message.toolResults; track $index) {
+                  <app-tool-result-card [toolResult]="toolResult" />
+                }
+              </div>
+            }
+            @if (message.content || message.imageUrls?.length) {
+              <div
+                class="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
+                [class]="
+                  message.role === 'user'
+                    ? 'bg-slate-200 dark:bg-slate-700'
+                    : 'bg-slate-100 dark:bg-slate-800'
+                "
+              >
+                @if (message.imageUrls?.length) {
+                  <div class="mb-2 flex flex-wrap gap-2">
+                    @for (url of message.imageUrls; track url) {
+                      <img [src]="url" alt="Attached image" class="h-32 w-32 rounded-lg object-cover" />
+                    }
+                  </div>
+                }
+                {{ message.content }}
+              </div>
+            }
           </div>
         }
         @if (isLoading()) {

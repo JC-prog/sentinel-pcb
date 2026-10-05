@@ -1,7 +1,7 @@
 """Pure interface for chat input guardrails - no framework/IO imports, same reasoning as
 app/chat/core/chat.py. The concrete implementation (app/chat/guardrails/nemo_checker.py) is backed
 by NeMo Guardrails; app/chat/guardrails/service.py's get_guardrails_checker() factory is the only
-place that constructs one, mirroring app/chat/services/service.py's get_chat_service().
+place that constructs one, mirroring app/shared/config/llm.py's build_chat_model().
 """
 
 from typing import Protocol

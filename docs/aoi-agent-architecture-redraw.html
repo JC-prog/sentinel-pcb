@@ -1,0 +1,284 @@
+<title>AOI Agent Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F1F4EE; --surface:#E5EAE1; --surface-2:#D8E0D2;
+  --ink:#15221A; --muted:#5B6B60; --hair:#C6D0C0;
+  --live:#B06A28; --live-strong:#8A521F;
+  --a2a:#4C7A63; --a2a-strong:#396050;
+  --font-display:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  --font-body:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1712; --surface:#182620; --surface-2:#20312A;
+    --ink:#E7ECE4; --muted:#93A69A; --hair:#2B3B31;
+    --live:#DFA25A; --live-strong:#F0B87A;
+    --a2a:#7FBF9E; --a2a-strong:#9ED8B7;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1712; --surface:#182620; --surface-2:#20312A;
+  --ink:#E7ECE4; --muted:#93A69A; --hair:#2B3B31;
+  --live:#DFA25A; --live-strong:#F0B87A;
+  --a2a:#7FBF9E; --a2a-strong:#9ED8B7;
+}
+*{box-sizing:border-box;}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);margin:0;padding:48px 20px 80px;}
+.page{max-width:1180px;margin:0 auto;}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--live);}
+h1{font-family:var(--font-display);font-weight:700;font-size:clamp(26px,4vw,36px);line-height:1.15;margin:10px 0 14px;text-wrap:balance;}
+.standfirst{font-size:16px;line-height:1.6;color:var(--muted);max-width:66ch;margin:0 0 26px;}
+.standfirst strong{color:var(--ink);font-weight:600;}
+.legend{display:flex;flex-wrap:wrap;gap:16px 22px;padding:14px 18px;border:1px solid var(--hair);border-radius:6px;background:var(--surface);margin-bottom:28px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
+.legend-swatch{width:24px;height:0;border-top-width:3px;flex:none;}
+.sw-aoi{border-top:3px solid var(--live);}
+.sw-dispatch{border-top:2px solid var(--live);}
+.sw-proposed{border-top:3px dashed var(--live);}
+.sw-a2a{border-top:3px solid var(--a2a);}
+.sw-gateway{border-top:2px dotted var(--live);}
+.sw-utility{border-top:2px dotted var(--muted);}
+.legend-gate{display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--live-strong);border:1px solid var(--live);border-radius:9px;padding:2px 7px;background:var(--surface-2);}
+.diagram-scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:8px;background:var(--surface);padding:6px;}
+figure{margin:0;}
+svg.schematic{display:block;width:1300px;max-width:none;height:auto;}
+figcaption{font-size:13px;color:var(--muted);margin:12px 2px 0;line-height:1.5;max-width:84ch;}
+footer{margin-top:38px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--hair);padding-top:16px;}
+
+.grid-dot{fill:var(--hair);}
+.board-outline{fill:none;stroke:var(--hair);stroke-width:1.5;}
+.layer-boundary{fill:none;stroke:var(--muted);stroke-width:1.4;stroke-dasharray:6 5;}
+.box-live{fill:var(--surface-2);stroke:var(--live);stroke-width:1.6;}
+.box-sub{fill:var(--surface-2);stroke:var(--live);stroke-width:1.3;}
+.box-layer{fill:var(--surface-2);stroke:var(--muted);stroke-width:1.4;}
+.title-mono{font-family:var(--font-mono);font-weight:600;fill:var(--ink);}
+.title-sans{font-family:var(--font-display);font-weight:600;fill:var(--ink);}
+.sub{font-family:var(--font-body);fill:var(--muted);}
+.filecap{font-family:var(--font-mono);fill:var(--muted);}
+.pill{fill:var(--surface);stroke:var(--live);stroke-width:1;}
+.pilltext{font-family:var(--font-mono);font-weight:600;fill:var(--ink);}
+.wire-aoi{fill:none;stroke:var(--live);stroke-width:2.4;}
+.wire-dispatch{fill:none;stroke:var(--live);stroke-width:1.7;}
+.wire-proposed{fill:none;stroke:var(--live);stroke-width:1.7;stroke-dasharray:6 4;}
+.wire-a2a{fill:none;stroke:var(--a2a);stroke-width:2;}
+.wire-gateway{fill:none;stroke:var(--live);stroke-width:1;stroke-dasharray:1.5 3;opacity:.55;}
+.wire-utility{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:1.5 3;opacity:.7;}
+.gate{fill:var(--surface-2);stroke:var(--live);stroke-width:1.1;}
+.gatetext{font-family:var(--font-mono);font-size:8.2px;font-weight:600;fill:var(--live-strong);}
+.a2atext{font-family:var(--font-mono);font-size:8.5px;font-weight:600;fill:var(--a2a-strong);}
+.via{fill:var(--live);} .via-hole{fill:var(--surface);}
+.layer-label{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.07em;fill:var(--muted);}
+
+@media (max-width:640px){ body{padding:32px 16px 60px;} .legend{gap:12px 16px;} }
+</style>
+
+<div class="page">
+  <p class="eyebrow">Sentinel-PCB &middot; System Schematic &middot; Redraw</p>
+  <h1>AOI Agent Architecture</h1>
+  <p class="standfirst">
+    Same layers as your draft, with the shared "LLM" dispatcher replaced by a
+    <strong>Tool-Calling Loop</strong> (chat-only) and a <strong>Model Gateway</strong> every agent calls into on its
+    own, the four AOI subagents added, and three separate arrow types instead of one.
+  </p>
+
+  <div class="legend">
+    <span class="legend-item"><span class="legend-swatch sw-aoi"></span>AOI event (structural)</span>
+    <span class="legend-item"><span class="legend-swatch sw-dispatch"></span>Chat dispatch (model picks)</span>
+    <span class="legend-item"><span class="legend-swatch sw-proposed"></span>Proposed dispatch</span>
+    <span class="legend-item"><span class="legend-swatch sw-a2a"></span>Agent&rarr;agent hand-off (in-process)</span>
+    <span class="legend-item"><span class="legend-swatch sw-gateway"></span>Model Gateway call</span>
+    <span class="legend-item"><span class="legend-swatch sw-utility"></span>Logs / secrets / storage</span>
+    <span class="legend-item"><span class="legend-gate">role: QA</span>eligibility gate</span>
+  </div>
+
+  <div class="diagram-scroll">
+    <figure>
+      <svg class="schematic" viewBox="0 0 1300 1180" role="img"
+           aria-label="Diagram: two entry points, an AOI inspection event going straight to the Orchestrator, and chat (prompts and images) going through User Interface, Authentication, API, Guardrails, and a Tool-Calling Loop. The Tool-Calling Loop dispatches to Explainability and Review and to Model Monitoring and Drift directly, and to the Orchestrator only as a proposed integration. The Orchestrator hands off to Explainability and Review and to a chain of Dataset Preparation, Dataset Quality, and Multi-Modal Inference subagents. Model Monitoring and Drift hands off to a Model Lifecycle subagent. All three reasoning agents and the Tool-Calling Loop call a shared Model Gateway for LLM completions, drawn as thin dotted lines separate from the solid dispatch and hand-off arrows. Observability, Persistent, and Memory layers sit below, fed by dotted utility connections.">
+        <defs>
+          <pattern id="gridR" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" class="grid-dot"/></pattern>
+          <marker id="arrLive" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" style="fill:var(--live)"/></marker>
+          <marker id="arrA2a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" style="fill:var(--a2a)"/></marker>
+          <marker id="arrMuted" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><polygon points="0,0 7,3.5 0,7" style="fill:var(--muted)"/></marker>
+          <g id="viaR"><circle r="3.8" class="via"/><circle r="1.5" class="via-hole"/></g>
+        </defs>
+        <rect x="0" y="0" width="1300" height="1180" fill="url(#gridR)"/>
+        <rect x="10" y="10" width="1280" height="1160" rx="10" class="board-outline"/>
+
+        <!-- ===== Ingestion ===== -->
+        <rect x="30" y="30" width="250" height="60" rx="3" class="box-live"/>
+        <text x="46" y="56" font-size="12.5" class="title-sans">AOI Inspection Event</text>
+        <text x="46" y="76" font-size="9.5" class="sub">machine trigger &middot; not a chat user</text>
+
+        <rect x="560" y="18" width="130" height="42" rx="3" class="box-live"/>
+        <text x="576" y="43" font-size="11.5" class="title-sans">Prompts</text>
+        <rect x="560" y="68" width="130" height="42" rx="3" class="box-live"/>
+        <text x="576" y="93" font-size="11.5" class="title-sans">Image</text>
+        <path d="M690,39 L716,39 L716,89 L690,89" class="wire-dispatch" style="fill:none"/>
+        <path d="M716,64 L740,64" class="wire-dispatch" marker-end="url(#arrLive)"/>
+
+        <rect x="740" y="28" width="180" height="62" rx="3" class="box-live"/>
+        <text x="756" y="54" font-size="12.5" class="title-sans">User Interface</text>
+        <text x="756" y="72" font-size="9.5" class="sub">chat UI &middot; image attach</text>
+
+        <path d="M920,59 L970,59" class="wire-dispatch" marker-end="url(#arrLive)"/>
+        <rect x="970" y="28" width="180" height="62" rx="3" class="box-live"/>
+        <text x="986" y="54" font-size="12.5" class="title-sans">Authentication</text>
+        <text x="986" y="72" font-size="9.5" class="sub">JWT &middot; QA/Operator/Admin</text>
+
+        <!-- Auth -> API -->
+        <path d="M1060,90 L1060,120 L920,120 L920,150" class="wire-dispatch"/>
+        <use href="#viaR" x="920" y="150"/>
+        <rect x="830" y="150" width="180" height="60" rx="3" class="box-live"/>
+        <text x="846" y="176" font-size="12.5" class="title-sans">API</text>
+        <text x="846" y="193" font-size="9.5" class="sub">POST /api/chat/stream</text>
+
+        <rect x="1050" y="150" width="180" height="60" rx="3" class="box-live"/>
+        <text x="1066" y="176" font-size="12.5" class="title-sans">Guardrails</text>
+        <text x="1066" y="193" font-size="9.5" class="sub">input-side filtering</text>
+        <path d="M1050,180 L1010,180" class="wire-dispatch" marker-end="url(#arrLive)"/>
+
+        <path d="M920,210 L920,250" class="wire-dispatch"/>
+        <use href="#viaR" x="920" y="250"/>
+
+        <!-- ===== Tool-Calling Loop ===== -->
+        <rect x="730" y="250" width="340" height="70" rx="3" class="box-live"/>
+        <text x="750" y="277" font-size="13.5" class="title-sans">Tool-Calling Loop</text>
+        <text x="750" y="294" font-size="10" class="sub">model picks &le;1 tool per round &middot; bounded rounds</text>
+        <text x="750" y="309" font-size="8.5" class="filecap">app/main.py &middot; CHAT_TOOL_MAX_ROUNDS</text>
+
+        <!-- AOI -> Orchestrator (structural) -->
+        <path d="M155,90 L155,340 L235,340 L235,380" class="wire-aoi"/>
+        <use href="#viaR" x="235" y="380"/>
+
+        <!-- Tool loop -> Orchestrator (proposed), Explainability (dispatch), Monitoring (dispatch) -->
+        <path d="M900,320 L900,345 L892,353 L330,353 L322,361 L322,380" class="wire-proposed"/>
+        <path d="M900,320 L900,345 L615,345 L615,380" class="wire-dispatch" marker-end="url(#arrLive)"/>
+        <path d="M900,320 L900,345 L908,353 L985,353 L993,361 L993,380" class="wire-dispatch" marker-end="url(#arrLive)"/>
+        <text x="340" y="349" font-size="9" class="sub">proposed</text>
+        <rect x="910" y="345" width="150" height="20" rx="10" class="gate"/>
+        <text x="985" y="358.5" text-anchor="middle" class="gatetext">role: QA &middot; Admin</text>
+
+        <!-- ===== Agent row ===== -->
+        <rect x="90" y="380" width="290" height="90" rx="3" class="box-live"/>
+        <text x="108" y="406" font-size="13.5" class="title-sans">Orchestrator</text>
+        <text x="108" y="423" font-size="9.5" class="sub">owns workflow state &middot; routes hand-offs</text>
+        <text x="108" y="440" font-size="8.5" class="sub">reasons only on ambiguous/conflicting cases</text>
+
+        <rect x="470" y="380" width="290" height="90" rx="3" class="box-live"/>
+        <text x="488" y="406" font-size="13.5" class="title-sans">Explainability &amp; Review</text>
+        <text x="488" y="423" font-size="9.5" class="sub">grounds a diagnosis in evidence</text>
+        <text x="488" y="440" font-size="8.5" class="sub">self-checks before returning</text>
+
+        <rect x="850" y="380" width="290" height="90" rx="3" class="box-live"/>
+        <text x="868" y="406" font-size="13.5" class="title-sans">Model Monitoring &amp; Drift</text>
+        <text x="868" y="423" font-size="9.5" class="sub">scheduled runs + on-demand check</text>
+        <text x="868" y="440" font-size="8.5" class="sub">QA: &ldquo;did the model drift?&rdquo;</text>
+
+        <!-- A2A: Orchestrator -> Explainability -->
+        <path d="M380,415 L470,415" class="wire-a2a" marker-end="url(#arrA2a)"/>
+        <text x="382" y="410" class="a2atext">hand-off &middot; low-confidence/conflict</text>
+
+        <!-- ===== tool pills ===== -->
+        <!-- Orchestrator's 4 -->
+        <rect x="100" y="500" width="136" height="24" rx="12" class="pill"/><text x="168" y="516" text-anchor="middle" font-size="8" class="pilltext">Workflow State</text>
+        <rect x="244" y="500" width="136" height="24" rx="12" class="pill"/><text x="312" y="516" text-anchor="middle" font-size="8" class="pilltext">Policy Validation</text>
+        <rect x="100" y="530" width="136" height="24" rx="12" class="pill"/><text x="168" y="546" text-anchor="middle" font-size="8" class="pilltext">Confidence Decision</text>
+        <rect x="244" y="530" width="136" height="24" rx="12" class="pill"/><text x="312" y="546" text-anchor="middle" font-size="8" class="pilltext">Audit Logging</text>
+        <!-- Explainability's 4 -->
+        <rect x="480" y="500" width="136" height="24" rx="12" class="pill"/><text x="548" y="516" text-anchor="middle" font-size="8" class="pilltext">Case Context</text>
+        <rect x="624" y="500" width="136" height="24" rx="12" class="pill"/><text x="692" y="516" text-anchor="middle" font-size="8" class="pilltext">Visual Evidence</text>
+        <rect x="480" y="530" width="136" height="24" rx="12" class="pill"/><text x="548" y="546" text-anchor="middle" font-size="8" class="pilltext">Measurement Evidence</text>
+        <rect x="624" y="530" width="136" height="24" rx="12" class="pill"/><text x="692" y="546" text-anchor="middle" font-size="8" class="pilltext">Grounding/Self-Check</text>
+        <!-- Monitoring's 4 -->
+        <rect x="860" y="500" width="136" height="24" rx="12" class="pill"/><text x="928" y="516" text-anchor="middle" font-size="8" class="pilltext">Performance Metrics</text>
+        <rect x="1004" y="500" width="136" height="24" rx="12" class="pill"/><text x="1072" y="516" text-anchor="middle" font-size="7.6" class="pilltext">Data/Model Drift Detect.</text>
+        <rect x="860" y="530" width="136" height="24" rx="12" class="pill"/><text x="928" y="546" text-anchor="middle" font-size="8" class="pilltext">Threshold &amp; Trend</text>
+        <rect x="1004" y="530" width="136" height="24" rx="12" class="pill" id="retrainPill"/><text x="1072" y="546" text-anchor="middle" font-size="8" class="pilltext">Retraining Proposal</text>
+
+        <path d="M235,470 L235,500" class="wire-dispatch"/>
+        <path d="M615,470 L615,500" class="wire-dispatch"/>
+        <path d="M995,470 L995,500" class="wire-dispatch"/>
+
+        <!-- ===== AOI subagent chain under Orchestrator ===== -->
+        <path d="M168,554 L168,600" class="wire-a2a"/>
+        <rect x="60" y="600" width="150" height="68" rx="3" class="box-sub"/>
+        <text x="72" y="624" font-size="10.5" class="title-sans">Dataset Preparation</text>
+        <text x="72" y="640" font-size="8.5" class="sub">assembles sample package</text>
+
+        <rect x="225" y="600" width="150" height="68" rx="3" class="box-sub"/>
+        <text x="237" y="624" font-size="10.5" class="title-sans">Dataset Quality</text>
+        <text x="237" y="640" font-size="8.5" class="sub">completeness / alignment</text>
+
+        <rect x="390" y="600" width="150" height="68" rx="3" class="box-sub"/>
+        <text x="402" y="624" font-size="10.5" class="title-sans">Multi-Modal Inference</text>
+        <text x="402" y="640" font-size="8.5" class="sub">prediction + confidence</text>
+
+        <path d="M210,634 L225,634" class="wire-a2a" marker-end="url(#arrA2a)"/>
+        <path d="M375,634 L390,634" class="wire-a2a" marker-end="url(#arrA2a)"/>
+        <path d="M465,600 L465,585 L145,585 L145,554" class="wire-a2a" marker-end="url(#arrA2a)"/>
+        <text x="480" y="596" class="a2atext">RESULT &rarr; Orchestrator</text>
+        <text x="72" y="656" font-size="8" class="sub" style="fill:var(--a2a-strong)">deterministic &mdash; never reason</text>
+
+        <!-- ===== Model Lifecycle under Monitoring ===== -->
+        <path d="M1072,554 L1072,600" class="wire-a2a" marker-end="url(#arrA2a)"/>
+        <text x="1082" y="580" class="a2atext">PROPOSAL</text>
+        <text x="1082" y="590" class="a2atext">&rarr; policy check</text>
+        <rect x="980" y="600" width="190" height="68" rx="3" class="box-sub"/>
+        <text x="992" y="624" font-size="10.5" class="title-sans">Model Lifecycle</text>
+        <text x="992" y="640" font-size="8.5" class="sub">retrain / eval gate / rollback</text>
+        <text x="992" y="654" font-size="8" class="sub" style="fill:var(--a2a-strong)">deterministic &mdash; never reasons</text>
+
+        <!-- ===== Model Gateway ===== -->
+        <rect x="470" y="750" width="340" height="80" rx="3" class="box-live"/>
+        <text x="488" y="778" font-size="13.5" class="title-sans">Model Gateway</text>
+        <text x="488" y="795" font-size="9.5" class="sub">LiteLLM proxy (&rarr; OpenAI) + Ollama direct</text>
+        <text x="488" y="810" font-size="8.5" class="filecap">app/chat/providers/, infra/litellm/</text>
+
+        <path d="M900,320 L900,390 L640,770" class="wire-gateway"/>
+        <path d="M235,470 L400,750" class="wire-gateway"/>
+        <path d="M615,470 L615,750" class="wire-gateway"/>
+        <path d="M995,470 L900,750" class="wire-gateway"/>
+
+        <!-- ===== Observability / Persistent / Memory ===== -->
+        <rect x="60" y="900" width="360" height="120" rx="4" class="box-layer"/>
+        <text x="76" y="922" class="layer-label">OBSERVABILITY LAYER</text>
+        <text x="76" y="944" font-size="10" class="sub">Prompts &middot; Agent Calls &middot; Tool Calls</text>
+        <text x="76" y="962" font-size="10" class="sub">Data Quality &middot; Data Drift &middot; Concept Drift</text>
+        <text x="76" y="980" font-size="10" class="sub">Logs &middot; Events &middot; Traces (AuditEvent, ReasoningTrace)</text>
+
+        <rect x="470" y="900" width="360" height="120" rx="4" class="box-layer"/>
+        <text x="486" y="922" class="layer-label">PERSISTENT LAYER</text>
+        <text x="486" y="944" font-size="10" class="sub">Relational DB (Postgres)</text>
+        <text x="486" y="962" font-size="10" class="sub">Vector DB (Qdrant)</text>
+        <text x="486" y="980" font-size="10" class="sub">Blob Storage</text>
+
+        <rect x="880" y="900" width="360" height="120" rx="4" class="box-layer"/>
+        <text x="896" y="922" class="layer-label">MEMORY LAYER</text>
+        <text x="896" y="944" font-size="10" class="sub">Short-Term Memory &rarr; Relational DB</text>
+        <text x="896" y="962" font-size="10" class="sub">Long-Term Memory &rarr; Vector DB</text>
+        <text x="896" y="980" font-size="9" class="sub" style="fill:var(--muted)">backed by Persistent Layer, not upstream of it</text>
+
+        <!-- utility connectors -->
+        <path d="M920,210 L240,900" class="wire-utility" marker-end="url(#arrMuted)"/>
+        <path d="M312,554 L240,900" class="wire-utility" marker-end="url(#arrMuted)"/>
+        <path d="M1072,554 L240,940" class="wire-utility" marker-end="url(#arrMuted)"/>
+        <path d="M1060,90 L650,900" class="wire-utility" marker-end="url(#arrMuted)"/>
+        <path d="M920,210 L1050,900" class="wire-utility" marker-end="url(#arrMuted)"/>
+        <path d="M1040,940 L830,950" class="wire-utility" marker-end="url(#arrMuted)"/>
+      </svg>
+      <figcaption>
+        Copper = provisioned/decided today; teal = an in-process agent-to-agent hand-off (typed call, no LLM
+        involved in the routing itself); dotted = a lower-emphasis supporting call (a Model Gateway completion, or
+        logs/secrets/storage plumbing). The Orchestrator's chat-tool path is dashed because it's still proposed, not
+        registered yet.
+      </figcaption>
+    </figure>
+  </div>
+
+  <footer>
+    Sentinel-PCB &middot; redraw of the AOI Agent Architecture sketch &middot; 2026-09-12.
+  </footer>
+</div>

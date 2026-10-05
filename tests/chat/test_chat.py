@@ -1,25 +1,13 @@
-import json
-from collections.abc import Callable
+"""POST /api/chat/stream: the SSE frames, history, persistence and who may talk to which
+conversation. The chat model is a scripted stand-in (tests/chat/_llm.py)."""
 
-import httpx
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.shared.config.settings import settings
-
-# Captured before any test patches httpx.AsyncClient, so the mock factory below can still
-# construct a real client (just wired to a MockTransport instead of the network).
-_RealAsyncClient = httpx.AsyncClient
-
-
-def _mock_async_client(
-    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]
-) -> None:
-    def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return _RealAsyncClient(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(httpx, "AsyncClient", factory)
+from tests.chat._llm import ScriptedModel, ai, conversation, install, says
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
@@ -35,6 +23,21 @@ def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
                 data = line.removeprefix("data:").strip()
         parsed.append((event, json.loads(data)))
     return parsed
+
+
+def _stream(client: TestClient, conversation_id: str, message: str, **extra: object) -> str:
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"conversation_id": conversation_id, "message": message, "image_ids": [], **extra},
+    ) as response:
+        body = "".join(response.iter_text())
+    assert response.status_code == 200, body
+    return body
+
+
+def _reply(body: str) -> str:
+    return "".join(str(data["text"]) for event, data in _parse_sse(body) if event == "delta")
 
 
 def test_chat_stream_requires_login(client: TestClient) -> None:
@@ -68,128 +71,58 @@ def test_chat_stream_returns_503_when_openai_not_configured(
 def test_chat_stream_uses_ollama_by_default(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/chat"
-        body = (
-            json.dumps({"message": {"content": "Hello "}, "done": False})
-            + "\n"
-            + json.dumps({"message": {"content": "from Ollama"}, "done": False})
-            + "\n"
-            + json.dumps({"message": {"content": ""}, "done": True})
-        )
-        return httpx.Response(200, text=body)
+    providers = install(monkeypatch, says("Hello from Ollama"))
 
-    _mock_async_client(monkeypatch, handler)
+    body = _stream(authenticated_client, "c1", "hi")
 
-    with authenticated_client.stream(
-        "POST",
-        "/api/chat/stream",
-        json={"conversation_id": "c1", "message": "hi", "image_ids": []},
-    ) as response:
-        assert response.status_code == 200
-        assert response.headers["content-type"].startswith("text/event-stream")
-        body = "".join(response.iter_text())
-
-    frames = _parse_sse(body)
-    assert frames[-1] == ("done", {})
-    deltas = [str(data["text"]) for event, data in frames if event == "delta"]
-    assert "".join(deltas) == "Hello from Ollama"
+    assert providers == ["ollama"]
+    assert _reply(body) == "Hello from Ollama"
+    assert _parse_sse(body)[-1] == ("done", {})
 
 
 def test_chat_stream_uses_openai_when_selected(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "openai_api_key", "sk-server-key")
+    providers = install(monkeypatch, says("Hi there"))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["authorization"] == "Bearer sk-server-key"
-        sse = (
-            'data: {"choices":[{"delta":{"content":"Hi "}}]}\n\n'
-            'data: {"choices":[{"delta":{"content":"there"}}]}\n\n'
-            "data: [DONE]\n\n"
-        )
-        return httpx.Response(200, text=sse)
+    body = _stream(authenticated_client, "c1", "hi", provider="openai")
 
-    _mock_async_client(monkeypatch, handler)
-
-    with authenticated_client.stream(
-        "POST",
-        "/api/chat/stream",
-        json={
-            "conversation_id": "c1",
-            "message": "hi",
-            "image_ids": [],
-            "provider": "openai",
-        },
-    ) as response:
-        body = "".join(response.iter_text())
-
-    deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
-    assert "".join(deltas) == "Hi there"
+    assert providers == ["openai"]
+    assert _reply(body) == "Hi there"
 
 
-def test_chat_stream_surfaces_upstream_error_without_leaking_the_key(
+def test_chat_stream_reports_a_model_failure_without_leaking_its_details(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The upstream error can echo request details (a key, a prompt) - the client gets a fixed
+    message instead; the real one is logged."""
+
     monkeypatch.setattr(settings, "openai_api_key", "sk-super-secret")
+    install(monkeypatch, ScriptedModel(replies=[RuntimeError("401 invalid key sk-super-secret")]))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, text='{"error": "invalid api key"}')
-
-    _mock_async_client(monkeypatch, handler)
-
-    with authenticated_client.stream(
-        "POST",
-        "/api/chat/stream",
-        json={
-            "conversation_id": "c1",
-            "message": "hi",
-            "image_ids": [],
-            "provider": "openai",
-        },
-    ) as response:
-        body = "".join(response.iter_text())
+    body = _stream(authenticated_client, "c1", "hi", provider="openai")
 
     frames = _parse_sse(body)
     assert frames[0][0] == "error"
     assert "sk-super-secret" not in body
-
-
-def _ollama_reply(text: str) -> httpx.Response:
-    body = json.dumps({"message": {"content": text}, "done": True})
-    return httpx.Response(200, text=body)
-
-
-def _send(client: TestClient, conversation_id: str, message: str) -> str:
-    with client.stream(
-        "POST",
-        "/api/chat/stream",
-        json={"conversation_id": conversation_id, "message": message, "image_ids": []},
-    ) as response:
-        body = "".join(response.iter_text())
-    assert response.status_code == 200, body
-    return "".join(str(data["text"]) for event, data in _parse_sse(body) if event == "delta")
+    assert not any(event == "done" for event, _ in frames)
 
 
 def test_chat_stream_sends_prior_turns_as_history(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    requests: list[dict[str, object]] = []
+    model = says("ack")
+    install(monkeypatch, model)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return _ollama_reply("ack")
+    _stream(authenticated_client, "c1", "first message")
+    _stream(authenticated_client, "c1", "second message")
 
-    _mock_async_client(monkeypatch, handler)
-
-    _send(authenticated_client, "c1", "first message")
-    _send(authenticated_client, "c1", "second message")
-
-    assert requests[0]["messages"] == [{"role": "user", "content": "first message"}]
-    assert requests[1]["messages"] == [
-        {"role": "user", "content": "first message"},
-        {"role": "assistant", "content": "ack"},
-        {"role": "user", "content": "second message"},
+    assert conversation(model.seen[0]) == [("human", "first message")]
+    assert conversation(model.seen[1]) == [
+        ("human", "first message"),
+        ("ai", "ack"),
+        ("human", "second message"),
     ]
 
 
@@ -197,62 +130,74 @@ def test_chat_stream_history_is_windowed(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "chat_history_max_turns", 2)
-    requests: list[dict[str, object]] = []
+    model = says("ack")
+    install(monkeypatch, model)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return _ollama_reply("ack")
-
-    _mock_async_client(monkeypatch, handler)
-
-    _send(authenticated_client, "c1", "one")
-    _send(authenticated_client, "c1", "two")
-    _send(authenticated_client, "c1", "three")
+    for message in ("one", "two", "three"):
+        _stream(authenticated_client, "c1", message)
 
     # By the 3rd call, only the most recent 2 persisted messages (the 2nd user turn + its "ack"
     # reply) should be replayed as history - "one" has aged out of the window.
-    assert requests[2]["messages"] == [
-        {"role": "user", "content": "two"},
-        {"role": "assistant", "content": "ack"},
-        {"role": "user", "content": "three"},
-    ]
+    assert conversation(model.seen[2]) == [("human", "two"), ("ai", "ack"), ("human", "three")]
+
+
+def test_every_prompt_starts_with_the_system_prompt(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = says("ack")
+    install(monkeypatch, model)
+
+    _stream(authenticated_client, "c1", "hi")
+
+    system = model.seen[0][0]
+    assert system.type == "system"
+    assert "SentinelChat" in str(system.content)
 
 
 def test_chat_stream_persists_user_and_assistant_messages(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return _ollama_reply("Hello from Ollama")
-
-    _mock_async_client(monkeypatch, handler)
-    _send(authenticated_client, "c1", "hi there")
+    install(monkeypatch, says("Hello from the model"))
+    _stream(authenticated_client, "c1", "hi there")
 
     detail = authenticated_client.get("/api/conversations/c1")
     assert detail.status_code == 200
     messages = detail.json()["messages"]
     assert [(m["role"], m["content"]) for m in messages] == [
         ("user", "hi there"),
-        ("assistant", "Hello from Ollama"),
+        ("assistant", "Hello from the model"),
     ]
 
 
 def test_chat_stream_error_persists_user_message_but_not_assistant_reply(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, text="boom")
+    install(monkeypatch, ScriptedModel(replies=[RuntimeError("boom")]))
 
-    _mock_async_client(monkeypatch, handler)
-
-    with authenticated_client.stream(
-        "POST", "/api/chat/stream", json={"conversation_id": "c1", "message": "hi", "image_ids": []}
-    ) as response:
-        body = "".join(response.iter_text())
+    body = _stream(authenticated_client, "c1", "hi")
     assert _parse_sse(body)[0][0] == "error"
 
-    detail = authenticated_client.get("/api/conversations/c1")
-    messages = detail.json()["messages"]
+    messages = authenticated_client.get("/api/conversations/c1").json()["messages"]
     assert [(m["role"], m["content"]) for m in messages] == [("user", "hi")]
+
+
+def test_a_tool_calling_turn_persists_only_the_final_answer(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Intermediate rounds (the tool call and its result) are never part of the history."""
+
+    install(
+        monkeypatch,
+        ScriptedModel(replies=[ai("", ("get_drift_summary", {"model": "pcb_body_defect"})), ai("No drift.")]),
+    )
+
+    _stream(authenticated_client, "c1", "is the model drifting?")
+
+    messages = authenticated_client.get("/api/conversations/c1").json()["messages"]
+    assert [(m["role"], m["content"]) for m in messages] == [
+        ("user", "is the model drifting?"),
+        ("assistant", "No drift."),
+    ]
 
 
 def test_chat_stream_conversation_id_scoped_per_user(
@@ -260,12 +205,9 @@ def test_chat_stream_conversation_id_scoped_per_user(
     other_authenticated_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return _ollama_reply("ack")
+    install(monkeypatch, says("ack"))
 
-    _mock_async_client(monkeypatch, handler)
-
-    _send(authenticated_client, "shared-id", "user A's secret")
+    _stream(authenticated_client, "shared-id", "user A's secret")
 
     response = other_authenticated_client.post(
         "/api/chat/stream",

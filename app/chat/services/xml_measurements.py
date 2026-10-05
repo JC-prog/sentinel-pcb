@@ -1,5 +1,5 @@
 """Parses an AOI machine's inspection XML for one flagged feature's measurements, when a case is
-created with an XML attached (optional - see graph.py's validate_measurements node). Adapted from
+created with an XML attached (optional - see inspection_agent/verifier.py). Adapted from
 orchestrator-agent/adc_agentic_project's services/dataset_preparation.py (_find_failed_feature,
 _extract_measurements) and verification/measurement_validation.py (validate_measurements) - not a
 straight port, since there's no CSV row here supplying a requested-inspection-type list
@@ -13,7 +13,7 @@ carries only the trimmed slice of the AOI schema either caller actually needs: B
 Feature/Inspection identity and status attributes, plus each Measurement's numeric attributes -
 never the full multi-thousand-feature panel document.
 
-Never raises: graph.py treats any parse/match failure as a validation issue, not a pipeline error.
+Never raises: verifier.py treats any parse/match failure as a validation issue, not a pipeline error.
 """
 
 from typing import Any

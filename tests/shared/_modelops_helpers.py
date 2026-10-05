@@ -52,7 +52,6 @@ async def make_case(session: AsyncSession, user: User) -> Case:
         issue_symptom=None,
         image_id="board.png",
         inspection_xml_id=None,
-        golden_image_id=None,
         region="Body",
         region_confidence=0.9,
         defect_model="pcb_body_defect",

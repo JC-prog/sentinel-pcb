@@ -2,7 +2,13 @@ import { Inject, Injectable, Signal, computed, effect, signal } from '@angular/c
 import { environment } from '../../environments/environment';
 import { AuthService } from '../auth.service';
 import { CHAT_RESPONDER, ChatResponder } from './chat-responder';
-import { ChatMessage, Conversation, MessageRole, PersistedConversation } from './models/chat.models';
+import {
+  ChatMessage,
+  Conversation,
+  MessageRole,
+  PersistedConversation,
+  ToolResult,
+} from './models/chat.models';
 
 const STORAGE_KEY_PREFIX = 'sentinel-chat.conversations';
 const MAX_TITLE_LENGTH = 48;
@@ -85,8 +91,7 @@ function fromServerSummary(summary: ServerConversationSummary): Conversation {
 export class ChatService {
   private readonly conversations = signal<Conversation[]>([]);
   private readonly loadingIds = signal<ReadonlySet<string>>(new Set());
-  /** conversationId -> the label of whichever tool call is currently in flight (e.g. "Orchestrator
-   * Agent"), or absent when none is - a transient UI progress indicator only, never persisted to
+  /** conversationId -> the label of whichever tool call is currently in flight (e.g. "Case lookup"), or absent when none is - a transient UI progress indicator only, never persisted to
    * history. Cleared as soon as real reply text starts arriving, or the turn ends either way. */
   private readonly toolCallLabels = signal<ReadonlyMap<string, string>>(new Map());
   private readonly hydratedConversationIds = new Set<string>();
@@ -262,7 +267,9 @@ export class ChatService {
     this.loadingIds.update((ids) => new Set(ids).add(conversationId));
     let assistantMessageId: string | null = null;
 
-    const appendChunk = (chunk: string): void => {
+    // The first change (a text chunk or a tool-result card, whichever comes first - a tool's card
+    // arrives before the model's words about it) creates the assistant message; later ones amend it.
+    const updateAssistant = (change: (message: ChatMessage) => ChatMessage): void => {
       const now = this.now();
       this.conversations.update((all) =>
         all.map((c) => {
@@ -271,24 +278,28 @@ export class ChatService {
           }
           if (assistantMessageId === null) {
             assistantMessageId = newId();
-            const assistantMessage: ChatMessage = {
+            const assistantMessage = change({
               id: assistantMessageId,
               role: 'assistant',
-              content: chunk,
+              content: '',
               createdAt: now,
-            };
+            });
             return { ...c, messages: [...c.messages, assistantMessage], updatedAt: now };
           }
           return {
             ...c,
-            messages: c.messages.map((m) =>
-              m.id === assistantMessageId ? { ...m, content: m.content + chunk } : m,
-            ),
+            messages: c.messages.map((m) => (m.id === assistantMessageId ? change(m) : m)),
             updatedAt: now,
           };
         }),
       );
     };
+
+    const appendChunk = (chunk: string): void =>
+      updateAssistant((m) => ({ ...m, content: m.content + chunk }));
+
+    const appendToolResult = (toolResult: ToolResult): void =>
+      updateAssistant((m) => ({ ...m, toolResults: [...(m.toolResults ?? []), toolResult] }));
 
     const setToolCallLabel = (label: string | null): void => {
       this.toolCallLabels.update((labels) => {
@@ -316,6 +327,9 @@ export class ChatService {
       next: (event) => {
         if (event.type === 'toolCall') {
           setToolCallLabel(event.label);
+        } else if (event.type === 'toolResult') {
+          setToolCallLabel(null);
+          appendToolResult(event.toolResult);
         } else {
           setToolCallLabel(null);
           appendChunk(event.text);

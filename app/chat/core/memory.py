@@ -1,7 +1,7 @@
 """Pure interfaces for long-term (cross-conversation) memory - no framework/IO imports, same
 reasoning as app/chat/core/chat.py. Concrete implementations live in app/chat/memory/; that package's
 service.py holds the get_memory_store()/get_embedding_service() factories, mirroring
-app/chat/services/service.py's get_chat_service().
+app/shared/config/llm.py's build_chat_model().
 
 The production vector-store choice is still open (see the project's vector-store-choice note) -
 everything outside app/chat/memory/qdrant_store.py depends only on MemoryStore, so swapping the

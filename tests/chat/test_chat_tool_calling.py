@@ -1,24 +1,20 @@
-import json
-from collections.abc import Callable
-from typing import Any
+"""Tool calling inside a chat turn, through POST /api/chat/stream: which tools the model is given,
+the tool_call / tool_result frames, the round limit. The chat model is scripted (tests/chat/_llm.py);
+the tools are the real ones unless a test swaps in a stand-in."""
 
-import httpx
+import json
+from typing import Annotated, Any
+
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.tools import tool
 
+from app.chat.agents import ToolRegistry
+from app.chat.agents.toolkit import ChatTool, Runtime, returns_json
+from app.chat.services import streaming
 from app.shared.config.settings import settings
-
-_RealAsyncClient = httpx.AsyncClient
-
-
-def _mock_async_client(
-    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]
-) -> None:
-    def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return _RealAsyncClient(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(httpx, "AsyncClient", factory)
+from tests.chat._llm import ScriptedModel, ai, always, install, says
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
@@ -36,36 +32,6 @@ def _parse_sse(body: str) -> list[tuple[str, dict[str, object]]]:
     return parsed
 
 
-def _ollama_reply(text: str) -> httpx.Response:
-    return httpx.Response(200, text=json.dumps({"message": {"content": text}, "done": True}))
-
-
-def _ollama_tool_call_reply(name: str, arguments: dict[str, object]) -> httpx.Response:
-    """Matches real Ollama's actual two-line shape (confirmed against a live server, not
-    documentation) - tool_calls arrives on a line with done:false, and the true final
-    done:true line carries no tool_calls at all. A single combined done:true+tool_calls line
-    (what an earlier, incorrect version of this fixture used) never happens in practice and
-    would have masked the exact bug this shape exists to catch."""
-
-    lines = [
-        json.dumps(
-            {
-                "message": {
-                    "content": "",
-                    "tool_calls": [{"function": {"name": name, "arguments": arguments}}],
-                },
-                "done": False,
-            }
-        ),
-        json.dumps({"message": {"content": ""}, "done": True}),
-    ]
-    return httpx.Response(200, text="\n".join(lines))
-
-
-def _tool_names(payload: dict[str, Any]) -> set[str]:
-    return {t["function"]["name"] for t in payload["tools"]}
-
-
 def _stream(client: TestClient, message: str, image_ids: list[str] | None = None) -> str:
     with client.stream(
         "POST",
@@ -75,31 +41,27 @@ def _stream(client: TestClient, message: str, image_ids: list[str] | None = None
         return "".join(response.iter_text())
 
 
-def test_tools_field_sent_by_default_excluding_explainability(
+def _tool_results(model: ScriptedModel) -> list[ToolMessage]:
+    return [m for m in model.seen[-1] if isinstance(m, ToolMessage)]
+
+
+def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """authenticated_client is the first user registered in a fresh DB, which
     app/shared/auth/service.py auto-promotes to ADMIN regardless of the requested role - see
-    tests/test_role_gated_tools.py for the full role -> tool-visibility matrix."""
+    tests/chat/test_role_gated_tools.py for the full role -> tool-visibility matrix."""
 
-    requests: list[dict[str, Any]] = []
+    model = says("ack")
+    install(monkeypatch, model)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return _ollama_reply("ack")
-
-    _mock_async_client(monkeypatch, handler)
     _stream(authenticated_client, "hi")
 
-    assert _tool_names(requests[0]) == {
-        "current_time",
-        "get_weather",
-        "list_cases",
-        "get_case",
+    assert set(model.offered) == {
+        "relabel_case",
+        "confirm_relabel",
         "review_case",
-        "find_similar_cases",
-        "investigate_case",
-        "flag_case_for_retraining",
+        "confirm_review",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
@@ -107,150 +69,127 @@ def test_tools_field_sent_by_default_excluding_explainability(
     }
 
 
-def test_tools_field_includes_explainability_when_image_attached(
+def test_inspect_image_is_offered_when_an_image_is_attached(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """See the note on test_tools_field_sent_by_default_excluding_explainability -
-    authenticated_client is ADMIN, which can reach every tool once an image is attached."""
+    model = says("ack")
+    install(monkeypatch, model)
 
-    requests: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return _ollama_reply("ack")
-
-    _mock_async_client(monkeypatch, handler)
     _stream(authenticated_client, "check this board", image_ids=["some-upload-id"])
 
-    assert _tool_names(requests[0]) == {
-        "current_time",
-        "get_weather",
-        "explainability_review",
-        "inspect_image",
-        "list_cases",
-        "get_case",
-        "review_case",
-        "find_similar_cases",
-        "investigate_case",
-        "flag_case_for_retraining",
-        "report_model_drift",
-        "get_drift_summary",
-        "draft_retraining_plan",
-        "monitoring_status",
-    }
+    assert "inspect_image" in model.offered
 
 
-def test_tools_disabled_sends_no_tools_field(
+def test_tools_disabled_gives_the_model_no_tools_at_all(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "chat_tool_calling_enabled", False)
-    requests: list[dict[str, Any]] = []
+    model = says("ack")
+    install(monkeypatch, model)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return _ollama_reply("ack")
-
-    _mock_async_client(monkeypatch, handler)
     _stream(authenticated_client, "hi")
 
-    assert "tools" not in requests[0]
+    assert model.offered == []
 
 
-def test_ollama_tool_call_round_trip(
+def test_a_tool_call_round_trip_streams_progress_and_the_final_answer(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[dict[str, object]] = []
+    model = ScriptedModel(
+        replies=[
+            ai("", ("get_drift_summary", {"model": "pcb_body_defect"})),
+            ai("No drift detected."),
+        ]
+    )
+    install(monkeypatch, model)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
-        if len(calls) == 1:
-            return _ollama_tool_call_reply("current_time", {})
-        return _ollama_reply("It is currently noon UTC.")
+    frames = _parse_sse(_stream(authenticated_client, "has the model drifted?"))
 
-    _mock_async_client(monkeypatch, handler)
-    body = _stream(authenticated_client, "what time is it?")
+    assert [event for event, _ in frames] == ["tool_call", "delta", "done"]
+    assert frames[0][1] == {"name": "get_drift_summary", "label": "Drift summary"}
+    assert frames[1][1] == {"text": "No drift detected."}
 
-    frames = _parse_sse(body)
-    deltas = [str(data["text"]) for event, data in frames if event == "delta"]
-    assert "".join(deltas) == "It is currently noon UTC."
-    assert len(calls) == 2
-
-    tool_call_events = [data for event, data in frames if event == "tool_call"]
-    assert tool_call_events == [{"name": "current_time", "label": "Current Time"}]
-
-    second_call_messages = calls[1]["messages"]
-    assert isinstance(second_call_messages, list)
-    tool_result_message = second_call_messages[-1]
-    assert tool_result_message["role"] == "tool"
-    assert tool_result_message["name"] == "current_time"
-
-    detail = authenticated_client.get("/api/conversations/c1")
-    messages = detail.json()["messages"]
-    assert [(m["role"], m["content"]) for m in messages] == [
-        ("user", "what time is it?"),
-        ("assistant", "It is currently noon UTC."),
-    ]
+    # the model was handed the tool's real result before it answered
+    [result] = _tool_results(model)
+    assert result.name == "get_drift_summary"
+    assert json.loads(str(result.content))["model"] == "pcb_body_defect"
 
 
-def test_openai_tool_call_round_trip(
+def test_a_failed_tool_is_explained_to_the_model_not_shown_as_a_card(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "openai_api_key", "sk-test-key")
-    calls: list[dict[str, object]] = []
+    """relabel_case with no case in the conversation is a refusal, and a refusal has no card."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
-        if len(calls) == 1:
-            sse = (
-                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc",'
-                '"type":"function","function":{"name":"current_time","arguments":""}}]}}]}\n\n'
-                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":'
-                '{"arguments":"{}"}}]}}]}\n\n'
-                'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
-                "data: [DONE]\n\n"
-            )
-        else:
-            sse = (
-                'data: {"choices":[{"delta":{"content":"It is currently noon UTC."}}]}\n\n'
-                "data: [DONE]\n\n"
-            )
-        return httpx.Response(200, text=sse)
+    model = ScriptedModel(
+        replies=[
+            ai("", ("relabel_case", {"correct_label": "Golden", "reason": "false positive"})),
+            ai("There's no case yet - inspect an image first."),
+        ]
+    )
+    install(monkeypatch, model)
 
-    _mock_async_client(monkeypatch, handler)
+    frames = _parse_sse(_stream(authenticated_client, "it should be golden"))
 
-    with authenticated_client.stream(
-        "POST",
-        "/api/chat/stream",
-        json={
-            "conversation_id": "c1",
-            "message": "what time is it?",
-            "image_ids": [],
-            "provider": "openai",
-        },
-    ) as response:
-        body = "".join(response.iter_text())
-
-    deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
-    assert "".join(deltas) == "It is currently noon UTC."
-    assert len(calls) == 2
-
-    second_call_messages = calls[1]["messages"]
-    assert isinstance(second_call_messages, list)
-    tool_result_message = second_call_messages[-1]
-    assert tool_result_message["role"] == "tool"
-    assert tool_result_message["tool_call_id"] == "call_abc"
+    assert [event for event, _ in frames] == ["tool_call", "delta", "done"]  # no tool_result
+    [result] = _tool_results(model)
+    assert "no case in this conversation" in json.loads(str(result.content))["error"]
 
 
-def test_max_rounds_exceeded_falls_back(
+def _card_registry() -> ToolRegistry:
+    """A registry whose one tool has a card - so the frame the UI shows it with can be tested
+    without needing a saved Case. Named after a real role-table entry so access.py permits it."""
+
+    @tool("get_drift_summary")
+    @returns_json
+    async def stand_in(
+        runtime: Runtime, model: Annotated[str, "the model"] = ""
+    ) -> dict[str, Any]:
+        """A stand-in tool."""
+        if model == "bad":
+            return {"error": "no such model"}
+        return {"model": model, "score": 0.5}
+
+    return ToolRegistry([ChatTool(stand_in, label="Drift summary", shows_card=True)])
+
+
+def test_a_card_tool_result_is_sent_to_the_ui_as_a_tool_result_frame(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(streaming, "tool_registry", _card_registry())
+    install(
+        monkeypatch,
+        ScriptedModel(replies=[ai("", ("get_drift_summary", {"model": "m1"})), ai("Here you go.")]),
+    )
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
-        return _ollama_tool_call_reply("current_time", {})
+    frames = _parse_sse(_stream(authenticated_client, "show me"))
 
-    _mock_async_client(monkeypatch, handler)
+    assert [event for event, _ in frames] == ["tool_call", "tool_result", "delta", "done"]
+    assert frames[1][1] == {"name": "get_drift_summary", "result": {"model": "m1", "score": 0.5}}
+
+
+def test_an_error_result_from_a_card_tool_is_not_a_card(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(streaming, "tool_registry", _card_registry())
+    install(
+        monkeypatch,
+        ScriptedModel(replies=[ai("", ("get_drift_summary", {"model": "bad"})), ai("Sorry.")]),
+    )
+
+    frames = _parse_sse(_stream(authenticated_client, "show me"))
+
+    assert "tool_result" not in [event for event, _ in frames]
+
+
+def test_a_model_that_never_stops_calling_tools_is_cut_off_with_an_apology(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forever(messages: list[BaseMessage]) -> Any:
+        return ai("", ("get_drift_summary", {"model": "pcb_body_defect"}))
+
+    model = always(forever)
+    install(monkeypatch, model)
+
     body = _stream(authenticated_client, "keep calling tools forever")
 
     deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
@@ -258,9 +197,8 @@ def test_max_rounds_exceeded_falls_back(
         "I wasn't able to finish that after several tool calls - could you rephrase or "
         "simplify the request?"
     )
-    assert len(calls) == settings.chat_tool_max_rounds
+    assert len(model.seen) == settings.chat_tool_max_rounds
 
-    detail = authenticated_client.get("/api/conversations/c1")
-    messages = detail.json()["messages"]
+    messages = authenticated_client.get("/api/conversations/c1").json()["messages"]
     assert messages[-1]["role"] == "assistant"
     assert "rephrase" in messages[-1]["content"]

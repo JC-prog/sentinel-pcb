@@ -1,15 +1,13 @@
 from app.chat.agents.monitoring_agent.tools import (
-    DraftRetrainingPlanTool,
-    FlagCaseForRetrainingTool,
-    GetDriftSummaryTool,
-    MonitoringAgentTool,
-    ReportModelDriftTool,
+    DRAFT_RETRAINING_PLAN,
+    GET_DRIFT_SUMMARY,
+    MONITORING_STATUS,
+    REPORT_MODEL_DRIFT,
 )
 
 __all__ = [
-    "DraftRetrainingPlanTool",
-    "FlagCaseForRetrainingTool",
-    "GetDriftSummaryTool",
-    "MonitoringAgentTool",
-    "ReportModelDriftTool",
+    "DRAFT_RETRAINING_PLAN",
+    "GET_DRIFT_SUMMARY",
+    "MONITORING_STATUS",
+    "REPORT_MODEL_DRIFT",
 ]

@@ -9,6 +9,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.core.memory import MemoryRecord, MemoryStore
@@ -17,7 +18,7 @@ from app.chat.memory.embeddings import embedding_model_name, get_embedding_servi
 from app.chat.memory.qdrant_store import QdrantMemoryStore, get_qdrant_client
 from app.chat.services import repository as chat_repository
 from app.chat.services.schemas import LlmProvider
-from app.chat.services.service import get_chat_service
+from app.shared.config.llm import build_chat_model
 from app.shared.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -89,14 +90,12 @@ async def maybe_extract(
 
 
 async def _extract_facts(transcript: str, provider: LlmProvider) -> list[str]:
-    service = get_chat_service(provider)
-    chunks: list[str] = []
-    async for chunk in service.stream_reply(
-        [], transcript, [], system_prompt=_EXTRACTION_SYSTEM_PROMPT
-    ):
-        chunks.append(chunk)
+    model = build_chat_model(provider, temperature=0, timeout=settings.chat_llm_timeout_seconds)
+    reply = await model.ainvoke(
+        [SystemMessage(_EXTRACTION_SYSTEM_PROMPT), HumanMessage(transcript)]
+    )
     try:
-        facts = json.loads("".join(chunks))
+        facts = json.loads(str(reply.text))
     except json.JSONDecodeError:
         return []
     if not isinstance(facts, list):

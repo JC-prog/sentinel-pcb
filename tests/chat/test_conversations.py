@@ -1,27 +1,11 @@
-import json
-from collections.abc import Callable
-
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-# Captured before any test patches httpx.AsyncClient, same reasoning as tests/test_chat.py.
-_RealAsyncClient = httpx.AsyncClient
-
-
-def _mock_async_client(monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]) -> None:
-    def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return _RealAsyncClient(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(httpx, "AsyncClient", factory)
+from tests.chat._llm import install, says
 
 
 def _send_message(client: TestClient, conversation_id: str, message: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=json.dumps({"message": {"content": "ack"}, "done": True}))
-
-    _mock_async_client(monkeypatch, handler)
+    install(monkeypatch, says("ack"))
     with client.stream(
         "POST", "/api/chat/stream", json={"conversation_id": conversation_id, "message": message, "image_ids": []}
     ) as response:

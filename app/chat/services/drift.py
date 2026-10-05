@@ -4,8 +4,9 @@ numbers are handed to it as a snapshot when a report is filed.
 
 These are indicators, not a verdict: they compare the recent window with the window before it
 (same length) and flag the metrics that moved. The signals a reviewer can act on are the human
-ones - how often QA overrode the model's REVIEW_REQUIRED calls as false positives, and how many
-cases had to go to review at all - alongside the classifier's own confidence.
+ones - how often QA overrode the model's REVIEW_REQUIRED calls as false positives, how often they
+corrected the defect label itself (the relabel agent), and how many cases had to go to review at
+all - alongside the classifier's own confidence.
 """
 
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ class WindowStats:
     overridden: int  # reviewer reversed it as a false positive
     low_confidence: int
     mean_confidence: float | None
+    corrected: int = 0  # a reviewer gave the defect a different label
 
     @property
     def resolved(self) -> int:
@@ -55,6 +57,10 @@ class WindowStats:
     def low_confidence_rate(self) -> float | None:
         return self.low_confidence / self.total if self.total else None
 
+    @property
+    def correction_rate(self) -> float | None:
+        return self.corrected / self.total if self.total else None
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "cases": self.total,
@@ -64,6 +70,8 @@ class WindowStats:
             "review_rate": _round(self.review_rate),
             "override_rate": _round(self.override_rate),
             "low_confidence_rate": _round(self.low_confidence_rate),
+            "corrected": self.corrected,
+            "correction_rate": _round(self.correction_rate),
             "mean_confidence": _round(self.mean_confidence),
         }
 
@@ -125,6 +133,7 @@ async def window_stats(
             func.count().filter(Case.status == CaseStatus.OVERRIDDEN),
             func.count().filter(confidence_col < low_below),
             func.avg(confidence_col),
+            func.count().filter(Case.corrected_label.is_not(None)),
         ),
         classified_by=classified_by,
         since=since,
@@ -132,7 +141,9 @@ async def window_stats(
         version_col=version_col,
         model_version=model_version,
     )
-    total, needs_review, approved, overridden, low, mean = (await session.execute(stmt)).one()
+    total, needs_review, approved, overridden, low, mean, corrected = (
+        await session.execute(stmt)
+    ).one()
     return WindowStats(
         total=total,
         needs_review=needs_review,
@@ -140,6 +151,7 @@ async def window_stats(
         overridden=overridden,
         low_confidence=low,
         mean_confidence=float(mean) if mean is not None else None,
+        corrected=corrected,
     )
 
 
@@ -170,6 +182,7 @@ def _signals(recent: WindowStats, previous: WindowStats) -> list[str]:
         ("override rate (false positives caught by reviewers)", recent.override_rate, previous.override_rate),
         ("share of cases needing review", recent.review_rate, previous.review_rate),
         ("share of low-confidence verdicts", recent.low_confidence_rate, previous.low_confidence_rate),
+        ("share of cases reviewers corrected", recent.correction_rate, previous.correction_rate),
     ):
         if now is not None and before is not None and now - before >= _RATE_JUMP:
             signals.append(f"{label} rose from {before:.0%} to {now:.0%}")

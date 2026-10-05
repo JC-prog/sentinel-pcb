@@ -5,19 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from PIL import Image
 
-from app.chat.agents import call_tool
-from app.chat.agents.case_agent import (
-    ExplainabilityReviewRequest,
-    ExplainabilityReviewResponse,
-)
 from app.chat.core.chat import ConversationNotFound
 from app.chat.services import ChatStreamRequest, history
 from app.chat.services import repository as chat_repository
 from app.chat.services.schemas import ConversationDetail, ConversationSummary, MessageOut
-from app.chat.services.streaming import chat_sse, tool_registry
-from app.chat.uploads import resolve_upload_path
+from app.chat.services.streaming import chat_sse
 from app.shared.auth import get_current_user
 from app.shared.auth.dependencies import SessionDep
 from app.shared.config.settings import settings
@@ -98,39 +91,3 @@ async def delete_conversation(
     if conversation is None or conversation.user_id != user.id:
         raise HTTPException(status_code=404, detail="conversation not found")
     await chat_repository.delete_conversation(session, conversation)
-
-
-@router.post("/api/agents/explainability-review")
-async def explainability_review(
-    request: ExplainabilityReviewRequest,
-    _user: Annotated[User, Depends(get_current_user)],
-) -> ExplainabilityReviewResponse:
-    """Direct invocation of ExplainabilityReviewTool through the same ToolRegistry/call_tool()
-    an LLM-driven tool-calling loop would use later (see DEVELOPMENT.md) - just called by this
-    route instead of by a model deciding to call it."""
-
-    if not settings.explainability_agent_enabled:
-        raise HTTPException(status_code=503, detail="explainability review agent is disabled")
-    if not settings.openai_api_key:
-        raise HTTPException(
-            status_code=503, detail="OpenAI provider is not configured on this server"
-        )
-
-    image_path = resolve_upload_path(request.image_id)
-    if image_path is None:
-        raise HTTPException(status_code=404, detail="image not found")
-    image = Image.open(image_path).convert("RGB")
-
-    result_json = await call_tool(
-        tool_registry,
-        "explainability_review",
-        {
-            "image": image,
-            "image_name": request.image_id,
-            "board_id": request.board_id,
-            "component_ref": request.component_ref,
-            "issue_symptom": request.issue_symptom,
-            "openai_api_key": settings.openai_api_key,
-        },
-    )
-    return ExplainabilityReviewResponse.model_validate_json(result_json)

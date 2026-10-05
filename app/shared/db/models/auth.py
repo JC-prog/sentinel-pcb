@@ -14,7 +14,7 @@ class UserRole(StrEnum):
     """Stored as a plain string column, not a native Postgres enum, so adding or removing a role
     is a code change, not a schema migration (as this one was, when Operator/Engineer were folded
     into QA/Admin). QA is the one operating the app day to day (inspecting, reviewing, flagging);
-    Admin is a superset of QA plus configuration-only actions (registering golden images,
+    Admin is a superset of QA plus configuration-only actions (approving retraining,
     infra/monitoring visibility) - see DEVELOPMENT.md and app/chat/agents/access.py for what each role
     can actually call.
     """

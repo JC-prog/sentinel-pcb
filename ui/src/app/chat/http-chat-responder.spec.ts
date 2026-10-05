@@ -73,6 +73,40 @@ describe('HttpChatResponder', () => {
     ]);
   });
 
+  it('emits a toolResult event, carrying the tool\'s structured result, for a tool_result frame', async () => {
+    const result = { case_number: 'CASE-000001', verdict: 'accepted' };
+    const body =
+      'event: tool_call\ndata: {"name":"inspect_image","label":"Image inspection"}\n\n' +
+      `event: tool_result\ndata: ${JSON.stringify({ name: 'inspect_image', result })}\n\n` +
+      'event: delta\ndata: {"text":"Done."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([
+      { type: 'toolCall', label: 'Image inspection' },
+      { type: 'toolResult', toolResult: { name: 'inspect_image', result } },
+      { type: 'delta', text: 'Done.' },
+    ]);
+  });
+
+  it('ignores a tool_result for a tool the UI has no card for', async () => {
+    const body =
+      'event: tool_result\ndata: {"name":"something_else","result":{}}\n\n' +
+      'event: delta\ndata: {"text":"Hi."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([{ type: 'delta', text: 'Hi.' }]);
+  });
+
   it('errors the observable when the stream sends an error frame', async () => {
     const body = 'event: error\ndata: {"message":"upstream failed"}\n\n';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));

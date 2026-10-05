@@ -9,6 +9,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: an always-present system prompt that says what the assistant is for and which tool answers
+  which question, and asks for confirmation before tools that change something.
+- Chat: the **relabel agent** (`app/chat/agents/relabel_agent/`). A QA/Admin says the model's defect
+  label on a Case is wrong and gives the right one; `relabel_case` proposes it (the label is checked
+  against the model's real classes from the inference service) and `confirm_relabel` commits it - which
+  records the correction on the Case (the model's own label is kept) and queues a retraining ticket.
+  The confirmation is enforced in code: a proposal can only be committed in a later chat turn than the
+  one that proposed it. New `cases.corrected_*` / `pending_*` columns (Alembic `e8b3d1f5a2c7`) and a
+  `RELABEL_AGENT_ENABLED` kill switch.
+- Chat: the user now sees the inference result as a **card** (case number, verdict and reasons, region
+  and defect with confidences, runner-up scores; relabel proposals and confirmations too), sent as a new
+  `event: tool_result` SSE frame and rendered by `ui/src/app/chat/tool-result-card/`.
+- Drift: `get_drift_summary` also reports how often reviewers corrected a case's label
+  (`corrected`, `correction_rate`) and calls out a jump in it.
+- Tracing: Langfuse now traces the chat agents - an inspection is one trace with every model call and
+  tool call nested under it, attributed to the user and conversation. `LANGFUSE_BASE_URL` is accepted
+  as an alias for `LANGFUSE_HOST`.
+- The agents' LLM is built in one place (`app/shared/config/llm.py`) from `AGENT_LLM_PROVIDER` /
+  `AGENT_LLM_MODEL`, so changing the model or provider is a setting.
+- Every chat model - the chat supervisor's, memory's fact extraction and the inspect agent's - is now a
+  LangChain model built in one place (`app/shared/config/llm.py`): `build_chat_model("ollama"|"openai")`
+  for a conversation, and `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` for the agents' own, so changing the
+  model or provider is a setting. Adds `langchain-ollama` and a `CHAT_LLM_TIMEOUT_SECONDS` setting.
+- Chat: the reply is now produced by a **supervisor** (`app/chat/agents/supervisor.py`), a LangGraph
+  agent over the tools the request may use, replacing the hand-written Ollama/OpenAI streaming layer
+  (`app/chat/services/providers/`, removed). Tools are LangChain `@tool`s (`app/chat/agents/toolkit.py`)
+  that receive the user, session and uploads through an injected context the model never sees. Every chat
+  turn is traced in Langfuse with its user and conversation. A model failure now reaches the client as a
+  fixed "assistant is unavailable" error rather than the upstream error text.
+- Inspection agent: two read-only tools for the LLM pass, `get_scores` (ranked per-label
+  classifier scores, to report runner-up labels) and `check_image_quality` (size/brightness/
+  contrast/blur without needing a golden reference). Neither touches state the verdict reads.
 - Work tab (`app/workflow/`): Agent 2 review and a human-in-the-loop Review Console, from the
   teammate's updated `pcb_agentic_inspector`. When a full run finishes, every REVIEW_REQUIRED sample
   is sent to Agent 2 automatically (live diagnosis lines in the log), and the new Review Console
@@ -23,6 +55,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Chat agents rebuilt around three: an **inspect agent** (verifier and classifier sub-agents, fixed
+  verdict rules, and an LLM-driven ReAct pass on LangChain `create_agent`), the new relabel agent, and
+  the monitoring agent. The LLM never decides the verdict or saves anything; an inference-service outage
+  is now an error with no Case rather than a case parked in review, and a low-confidence region with an
+  unrouted label goes to review instead of aborting. The inspect agent no longer does the golden-image
+  alignment check. `flag_case_for_retraining` is replaced by the relabel flow. The chat system prompt,
+  tool-call labels and suggestion chips describe the new tools.
 - Work tab (`app/workflow/`): replaced the hand-adapted `orchestrator_agent`/
   `explainability_review_agent` port with a close-to-verbatim drop-in of the upstream
   `pcb_agentic_inspector` project (`app/workflow/src/`), rebuilding `app/workflow/api/` and
@@ -43,6 +82,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`QDRANT_URL`) instead of a local, throwaway embedded store nothing else could read - same
   container chat's long-term memory uses, its own `ipc_defect_precedents` collection. See
   `app/workflow/INTEGRATION_NOTES.md`'s "vector-db indexing" section.
+
+### Removed
+
+- Chat: the weather and time agents (`get_weather`, `current_time`), the intent router, and the case
+  agent - `find_similar_cases`, `get_case`, `list_cases`, `review_case`, the heavy diagnosis pipeline
+  (`explainability_review`, `investigate_case`, `POST /api/agents/explainability-review`, its CLIP /
+  embedded-Qdrant seed scripts) - along with the `INTENT_ROUTER_*`, `EXPLAINABILITY_AGENT_*` and
+  `WEATHER_ADVISORY_ENABLED` settings and the alignment-threshold settings.
 
 ### Added
 

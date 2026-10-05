@@ -6,6 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
 import { ChatService } from './chat.service';
 import { Conversation } from './models/chat.models';
+import { ToolResultCard } from './tool-result-card/tool-result-card';
 
 interface PendingImage {
   file: File;
@@ -22,7 +23,7 @@ interface Suggestion {
 }
 
 @Component({
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ToolResultCard],
   selector: 'app-chat',
   styleUrl: './chat.css',
   templateUrl: './chat.html',
@@ -38,22 +39,18 @@ export class Chat {
       prompt: 'Classify this AOI inspection image for defects.',
     },
     {
-      label: 'Flag an ambiguous defect as a case',
-      prompt: "I'm not sure if this is a real defect, can you flag it as a case for review?",
+      label: 'Correct a wrong label',
+      prompt: 'The model got this wrong - the correct label is Golden.',
     },
     {
-      label: 'Review a flagged case',
-      prompt: 'Review case CASE-000123.',
-    },
-    {
-      label: 'List cases awaiting review',
-      prompt: 'List cases that need review.',
+      label: 'Check model health',
+      prompt: 'Is the defect model drifting?',
     },
   ];
 
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);
-  /** Inspection XML(s), for create_case (app/agents/case_agent/) - optional, at most what the
+  /** Inspection XML(s), for inspect_image (app/chat/agents/inspection_agent/) - optional, at most what the
    * user explicitly attaches via this separate picker; never inferred from a dropped/pasted
    * image the way pendingImages is. */
   protected readonly pendingXmlFiles = signal<PendingXml[]>([]);

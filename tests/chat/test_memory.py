@@ -8,17 +8,18 @@ import json
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime
-from typing import cast
 
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage, BaseMessage
 from qdrant_client import AsyncQdrantClient
 
 from app.chat.core.memory import MemoryRecord
 from app.chat.memory import service as memory_service
 from app.shared.config.settings import settings
+from tests.chat._llm import ScriptedModel, ai, install
 
 _TEST_COLLECTION_PREFIX = "test_chat_memories"
 
@@ -90,22 +91,22 @@ def _ollama_embed_response(input_texts: list[str]) -> httpx.Response:
     return httpx.Response(200, json={"embeddings": [[1.0, 0.0, 0.0] for _ in input_texts]})
 
 
-def _chat_llm_handler(fact_json: str, reply_text: str) -> Callable[[httpx.Request], httpx.Response]:
-    """Routes a mocked httpx call to the right canned response by URL/content: embeddings go to
-    /api/embed, and /api/chat is either the real reply or app/chat/memory/service.py's fact-extraction
-    pass (distinguished by its system prompt, since both hit the same Ollama endpoint)."""
+def _embed_only(request: httpx.Request) -> httpx.Response:
+    """Embeddings are the one thing in this feature still reached over HTTP (Ollama's /api/embed)."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        if request.url.path == "/api/embed":
-            return _ollama_embed_response(payload["input"])
-        is_extraction = any(
-            m["role"] == "system" and "durable" in m["content"] for m in payload["messages"]
-        )
-        content = fact_json if is_extraction else reply_text
-        return httpx.Response(200, text=json.dumps({"message": {"content": content}, "done": True}))
+    assert request.url.path == "/api/embed", request.url.path
+    return _ollama_embed_response(json.loads(request.content)["input"])
 
-    return handler
+
+def _memory_model(fact_json: str, reply_text: str) -> ScriptedModel:
+    """One scripted model for both jobs the chat model does here: app/chat/memory/service.py's
+    fact-extraction pass (told apart by its system prompt) and the ordinary reply."""
+
+    def reply(messages: list[BaseMessage]) -> AIMessage:
+        is_extraction = any(m.type == "system" and "durable" in str(m.content) for m in messages)
+        return ai(fact_json if is_extraction else reply_text)
+
+    return ScriptedModel(reply_fn=reply)
 
 
 class TestQdrantMemoryStoreIsolation:
@@ -155,10 +156,8 @@ async def test_extraction_writes_a_memory_after_the_configured_number_of_turns(
     authenticated_client: TestClient, qdrant_ready: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "memory_extraction_interval_turns", 1)
-    _mock_async_client(
-        monkeypatch,
-        _chat_llm_handler(fact_json='["prefers dark roast coffee"]', reply_text="Sure thing!"),
-    )
+    _mock_async_client(monkeypatch, _embed_only)
+    install(monkeypatch, _memory_model('["prefers dark roast coffee"]', "Sure thing!"))
 
     reply = _send(authenticated_client, "c1", "For the record, I prefer dark roast coffee.")
     assert reply == "Sure thing!"
@@ -185,43 +184,26 @@ async def test_retrieval_injects_memory_preamble_into_a_new_conversation(
         [1.0, 0.0, 0.0],
     )
 
-    requests: list[dict[str, object]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        requests.append(payload)
-        if request.url.path == "/api/embed":
-            return _ollama_embed_response(payload["input"])
-        return httpx.Response(200, text=json.dumps({"message": {"content": "ack"}, "done": True}))
-
-    _mock_async_client(monkeypatch, handler)
+    _mock_async_client(monkeypatch, _embed_only)
+    model = _memory_model("[]", "ack")
+    install(monkeypatch, model)
 
     _send(authenticated_client, "new-conversation", "hi there")
 
-    chat_calls = [r for r in requests if "messages" in r]
-    sent_messages = cast("list[dict[str, str]]", chat_calls[0]["messages"])
-    system_messages = [m["content"] for m in sent_messages if m["role"] == "system"]
+    system_messages = [str(m.content) for m in model.seen[0] if m.type == "system"]
     assert any("works the night shift on line 3" in text for text in system_messages)
 
 
 async def test_remember_command_stores_a_fact_without_calling_the_chat_llm(
     authenticated_client: TestClient, qdrant_ready: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    chat_calls: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/embed":
-            return _ollama_embed_response(json.loads(request.content)["input"])
-        chat_calls.append(request)
-        return httpx.Response(
-            200, text=json.dumps({"message": {"content": "should not be called"}, "done": True})
-        )
-
-    _mock_async_client(monkeypatch, handler)
+    _mock_async_client(monkeypatch, _embed_only)
+    model = _memory_model("[]", "should not be called")
+    install(monkeypatch, model)
 
     reply = _send(authenticated_client, "c1", "/remember I only drink oat milk")
     assert "I only drink oat milk" in reply
-    assert chat_calls == []  # a /remember command never reaches the chat LLM.
+    assert model.seen == []  # a /remember command never reaches the chat LLM.
 
     user_id = authenticated_client.get("/api/auth/me").json()["id"]
     store = memory_service.get_memory_store(settings.ollama_embedding_model)
@@ -238,12 +220,11 @@ def test_memory_disabled_kill_switch_makes_zero_memory_calls(
     embed_calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/embed":
-            embed_calls.append(request)
-            return _ollama_embed_response(json.loads(request.content)["input"])
-        return httpx.Response(200, text=json.dumps({"message": {"content": "ack"}, "done": True}))
+        embed_calls.append(request)
+        return _embed_only(request)
 
     _mock_async_client(monkeypatch, handler)
+    install(monkeypatch, _memory_model("[]", "ack"))
 
     reply = _send(authenticated_client, "c1", "hello")
     assert reply == "ack"

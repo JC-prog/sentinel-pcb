@@ -1,58 +1,35 @@
-"""The monitoring agent's tools: flagging cases, reporting and summarising drift, drafting a
+"""The monitoring agent's tools: reporting and summarising drift, drafting a
 retraining plan, and the Admin overview. Nothing here may retrain or promote anything - the end
 of the road is a job waiting for an Admin's approval."""
 
-import json
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents.monitoring_agent import (
-    DraftRetrainingPlanTool,
-    FlagCaseForRetrainingTool,
-    GetDriftSummaryTool,
-    MonitoringAgentTool,
-    ReportModelDriftTool,
+    DRAFT_RETRAINING_PLAN,
+    GET_DRIFT_SUMMARY,
+    MONITORING_STATUS,
+    REPORT_MODEL_DRIFT,
 )
 from app.shared.db.models import (
     DriftReport,
     RetrainingJob,
     RetrainingJobStatus,
-    RetrainingTicket,
     RetrainingTicketStatus,
     User,
 )
 from app.shared.modelops import jobs as job_repo
 from app.shared.modelops.versions import sync_versions
+from tests.chat.agents._helpers import call, tool_context
 from tests.shared._modelops_helpers import make_case, make_ticket, make_user, model_info
 
 MODEL = "pcb_body_defect"
 
 
 async def _run(tool: Any, session: AsyncSession, user: User, **kwargs: Any) -> Any:
-    return json.loads(await tool.run(session=session, user_id=user.id, **kwargs))
-
-
-async def test_flagging_a_case_records_the_model_version_and_the_correct_label(
-    db_async_session: AsyncSession,
-) -> None:
-    user = await make_user(db_async_session)
-    case = await make_case(db_async_session, user)  # classified by pcb_body_defect@v1
-
-    result = await _run(
-        FlagCaseForRetrainingTool(),
-        db_async_session,
-        user,
-        case_number=case.case_number,
-        reason="It is a golden part",
-        correct_label="Golden",
-    )
-
-    assert result["model"] == MODEL
-    assert result["model_version"] == "JcProg/body@v1"
-    (ticket,) = (await db_async_session.scalars(select(RetrainingTicket))).all()
-    assert (ticket.observed_label, ticket.correct_label) == ("MissingPart", "Golden")
+    return await call(tool, tool_context(session, user), **kwargs)
 
 
 async def test_reporting_drift_files_a_report_with_a_snapshot_of_the_numbers(
@@ -63,7 +40,7 @@ async def test_reporting_drift_files_a_report_with_a_snapshot_of_the_numbers(
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v2", "JcProg/body@v1")])
 
     result = await _run(
-        ReportModelDriftTool(),
+        REPORT_MODEL_DRIFT,
         db_async_session,
         user,
         model=MODEL,
@@ -85,10 +62,14 @@ async def test_reporting_drift_files_a_report_with_a_snapshot_of_the_numbers(
 async def test_reporting_drift_needs_a_model_and_a_description(
     db_async_session: AsyncSession,
 ) -> None:
-    user = await make_user(db_async_session)
+    """Omitting either is caught by the tool's schema before it runs; blank values by the tool."""
 
-    for kwargs in ({"model": MODEL}, {"description": "x"}, {"model": " ", "description": " "}):
-        result = await _run(ReportModelDriftTool(), db_async_session, user, **kwargs)
+    user = await make_user(db_async_session)
+    schema = REPORT_MODEL_DRIFT.model_schema()
+    assert set(schema["required"]) == {"model", "description"}
+
+    for kwargs in ({"model": MODEL, "description": " "}, {"model": " ", "description": "x"}):
+        result = await _run(REPORT_MODEL_DRIFT, db_async_session, user, **kwargs)
         assert "required" in result["error"]
     assert (await db_async_session.scalars(select(DriftReport))).all() == []
 
@@ -100,9 +81,9 @@ async def test_the_drift_summary_includes_the_live_version_and_open_counts(
     await make_case(db_async_session, user)
     await make_ticket(db_async_session, user)
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
-    await _run(ReportModelDriftTool(), db_async_session, user, model=MODEL, description="looks off")
+    await _run(REPORT_MODEL_DRIFT, db_async_session, user, model=MODEL, description="looks off")
 
-    result = await _run(GetDriftSummaryTool(), db_async_session, user, model=MODEL, window_days=14)
+    result = await _run(GET_DRIFT_SUMMARY, db_async_session, user, model=MODEL, window_days=14)
 
     assert result["model"] == MODEL
     assert result["window_days"] == 14
@@ -115,11 +96,11 @@ async def test_the_drift_summary_includes_the_live_version_and_open_counts(
 async def test_the_window_is_kept_within_sane_bounds(db_async_session: AsyncSession) -> None:
     user = await make_user(db_async_session)
 
-    huge = await _run(GetDriftSummaryTool(), db_async_session, user, model=MODEL, window_days=9999)
+    huge = await _run(GET_DRIFT_SUMMARY, db_async_session, user, model=MODEL, window_days=9999)
     negative = await _run(
-        GetDriftSummaryTool(), db_async_session, user, model=MODEL, window_days=-3
+        GET_DRIFT_SUMMARY, db_async_session, user, model=MODEL, window_days=-3
     )
-    omitted = await _run(GetDriftSummaryTool(), db_async_session, user, model=MODEL, window_days=0)
+    omitted = await _run(GET_DRIFT_SUMMARY, db_async_session, user, model=MODEL, window_days=0)
 
     assert huge["window_days"] == 90
     assert negative["window_days"] == 1
@@ -133,9 +114,9 @@ async def test_drafting_a_plan_queues_a_pending_job_for_admin_approval(
     await make_ticket(db_async_session, user)
     await make_ticket(db_async_session, user)
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
-    await _run(ReportModelDriftTool(), db_async_session, user, model=MODEL, description="looks off")
+    await _run(REPORT_MODEL_DRIFT, db_async_session, user, model=MODEL, description="looks off")
 
-    result = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    result = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
 
     assert result["status"] == "pending_approval"
     assert result["flagged_cases"] == 2
@@ -155,7 +136,7 @@ async def test_a_users_own_rationale_is_kept(db_async_session: AsyncSession) -> 
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
 
     await _run(
-        DraftRetrainingPlanTool(),
+        DRAFT_RETRAINING_PLAN,
         db_async_session,
         user,
         model=MODEL,
@@ -169,7 +150,7 @@ async def test_a_users_own_rationale_is_kept(db_async_session: AsyncSession) -> 
 async def test_drafting_with_nothing_flagged_says_so(db_async_session: AsyncSession) -> None:
     user = await make_user(db_async_session)
 
-    result = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    result = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
 
     assert "no open retraining tickets" in result["error"]
     assert (await db_async_session.scalars(select(RetrainingJob))).all() == []
@@ -179,9 +160,9 @@ async def test_drafting_uses_each_flagged_case_only_once(db_async_session: Async
     user = await make_user(db_async_session)
     await make_ticket(db_async_session, user)
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
-    await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
 
-    again = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    again = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
 
     assert "no open retraining tickets" in again["error"]  # the first plan already holds it
 
@@ -192,7 +173,7 @@ async def test_drafting_without_a_known_version_explains_how_to_fix_it(
     user = await make_user(db_async_session)
     await make_ticket(db_async_session, user, model_version=None)
 
-    result = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    result = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
 
     assert "Models tab" in result["error"]
 
@@ -200,7 +181,7 @@ async def test_drafting_without_a_known_version_explains_how_to_fix_it(
 async def test_monitoring_status_on_an_empty_system(db_async_session: AsyncSession) -> None:
     user = await make_user(db_async_session)
 
-    result = await _run(MonitoringAgentTool(), db_async_session, user)
+    result = await _run(MONITORING_STATUS, db_async_session, user)
 
     assert result["live_models"] == {}
     assert result["retraining_queue"] == []
@@ -213,11 +194,11 @@ async def test_monitoring_status_reports_versions_reports_tickets_and_the_queue(
     user = await make_user(db_async_session)
     await make_ticket(db_async_session, user)
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
-    await _run(ReportModelDriftTool(), db_async_session, user, model=MODEL, description="looks off")
-    plan = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    await _run(REPORT_MODEL_DRIFT, db_async_session, user, model=MODEL, description="looks off")
+    plan = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
     await make_ticket(db_async_session, user)  # a fresh open ticket, not yet in any plan
 
-    result = await _run(MonitoringAgentTool(), db_async_session, user)
+    result = await _run(MONITORING_STATUS, db_async_session, user)
 
     assert result["live_models"] == {MODEL: "JcProg/body@v1"}
     assert result["open_drift_reports"] == {MODEL: 1}
@@ -235,12 +216,12 @@ async def test_a_cancelled_job_leaves_the_queue_and_frees_its_tickets(
     user = await make_user(db_async_session)
     ticket = await make_ticket(db_async_session, user)
     await sync_versions(db_async_session, [model_info(MODEL, "JcProg/body@v1")])
-    plan = await _run(DraftRetrainingPlanTool(), db_async_session, user, model=MODEL)
+    plan = await _run(DRAFT_RETRAINING_PLAN, db_async_session, user, model=MODEL)
     job = await job_repo.get_job(db_async_session, plan["job_id"])
     assert job is not None
     await job_repo.cancel_job(db_async_session, job)
 
-    result = await _run(MonitoringAgentTool(), db_async_session, user)
+    result = await _run(MONITORING_STATUS, db_async_session, user)
 
     assert result["retraining_queue"] == []
     await db_async_session.refresh(ticket)

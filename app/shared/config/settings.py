@@ -1,10 +1,11 @@
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     # ui/ (Angular) dev server origin. Add the deployed CloudFront origin here once one exists.
     cors_allow_origins: list[str] = ["http://localhost:4200"]
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     log_format: Literal["console", "json"] = "console"
     # Gates all DEBUG-level logging - including verbose API request/response bodies (app/main.py's
     # request-logging middleware and _chat_sse) and LLM request/response payloads
-    # (app/chat/services/providers/). Separate from log_format since this controls how much gets logged,
+    # (app/shared/config/llm.py). Separate from log_format since this controls how much gets logged,
     # not how it's rendered. Default INFO - flip to DEBUG locally when you need the detail; full
     # bodies are noisy and can contain fields worth not logging by default.
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     # terminal. Off by default: it's a debugging convenience, not something every deployment
     # needs. Same cwd-relative convention as chat_upload_dir - only host-visible for bare
     # `uv run uvicorn`, not the containerized `app` service, since data/ isn't volume-mounted
-    # there (same caveat as chat_upload_dir/explainability_agent_data_dir).
+    # there (same caveat as chat_upload_dir).
     log_to_file: bool = False
     log_dir: str = "data/logs"
 
@@ -101,36 +102,14 @@ class Settings(BaseSettings):
     # API are served over HTTPS from one CloudFront domain (infra/production/static_site.tf).
     cookie_secure: bool = False
 
-    # Case Review Agent (app/chat/agents/case_agent/, chat-facing) - POST
-    # /api/agents/explainability-review. Kill switch, same pattern as memory_enabled. Its OpenAI
-    # calls use the shared openai_api_key setting above, not a key of its own. Not to be confused
-    # with explainability_review_agent_enabled below, which gates a different, Work-tab-only
-    # agent (app/workflow/src/agent2_explainability/) - similar names, different agents.
-    explainability_agent_enabled: bool = True
-    # PCB images (inputs/, admin-provided), the IPC-A-610 reference JSON (ipc_standards/,
-    # committed), and generated artifacts (outputs/, qdrant_db/) for the agent above - same
-    # cwd-relative convention as chat_upload_dir.
-    explainability_agent_data_dir: str = "data/images"
-
     # Explainability Review Agent (app/workflow/src/agent2_explainability/, Work-tab-only) -
     # dropped in as-is from a teammate's standalone pcb_agentic_inspector prototype's "Agent 2"
     # (its own config/agent2_config.yaml and OPENAI_API_KEY env var read are kept unchanged, not
     # routed through settings). Never a chat tool. Gates the Work tab's automatic Agent 2 review of a
     # finished run's REVIEW_REQUIRED samples and its Review Console routes
     # (/api/orchestrator/reviews/*, app/workflow/services/reviews.py) - alongside
-    # orchestrator_agent_enabled, since they act on a finished orchestrator run. Not to be
-    # confused with explainability_agent_enabled above, which gates the renamed chat agent -
-    # similar names, different agents.
+    # orchestrator_agent_enabled, since they act on a finished orchestrator run.
     explainability_review_agent_enabled: bool = True
-
-    # Weather agent (app/chat/agents/weather_agent/) - a small LangGraph pipeline (geocode -> current
-    # conditions + a short forecast -> an LLM-synthesized advisory, branching into a more
-    # cautious tone on a severe-weather signal). Kill switch, same pattern as memory_enabled -
-    # disabling it skips only the LLM step: conditions and the forecast are still fetched and
-    # returned, just with a templated summary instead of an LLM-written one. Uses the shared
-    # openai_api_key/openai_model/openai_base_url settings, not a key of its own, and falls back
-    # to the same templated summary automatically if no key is configured.
-    weather_advisory_enabled: bool = True
 
     # Internal ONNX classification service (inference/, infra/production/inference.tf). Empty
     # means "not configured" - app.shared.inference.client raises rather than guessing a URL, and
@@ -149,67 +128,59 @@ class Settings(BaseSettings):
     modelops_enabled: bool = True
 
     # Lets the chat LLM itself decide to call a registered Tool (app/chat/agents/registry.py) mid-
-    # conversation - e.g. current_time, get_weather, explainability_review. Kill switch, same
+    # conversation - e.g. inspect_image, get_drift_summary. Kill switch, same
     # pattern as memory_enabled; disabling sends no `tools` field at all, byte-identical to the
     # pre-tool-calling request shape. chat_tool_max_rounds bounds how many tool-call round trips
     # one message can trigger before the loop gives up and answers with what it has, in case a
     # model keeps calling tools without ever producing a final answer.
     chat_tool_calling_enabled: bool = True
     chat_tool_max_rounds: int = 4
+    # How long one chat-model call may take (the supervisor's reply, memory's fact extraction).
+    # Generous: a local model answering with tools on a laptop can be slow.
+    chat_llm_timeout_seconds: float = 60.0
 
     # ADC inspection agent (app/chat/agents/inspection_agent/) - a QA/Admin-triggered
     # tool that runs a deterministic plan/policy loop (workflow_state.py/planner.py/policy_engine.py)
-    # over an uploaded image: two-stage region/defect classification through the inference/
-    # microservice, golden-image lookup and alignment/quality checks, and optional inspection-XML
-    # measurement validation - always persisting the result as a Case (it never calls another
-    # agent; REVIEW_REQUIRED is terminal). The only tool offered for submitting an image for
-    # inspection through chat. Kill switch, same pattern as
-    # explainability_agent_enabled; only offered as a tool when an image is attached.
+    # over an uploaded image: a verifier sub-agent, a classifier sub-agent (two-stage region/defect
+    # classification through the inference/ microservice) and fixed verdict rules, optionally
+    # validating an attached inspection XML - always persisting the result as a Case. The only tool
+    # offered for submitting an image for inspection through chat. Kill switch, same pattern as the
+    # others; only offered as a tool when an image is attached.
     adc_inspection_agent_enabled: bool = True
-    # Whether the inspection agent runs its LLM-driven pass (app/chat/agents/inspection_agent/
+    # Whether the inspect agent runs its LLM-driven ReAct pass (app/chat/agents/inspection_agent/
     # react.py) before the deterministic pipeline. Off (or no openai_api_key) it runs unassisted;
     # the verdict and the persisted Case come from the same fixed rules either way.
     inspection_agent_llm_enabled: bool = True
     # Confidence gates mirroring orchestrator-agent/adc_agentic_project's OrchestratorAgent
     # (feature_threshold/defect_threshold, both 0.70 there too). Below adc_region_confidence_threshold,
-    # graph.py stops after stage 1 and reports REVIEW_REQUIRED instead of routing to a defect model
-    # on a guess. Below adc_defect_confidence_threshold, the stage-2 verdict is still returned but
-    # final_decision is REVIEW_REQUIRED rather than ACCEPTED.
+    # the classifier stops after stage 1 and the verdict is REVIEW_REQUIRED instead of routing to a
+    # defect model on a guess. Below adc_defect_confidence_threshold, the stage-2 result is still
+    # returned but the verdict is REVIEW_REQUIRED rather than ACCEPTED.
     adc_region_confidence_threshold: float = 0.70
     adc_defect_confidence_threshold: float = 0.70
-    # Golden/case image phase-correlation shift thresholds (app/chat/agents/inspection_agent/
-    # verification.py's estimate_translation, ported from orchestrator-agent/adc_agentic_project's
-    # verification/image_alignment.py), in pixels. Above the warning threshold, a note is recorded
-    # but the verdict is untouched; above the fail threshold, the align_and_check_quality node
-    # flags IMAGE_PAIR_ALIGNMENT_FAILED and finalize downgrades an otherwise-confident verdict to
-    # REVIEW_REQUIRED, the same way a failed measurement validation already does.
-    adc_alignment_warning_shift_px: float = 12.0
-    adc_alignment_fail_shift_px: float = 35.0
-    # Where registered golden reference images are stored on disk
-    # (app/chat/agents/inspection_agent/golden_images.py) - a separate, admin-curated directory from
-    # chat_upload_dir. Same cwd-relative convention/caveat: swap for S3 before running more than
-    # one instance.
-    case_golden_image_dir: str = "data/golden_images"
 
-    # Monitoring agent (app/chat/agents/monitoring_agent/) - flag_case_for_retraining (QA/Admin) queues
-    # a RetrainingTicket for a case a reviewer believes the model got wrong; actual retraining
-    # happens on the separate inference server, never here. monitoring_status remains an Admin-only
-    # placeholder tool with no real logic yet. Kill switch, same pattern as the others.
+    # Relabel agent (app/chat/agents/relabel_agent/) - a QA/Admin says the model's defect label on a
+    # Case is wrong; after an explicit confirmation the Case records the correction and a
+    # RetrainingTicket is queued. Actual retraining happens on the separate inference server, never
+    # here. Kill switch, same pattern as the others.
+    relabel_agent_enabled: bool = True
+
+    # Review agent (app/chat/agents/review_agent/) - a QA/Admin approves or overrides a case flagged
+    # REVIEW_REQUIRED; after an explicit confirmation the case becomes APPROVED or OVERRIDDEN (the
+    # override rate is a drift signal). Kill switch, same pattern as the others.
+    review_agent_enabled: bool = True
+
+    # Monitoring agent (app/chat/agents/monitoring_agent/) - drift summaries and reports, drafting a
+    # retraining plan from open tickets (QA/Admin) and an Admin-only status overview. Retraining
+    # itself is approved in the Models tab and runs on the separate inference server, never here.
+    # Kill switch, same pattern as the others.
     monitoring_agent_enabled: bool = True
 
-    # Intent router (app/chat/agents/router_agent/) - a classification step run before the tool-calling
-    # loop that either picks the single best-matching tool or, below
-    # intent_router_confidence_threshold, asks the user a clarifying question instead of guessing.
-    # Kill switch, same pattern as chat_tool_calling_enabled; disabling it reproduces today's
-    # behavior exactly - every tool offered, no clarification.
-    intent_router_enabled: bool = True
-    intent_router_confidence_threshold: float = 0.6
-
     # Chat guardrails (app/chat/guardrails/) - a NeMo Guardrails input rail run on the raw user
-    # message before it reaches the intent router or any chat LLM call, checking for
+    # message before it reaches any chat LLM call, checking for
     # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single
     # combined check. Kill switch, same pattern as the others; disabling it reproduces today's
-    # behavior exactly - the message goes straight to the router with no check. Uses the shared
+    # behavior exactly - the message goes straight to the chat model with no check. Uses the shared
     # openai_api_key/openai_base_url settings (the LiteLLM proxy), not a key of its own. Fails open
     # on any error (proxy unreachable, NeMo internal failure) - same convention as every other
     # kill-switchable agent in this repo.
@@ -219,22 +190,31 @@ class Settings(BaseSettings):
     chat_guardrails_model: str = "gpt-4o-mini"
 
     # LangFuse (infra/development/docker-compose.yml's "langfuse" profile) - self-hosted LLM
-    # observability/tracing for the LangGraph pipelines only (app/chat/agents/{time_agent,
-    # weather_agent,router_agent,case_agent,inspection_agent}) - see
-    # app/shared/config/langfuse.py. Deliberately not wired into the raw (non-LangChain) OpenAI() calls
-    # in router_agent/graph.py, weather_agent/graph.py, case_agent/models.py, or
-    # app/chat/services/providers/openai.py's raw httpx streaming path. Kill switch, default False (unlike
+    # observability/tracing for the chat agents' OpenAI SDK calls (app/chat/agents/) - see
+    # app/shared/config/langfuse.py. Deliberately not wired into
+    # every chat model, via app/shared/config/llm.py. Kill switch, default False (unlike
     # the "on by default" feature switches above) since this is optional tooling, not something a
-    # fresh dev environment needs working out of the box; get_langfuse_callbacks() also treats a
-    # blank key as "not configured" and returns no callbacks even when this is True, so a
-    # half-configured .env never raises.
+    # fresh dev environment needs working out of the box; a blank key is also treated as "not
+    # configured" and traces nothing even when this is True, so a half-configured .env never raises.
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     # Bare local dev (uv run uvicorn ...) reaches langfuse-web's published host port directly;
     # the containerized `app` service overrides this to http://langfuse-web:3000 (that file's own
     # `environment:` block), same pattern as openai_base_url/qdrant_url above.
-    langfuse_host: str = "http://localhost:3000"
+    # LANGFUSE_BASE_URL is the name Langfuse's own SDK documents; LANGFUSE_HOST is what the compose file sets.
+    langfuse_host: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL"),
+    )
+    # The chat agents' LLM (app/shared/config/llm.py): a LangChain provider name and a model name.
+    # Blank model -> openai_model. "openai" goes through openai_base_url (the LiteLLM gateway), so a
+    # model change behind the gateway is just this setting; another provider ("anthropic", "ollama",
+    # ...) needs its langchain-<name> package installed and its own credentials in the environment.
+    agent_llm_provider: str = "openai"
+    agent_llm_model: str = ""
+    # How long one agent LLM call may take.
+    agent_llm_timeout_seconds: float = 30.0
 
     # orchestrator_agent (app/workflow/src/agent1_orchestrator/) - a QA/Admin-only, chat-invisible
     # agent driven from the UI's "Work" tab, not chat. A close-to-verbatim drop-in of

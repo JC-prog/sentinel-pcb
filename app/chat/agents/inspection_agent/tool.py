@@ -1,170 +1,116 @@
-"""InspectImageTool: the single chat tool of the inspection agent, invoked through
-app/chat/agents/registry.py's ToolRegistry/call_tool() like any other tool. It is the only way an
-uploaded AOI image gets inspected (it absorbs what used to be the separate, non-persisting
-`adc_inspection` tool and the former case_agent's persisting behavior).
-
-Two stages per call: an LLM-driven ReAct pass (react.py) that works the inspection steps through
-tools and writes a summary, then the deterministic pipeline (graph.py), which completes anything
-the LLM left undone, decides the verdict from fixed rules, and persists a Case. With no OpenAI key
-(or INSPECTION_AGENT_LLM_ENABLED off) only the second stage runs. Either way the outcome, and the
-Case, come from the deterministic rules - see react.py's docstring.
-
-`parameters` is the public, LLM-facing surface - the caller (app/chat/services/streaming.py's
-_run_tool_call) resolves image/xml ids to bytes and injects `session`/`username`/`user_id`/
-`conversation_id`, none of which an LLM should ever be asked to supply itself.
+"""`inspect_image` - the inspect agent's chat tool. The boundary between the chat and the
+inspection: it reads the user's attached upload (from the injected context, never an id the model
+names), turns the model's optional arguments into an InspectionRequest, runs the pipeline and shapes
+the outcome into the result the model reports and the UI shows as a card.
 """
 
-import json
-from typing import Any
+from typing import Annotated, Any
 
-from app.chat.agents.inspection_agent import react
-from app.chat.agents.inspection_agent.graph import build_graph
-from app.chat.agents.inspection_agent.workflow_state import OrchestratorState
-from app.shared.config.langfuse import get_langfuse_callbacks
+from langchain_core.tools import tool
+
+from app.chat.agents.inspection_agent.pipeline import InspectionOutcome, run_inspection
+from app.chat.agents.inspection_agent.state import InspectionRequest, Stage
+from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, returns_json, text
+from app.chat.core.tools import ToolContext
+from app.chat.uploads import resolve_upload_path
 from app.shared.config.settings import settings
 
-# A generous ceiling on LangGraph super-steps for one run of the plan/policy loop (graph.py) -
-# the longest real path is ~9 execution steps interleaved with ~9 plan steps (~18 total), so this
-# is headroom against a planner/policy bug looping, not a tuned budget.
-_RECURSION_LIMIT = 50
-
 # What a Case records for a board/component the user didn't identify - a user asking "what defect
-# is this?" shouldn't be blocked for lack of a reference designator. Never matches a golden image.
+# is this?" shouldn't be blocked for lack of a reference designator.
 UNKNOWN = "unknown"
 
+_TOP_SCORES = 3
 
-class InspectImageTool:
-    name = "inspect_image"
-    description = (
-        "Inspects an uploaded AOI image of a PCB component: identifies which region it shows and "
-        "what defect it has (two-stage classification through the inference service), checks it "
-        "against a matching golden reference image for alignment/quality, optionally validates an "
-        "attached inspection XML's measurements, and saves the result as a reviewable Case with a "
-        "case number. Use it whenever the user attaches an image and asks what is wrong with it. "
-        "This is the only tool for inspecting an image."
+
+@tool("inspect_image")
+@returns_json
+async def inspect_image(
+    runtime: Runtime,
+    question: Annotated[str | None, "What the user wants to know about the image, in their words."] = None,
+    board_id: Annotated[str | None, "The AOI board identifier, if the user gave one."] = None,
+    component_ref: Annotated[str | None, "The component reference designator (e.g. U7), if known."] = None,
+    package: Annotated[str | None, "The component's package type, if known."] = None,
+    feature: Annotated[str | None, "The specific feature/pad being flagged, if known."] = None,
+    issue_symptom: Annotated[str | None, "What looked wrong, in the user's own words."] = None,
+) -> dict[str, Any]:
+    """Inspects the PCB component image the user attached: identifies which region it shows and
+    what defect it has (two-stage classification through the inference service), optionally
+    validates an attached inspection XML's measurements, and saves the result as a reviewable Case
+    with a case number. Use it whenever the user attaches an image and asks what is wrong with it.
+    Report the region, the defect, the confidence and the verdict it returns."""
+
+    ctx = runtime.context
+    request = _request(
+        ctx,
+        board_id=text(board_id) or UNKNOWN,
+        component_ref=text(component_ref) or UNKNOWN,
+        package=text(package) or None,
+        feature=text(feature) or None,
+        issue_symptom=text(issue_symptom) or None,
+    )
+    outcome = await run_inspection(ctx.session, request, question=text(question) or None)
+    return _result(outcome)
+
+
+INSPECT_IMAGE = ChatTool(
+    inspect_image,
+    label="Image inspection",
+    enabled=lambda: settings.adc_inspection_agent_enabled,
+    requires_image=True,
+    shows_card=True,
+)
+
+
+def _request(ctx: ToolContext, **identity: Any) -> InspectionRequest:
+    """The first attached image (and inspection XML, if any) - read from the user's own uploads."""
+
+    if not ctx.image_ids:
+        raise ToolRefused("no image is attached to this message")
+    image_id = ctx.image_ids[0]
+    image_path = resolve_upload_path(image_id)
+    if image_path is None:
+        raise ToolRefused("the attached image could not be found - ask the user to re-attach it")
+
+    xml_id = ctx.xml_ids[0] if ctx.xml_ids else None
+    xml_path = resolve_upload_path(xml_id) if xml_id else None
+
+    return InspectionRequest(
+        image_bytes=image_path.read_bytes(),
+        image_name=image_id,
+        username=ctx.user.username,
+        user_id=ctx.user.id,
+        conversation_id=ctx.conversation_id,
+        inspection_xml_bytes=xml_path.read_bytes() if xml_path else None,
+        inspection_xml_id=xml_id if xml_path else None,
+        **identity,
     )
 
-    def __init__(self) -> None:
-        self.parameters: dict[str, Any] = {
-            "type": "object",
-            "properties": {
-                "question": {
-                    "type": "string",
-                    "description": "What the user wants to know about the image, in their words.",
-                },
-                "board_id": {
-                    "type": "string",
-                    "description": "The AOI board identifier, if the user gave one.",
-                },
-                "component_ref": {
-                    "type": "string",
-                    "description": "The component reference designator (e.g. U7), if known.",
-                },
-                "package": {
-                    "type": "string",
-                    "description": "The component's package type, if known.",
-                },
-                "feature": {
-                    "type": "string",
-                    "description": "The specific feature/pad being flagged, if known.",
-                },
-                "issue_symptom": {
-                    "type": "string",
-                    "description": "What looked wrong, in the flagging user's own words.",
-                },
-            },
-            "required": [],
-        }
 
-    async def run(self, **kwargs: Any) -> str:
-        initial_state: OrchestratorState = {
-            "image_bytes": kwargs["image_bytes"],
-            "image_name": kwargs.get("image_name") or "image",
-            "inspection_xml_bytes": kwargs.get("inspection_xml_bytes"),
-            "inspection_xml_id": kwargs.get("inspection_xml_id"),
-            "username": kwargs["username"],
-            "user_id": kwargs["user_id"],
-            "conversation_id": kwargs["conversation_id"],
-            "board_id": kwargs.get("board_id") or UNKNOWN,
-            "component_ref": kwargs.get("component_ref") or UNKNOWN,
-            "package": kwargs.get("package") or None,
-            "feature": kwargs.get("feature") or None,
-            "issue_symptom": kwargs.get("issue_symptom") or None,
-            "image_readable": None,
-            "golden_lookup_done": False,
-            "golden_image_id": None,
-            "measurement_validation": None,
-            "alignment_done": False,
-            "alignment_result": None,
-            "quality_issues": [],
-            "region": "",
-            "region_confidence": 0.0,
-            "region_scores": {},
-            "region_uncertain": False,
-            "region_model_version": "",
-            "defect_model": "",
-            "defect_model_version": "",
-            "defect_label": "",
-            "defect_confidence": 0.0,
-            "defect_scores": {},
-            "final_decision": "",
-            "case_persisted": False,
-            "case_id": None,
-            "case_number": None,
-            "status": "RUNNING",
-            "current_step": None,
-            "plan_history": [],
-            "tool_history": [],
-            "replan_count": 0,
-            "termination_reason": None,
-            "observations": [],
-            "error": None,
-        }
+def _result(outcome: InspectionOutcome) -> dict[str, Any]:
+    run = outcome.run
+    if outcome.case is None or outcome.verdict is None:
+        raise ToolRefused(run.error or "inspection failed", observations=run.observations)
+    return {
+        "case_number": outcome.case.case_number,
+        "verdict": outcome.verdict.status.value,
+        "review_required": outcome.verdict.review_required,
+        "review_reasons": outcome.verdict.reasons,
+        "inspection_summary": outcome.summary,
+        "region": _stage(run.region),
+        "defect": _stage(run.defect),
+        "measurement_validation": run.measurement_validation,
+        "image_quality": run.image_quality,
+        "observations": run.observations,
+    }
 
-        session = kwargs["session"]
-        summary: str | None = None
-        if settings.inspection_agent_llm_enabled and settings.openai_api_key:
-            summary = await react.run_react_pass(
-                session, initial_state, question=kwargs.get("question")
-            )
 
-        pipeline = build_graph(session)
-        final_state = await pipeline.ainvoke(
-            initial_state,
-            config={
-                "recursion_limit": _RECURSION_LIMIT,
-                "callbacks": get_langfuse_callbacks(),
-            },
-        )
-
-        if not final_state.get("case_persisted"):
-            return json.dumps(
-                {
-                    "error": (
-                        final_state.get("error")
-                        or final_state.get("termination_reason")
-                        or "workflow aborted"
-                    ),
-                    "observations": final_state["observations"],
-                }
-            )
-
-        return json.dumps(
-            {
-                "case_number": final_state["case_number"],
-                "final_decision": final_state["final_decision"],
-                "review_required": final_state["final_decision"] == "REVIEW_REQUIRED",
-                "region": final_state["region"],
-                "region_confidence": final_state["region_confidence"],
-                "region_model_version": final_state["region_model_version"] or None,
-                "defect_model": final_state["defect_model"],
-                "defect_model_version": final_state["defect_model_version"] or None,
-                "defect_label": final_state["defect_label"],
-                "defect_confidence": final_state["defect_confidence"],
-                "golden_image_found": final_state["golden_image_id"] is not None,
-                "measurement_validation": final_state["measurement_validation"],
-                "quality_issues": final_state.get("quality_issues") or [],
-                "inspection_summary": summary,
-                "observations": final_state["observations"],
-            }
-        )
+def _stage(stage: Stage | None) -> dict[str, Any] | None:
+    if stage is None:
+        return None
+    return {
+        "model": stage.model,
+        "model_version": stage.model_version,
+        "label": stage.label,
+        "confidence": round(stage.confidence, 4),
+        "top_scores": stage.ranked_scores(_TOP_SCORES),
+    }
