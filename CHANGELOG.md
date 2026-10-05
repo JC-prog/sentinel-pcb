@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: the **sample agent** (`app/chat/agents/sample_agent/`). Give it a dataset `sample_id` such as
+  `S000001` and `get_sample` reports what the Work tab stored in Qdrant - board and component, the
+  machine's call and failed measurements, Agent 1's verdict, Agent 2's review and the operator's
+  decision - and `list_review_cases` lists what a run flagged for review. Read-only (a sample is not a
+  Case); a sample found in several runs answers from the latest and names the others. New
+  `SAMPLE_LOOKUP_AGENT_ENABLED` kill switch.
+- Chat: a `create_case` tool. After an image inspection the assistant asks whether you want a case
+  created, and makes one only after you say yes in your next message (enforced in code, like relabel
+  and review). New `inspection_drafts` table (Alembic `b5c1f8a3d742`) holds the inspection meanwhile.
 - Work tab: a finished run, its Agent 2 reviews and the operator's decisions are now persisted to
   Qdrant (the source project's `adc_orchestrator_runs` / `adc_inspection_results` /
   `adc_agent2_reviews` collections, via `app/workflow/services/run_store.py`), so the Review Console
@@ -61,6 +70,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Chat: `inspect_image` no longer saves a Case on its own - it reports the result and the assistant
+  asks whether to create one (see `create_case`). The inspection card shows "Not saved as a case".
+  Drift numbers are computed from saved Cases, so they now cover the inspections users chose to keep
+  as cases rather than every inspection.
 - Chat agents rebuilt around three: an **inspect agent** (verifier and classifier sub-agents, fixed
   verdict rules, and an LLM-driven ReAct pass on LangChain `create_agent`), the new relabel agent, and
   the monitoring agent. The LLM never decides the verdict or saves anything; an inference-service outage

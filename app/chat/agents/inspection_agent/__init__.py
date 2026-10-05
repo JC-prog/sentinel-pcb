@@ -1,3 +1,3 @@
-from app.chat.agents.inspection_agent.tool import INSPECT_IMAGE
+from app.chat.agents.inspection_agent.tool import CREATE_CASE, INSPECT_IMAGE
 
-__all__ = ["INSPECT_IMAGE"]
+__all__ = ["CREATE_CASE", "INSPECT_IMAGE"]

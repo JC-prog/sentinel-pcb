@@ -18,7 +18,7 @@ from app.chat.agents.inspection_agent.state import (
     InspectionRun,
     Stage,
 )
-from app.chat.db.models import Case, Conversation
+from app.chat.db.models import Case, CaseDraft, Conversation
 from app.shared.config.settings import settings
 from app.shared.db.models import User, UserRole
 from app.shared.inference import Classification, InferenceError
@@ -349,7 +349,7 @@ def _llm_on(monkeypatch: pytest.MonkeyPatch, *replies: Any) -> None:
     _script(monkeypatch, *replies)
 
 
-async def test_a_summary_only_model_still_gets_a_case_from_the_fixed_rules(
+async def test_a_summary_only_model_still_gets_a_draft_from_the_fixed_rules(
     db_async_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     confident_inference: list[str],
@@ -363,11 +363,11 @@ async def test_a_summary_only_model_still_gets_a_case_from_the_fixed_rules(
     outcome = await pipeline.run_inspection(db_async_session, request)
 
     assert outcome.summary == "Looks like a missing part."
-    assert outcome.case is not None and outcome.case.status == "accepted"
+    assert outcome.draft is not None and outcome.draft.payload["status"] == "accepted"
     assert confident_inference == ["pcb_region", "pcb_body_defect"]
 
 
-async def test_a_failed_llm_pass_still_produces_the_deterministic_case(
+async def test_a_failed_llm_pass_still_produces_the_deterministic_draft(
     db_async_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
     confident_inference: list[str],
@@ -379,9 +379,10 @@ async def test_a_failed_llm_pass_still_produces_the_deterministic_case(
     outcome = await pipeline.run_inspection(db_async_session, request)
 
     assert outcome.summary is None
-    assert outcome.case is not None
-    cases = (await db_async_session.scalars(select(Case))).all()
-    assert len(cases) == 1
+    assert outcome.draft is not None
+    # the inspection is parked for the user's yes, not saved as a case
+    assert (await db_async_session.scalars(select(Case))).all() == []
+    assert len((await db_async_session.scalars(select(CaseDraft))).all()) == 1
 
 
 async def test_the_llm_pass_is_skipped_without_a_key(
@@ -400,5 +401,5 @@ async def test_the_llm_pass_is_skipped_without_a_key(
 
     outcome = await pipeline.run_inspection(db_async_session, request)
 
-    assert outcome.case is not None
+    assert outcome.draft is not None
     assert outcome.summary is None

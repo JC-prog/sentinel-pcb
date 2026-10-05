@@ -3,7 +3,7 @@ import { InspectionResult, ToolResult } from '../models/chat.models';
 import { ToolResultCard } from './tool-result-card';
 
 const ACCEPTED: InspectionResult = {
-  case_number: 'CASE-000042',
+  case_created: false,
   verdict: 'accepted',
   review_required: false,
   review_reasons: [],
@@ -42,10 +42,10 @@ describe('ToolResultCard', () => {
   beforeEach(() => TestBed.configureTestingModule({ imports: [ToolResultCard] }));
 
   describe('an inspection result', () => {
-    it('shows the case number, the verdict, and what each classifier found', () => {
+    it('shows the verdict and what each classifier found, and that no case was saved', () => {
       const { el } = render({ name: 'inspect_image', result: ACCEPTED });
 
-      expect(el.textContent).toContain('CASE-000042');
+      expect(text(el, 'case-state')).toBe('Not saved as a case');
       expect(text(el, 'verdict')).toBe('Accepted');
       expect(text(el, 'region')).toBe('Body · 91%');
       expect(text(el, 'defect')).toBe('MissingPart · 87%');

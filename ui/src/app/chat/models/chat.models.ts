@@ -15,9 +15,11 @@ export interface StageResult {
   top_scores: ScoreEntry[];
 }
 
-/** What the inspect_image tool returns (app/chat/agents/inspection_agent/tool.py). */
+/** What the inspect_image tool returns (app/chat/agents/inspection_agent/tool.py). It saves
+ * nothing: a case is only created when the user asks for one (the create_case tool), so there is no
+ * case number here. */
 export interface InspectionResult {
-  case_number: string;
+  case_created: false;
   verdict: 'accepted' | 'review_required';
   review_required: boolean;
   review_reasons: string[];
