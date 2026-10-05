@@ -299,27 +299,29 @@
             <h2 id="review-console-title" class="text-lg font-bold">Explanation Review Queue</h2>
             <span class="font-mono text-xs text-slate-500 dark:text-slate-400">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
-              <button
-                type="button"
-                (click)="refreshCases()"
-                class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-              >
-                Refresh
-              </button>
-              <label class="flex items-center gap-1">
-                <span class="text-slate-500 dark:text-slate-400">Show:</span>
-                <select
-                  [ngModel]="caseFilter()"
-                  (ngModelChange)="caseFilter.set($event)"
-                  name="caseFilter"
-                  aria-label="show"
-                  class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+              @if (consoleTab() === 'review') {
+                <button
+                  type="button"
+                  (click)="refreshCases()"
+                  class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                 >
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="reviewed">Reviewed</option>
-                </select>
-              </label>
+                  Refresh
+                </button>
+                <label class="flex items-center gap-1">
+                  <span class="text-slate-500 dark:text-slate-400">Show:</span>
+                  <select
+                    [ngModel]="caseFilter()"
+                    (ngModelChange)="caseFilter.set($event)"
+                    name="caseFilter"
+                    aria-label="show"
+                    class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+                  >
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="reviewed">Reviewed</option>
+                  </select>
+                </label>
+              }
               <button
                 type="button"
                 (click)="closeConsole()"
@@ -331,6 +333,40 @@
             </div>
           </header>
 
+          <div role="tablist" class="flex gap-1 border-b border-slate-300 px-4 pt-2 text-sm dark:border-slate-700">
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-review"
+              [attr.aria-selected]="consoleTab() === 'review'"
+              (click)="consoleTab.set('review')"
+              class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
+              [class]="
+                consoleTab() === 'review'
+                  ? 'border-slate-300 bg-white font-semibold dark:border-slate-700 dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              "
+            >
+              Explanation Review
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-drift"
+              [attr.aria-selected]="consoleTab() === 'drift'"
+              (click)="consoleTab.set('drift')"
+              class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
+              [class]="
+                consoleTab() === 'drift'
+                  ? 'border-slate-300 bg-white font-semibold dark:border-slate-700 dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              "
+            >
+              Drift &amp; Retraining ({{ results().length }})
+            </button>
+          </div>
+
+          @if (consoleTab() === 'review') {
           <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <!-- Items needing explanation -->
             <section class="rounded border border-slate-200 dark:border-slate-700">
@@ -527,128 +563,130 @@
               }
             </div>
           </div>
+          } @else {
+          <!-- Per-sample results: report drift / flag samples for retraining -->
+          <div data-testid="results-section" class="min-h-0 flex-1 overflow-y-auto p-4">
+            @if (results().length === 0) {
+              <p class="text-sm text-slate-500 dark:text-slate-400">
+                No results yet - run the workflow to report drift or flag samples for retraining.
+              </p>
+            } @else {
+              <h2 class="mb-3 text-sm font-semibold">
+                Results ({{ results().length }}) - report drift or flag for retraining
+              </h2>
+
+              @if (monitoringError()) {
+                <p
+                  role="alert"
+                  class="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                >
+                  {{ monitoringError() }}
+                </p>
+              }
+              @if (monitoringMessage()) {
+                <p
+                  role="status"
+                  class="mb-3 rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                >
+                  {{ monitoringMessage() }}
+                </p>
+              }
+
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="text-slate-500 dark:text-slate-400">
+                    <tr>
+                      <th class="py-1 pr-2"></th>
+                      <th class="py-1 pr-3 font-medium">Sample</th>
+                      <th class="py-1 pr-3 font-medium">Model</th>
+                      <th class="py-1 pr-3 font-medium">Defect</th>
+                      <th class="py-1 pr-3 font-medium">Confidence</th>
+                      <th class="py-1 font-medium">Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (sample of results(); track sample.sample_id) {
+                      <tr class="border-t border-slate-200 dark:border-slate-800">
+                        <td class="py-1 pr-2">
+                          <input
+                            type="checkbox"
+                            [attr.aria-label]="'select ' + sample.sample_id"
+                            [checked]="isSampleSelected(sample.sample_id)"
+                            (change)="toggleSample(sample.sample_id)"
+                          />
+                        </td>
+                        <td class="py-1 pr-3 font-mono">{{ sample.sample_id }}</td>
+                        <td class="py-1 pr-3 font-mono">{{ sample.routing?.service_model ?? '—' }}</td>
+                        <td class="py-1 pr-3">{{ sample.defect_classification?.prediction ?? '—' }}</td>
+                        <td class="py-1 pr-3">
+                          {{ confidencePercent(sample) !== null ? confidencePercent(sample) + '%' : '—' }}
+                        </td>
+                        <td class="py-1">{{ sample.final_decision }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                <div class="rounded border border-slate-200 p-3 dark:border-slate-700">
+                  <h3 class="mb-2 text-xs font-semibold">Report drift</h3>
+                  <select
+                    [ngModel]="driftModelName()"
+                    (ngModelChange)="driftModelName.set($event)"
+                    name="driftModelName"
+                    class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
+                  >
+                    <option value="" disabled>Choose a model…</option>
+                    @for (name of modelsInResults(); track name) {
+                      <option [value]="name">{{ name }}</option>
+                    }
+                  </select>
+                  <textarea
+                    [ngModel]="driftDescription()"
+                    (ngModelChange)="driftDescription.set($event)"
+                    name="driftDescription"
+                    rows="2"
+                    placeholder="What looks off about this model's results?"
+                    class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm placeholder:text-slate-400 dark:border-slate-700"
+                  ></textarea>
+                  <button
+                    type="button"
+                    [disabled]="!canReportDrift()"
+                    (click)="reportDrift()"
+                    class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    Report drift
+                  </button>
+                </div>
+
+                <div class="rounded border border-slate-200 p-3 dark:border-slate-700">
+                  <h3 class="mb-2 text-xs font-semibold">
+                    Flag {{ selectedSampleIds().size }} selected for retraining
+                  </h3>
+                  <textarea
+                    [ngModel]="retrainingReason()"
+                    (ngModelChange)="retrainingReason.set($event)"
+                    name="retrainingReason"
+                    rows="2"
+                    placeholder="Why does the model's call on these samples look wrong?"
+                    class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm placeholder:text-slate-400 dark:border-slate-700"
+                  ></textarea>
+                  <button
+                    type="button"
+                    [disabled]="!canFlagSelected()"
+                    (click)="flagSelectedForRetraining()"
+                    class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    Flag for retraining
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+          }
         </div>
       </div>
-    }
-
-    <!-- Per-sample results: report drift / flag samples for retraining -->
-    @if (results().length > 0) {
-      <section
-        data-testid="results-section"
-        class="rounded-lg border border-slate-300 p-3 dark:border-slate-700"
-      >
-        <h2 class="mb-3 text-sm font-semibold">
-          Results ({{ results().length }}) - report drift or flag for retraining
-        </h2>
-
-        @if (monitoringError()) {
-          <p
-            role="alert"
-            class="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
-          >
-            {{ monitoringError() }}
-          </p>
-        }
-        @if (monitoringMessage()) {
-          <p
-            role="status"
-            class="mb-3 rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-          >
-            {{ monitoringMessage() }}
-          </p>
-        }
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="text-slate-500 dark:text-slate-400">
-              <tr>
-                <th class="py-1 pr-2"></th>
-                <th class="py-1 pr-3 font-medium">Sample</th>
-                <th class="py-1 pr-3 font-medium">Model</th>
-                <th class="py-1 pr-3 font-medium">Defect</th>
-                <th class="py-1 pr-3 font-medium">Confidence</th>
-                <th class="py-1 font-medium">Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (sample of results(); track sample.sample_id) {
-                <tr class="border-t border-slate-200 dark:border-slate-800">
-                  <td class="py-1 pr-2">
-                    <input
-                      type="checkbox"
-                      [attr.aria-label]="'select ' + sample.sample_id"
-                      [checked]="isSampleSelected(sample.sample_id)"
-                      (change)="toggleSample(sample.sample_id)"
-                    />
-                  </td>
-                  <td class="py-1 pr-3 font-mono">{{ sample.sample_id }}</td>
-                  <td class="py-1 pr-3 font-mono">{{ sample.routing?.service_model ?? '—' }}</td>
-                  <td class="py-1 pr-3">{{ sample.defect_classification?.prediction ?? '—' }}</td>
-                  <td class="py-1 pr-3">
-                    {{ confidencePercent(sample) !== null ? confidencePercent(sample) + '%' : '—' }}
-                  </td>
-                  <td class="py-1">{{ sample.final_decision }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-          <div class="rounded border border-slate-200 p-3 dark:border-slate-700">
-            <h3 class="mb-2 text-xs font-semibold">Report drift</h3>
-            <select
-              [ngModel]="driftModelName()"
-              (ngModelChange)="driftModelName.set($event)"
-              name="driftModelName"
-              class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
-            >
-              <option value="" disabled>Choose a model…</option>
-              @for (name of modelsInResults(); track name) {
-                <option [value]="name">{{ name }}</option>
-              }
-            </select>
-            <textarea
-              [ngModel]="driftDescription()"
-              (ngModelChange)="driftDescription.set($event)"
-              name="driftDescription"
-              rows="2"
-              placeholder="What looks off about this model's results?"
-              class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm placeholder:text-slate-400 dark:border-slate-700"
-            ></textarea>
-            <button
-              type="button"
-              [disabled]="!canReportDrift()"
-              (click)="reportDrift()"
-              class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-            >
-              Report drift
-            </button>
-          </div>
-
-          <div class="rounded border border-slate-200 p-3 dark:border-slate-700">
-            <h3 class="mb-2 text-xs font-semibold">
-              Flag {{ selectedSampleIds().size }} selected for retraining
-            </h3>
-            <textarea
-              [ngModel]="retrainingReason()"
-              (ngModelChange)="retrainingReason.set($event)"
-              name="retrainingReason"
-              rows="2"
-              placeholder="Why does the model's call on these samples look wrong?"
-              class="mb-2 w-full rounded border border-slate-300 bg-transparent px-2 py-1 text-sm placeholder:text-slate-400 dark:border-slate-700"
-            ></textarea>
-            <button
-              type="button"
-              [disabled]="!canFlagSelected()"
-              (click)="flagSelectedForRetraining()"
-              class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-            >
-              Flag for retraining
-            </button>
-          </div>
-        </div>
-      </section>
     }
   </div>
 </div>
