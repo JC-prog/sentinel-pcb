@@ -1,33 +1,27 @@
-"""Which chat tools each UserRole may call - enforced in app/chat/services/streaming.py both when building the
-`tools` offered to the LLM (_available_tool_specs) and, as defense in depth, again right before
-dispatch (_run_tool_call), so a client can't reach a tool merely by naming it in a tool-call
-request that was never actually offered.
-
-generic tools (current_time, get_weather) stay universal across every role - none of them touch
-inspection/review/monitoring data, so there's no reason to gate them.
+"""Which chat tools each UserRole may call. registry.py filters on this table when it decides which
+tools a request may use, and only those tools are given to the supervisor model - so a call naming
+any other tool cannot run, however the model was prompted. Hiding a tool from the model is not
+itself the access control; not having given it one is.
 """
 
 from app.shared.db.models import UserRole
 
 TOOL_ROLES: dict[str, frozenset[UserRole]] = {
-    "current_time": frozenset(UserRole),
-    "get_weather": frozenset(UserRole),
     "inspect_image": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "list_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "get_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Proposing a relabel saves nothing; confirming it records the correction and queues a
+    # retraining ticket - an Admin still approves the retraining itself in the Models tab.
+    "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "confirm_relabel": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Proposing a case review saves nothing; confirming it resolves the case (APPROVED/OVERRIDDEN).
     "review_case": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "find_similar_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "explainability_review": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "investigate_case": frozenset({UserRole.QA, UserRole.ADMIN}),
-    "flag_case_for_retraining": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "confirm_review": frozenset({UserRole.QA, UserRole.ADMIN}),
     "report_model_drift": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_drift_summary": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Drafting only queues a plan as pending approval; approving it (and promoting a retrained
     # model) are Admin-only actions in the Models tab, never chat tools.
     "draft_retraining_plan": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Admin-only, not QA - infra/monitoring visibility is a configuration concern, not a QA
-    # day-to-day action (unlike flag_case_for_retraining, which lives in the same agent folder but
-    # is a QA judgment call about a specific case).
+    # day-to-day action.
     "monitoring_status": frozenset({UserRole.ADMIN}),
 }
 

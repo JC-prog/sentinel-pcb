@@ -24,6 +24,7 @@ from app.shared.api import STREAMING_PATHS as _SHARED_STREAMING_PATHS
 from app.shared.api import router as shared_router
 from app.shared.api.auth import ACCESS_TOKEN_COOKIE
 from app.shared.auth.security import decode_access_token
+from app.shared.config.langfuse import flush_tracing, init_tracing
 from app.shared.config.logging_config import configure_logging
 from app.shared.config.settings import settings
 from app.shared.db import init_models
@@ -46,7 +47,9 @@ configure_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_models()
+    init_tracing()
     yield
+    flush_tracing()
 
 
 app = FastAPI(title="SentinelChat", lifespan=lifespan)

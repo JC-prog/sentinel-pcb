@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../auth.service';
 import { ChatResponder, ChatResponderEvent } from './chat-responder';
+import { TOOL_RESULT_NAMES, ToolResult } from './models/chat.models';
 import { SettingsService } from './settings.service';
 
 interface SseFrame {
@@ -109,6 +110,14 @@ export class HttpChatResponder implements ChatResponder {
               subscriber.next({ type: 'delta', text: String(frame.data['text']) });
             } else if (frame.event === 'tool_call') {
               subscriber.next({ type: 'toolCall', label: String(frame.data['label']) });
+            } else if (frame.event === 'tool_result') {
+              const name = frame.data['name'] as ToolResult['name'];
+              if (TOOL_RESULT_NAMES.includes(name)) {
+                subscriber.next({
+                  type: 'toolResult',
+                  toolResult: { name, result: frame.data['result'] } as ToolResult,
+                });
+              }
             } else if (frame.event === 'error') {
               throw new Error(String(frame.data['message'] ?? 'Chat stream error'));
             } else if (frame.event === 'done') {

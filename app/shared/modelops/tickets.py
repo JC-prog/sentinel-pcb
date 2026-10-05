@@ -1,4 +1,4 @@
-"""RetrainingTicket rows - created by the chat monitoring agent's flag_case_for_retraining when a
+"""RetrainingTicket rows - created by the chat relabel agent's confirm_relabel when a
 QA/Admin reviewer believes a Case's model verdict was wrong, or by the Work tab's bulk orchestrator
 flagging a dataset sample it has no Case row for. A ticket only records the claim; jobs.py's
 draft_job() is what turns open tickets into a retraining request, and doesn't care which origin a

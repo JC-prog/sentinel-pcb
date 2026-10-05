@@ -53,7 +53,6 @@ async def _case(
         "issue_symptom": None,
         "image_id": "x.png",
         "inspection_xml_id": None,
-        "golden_image_id": None,
         "region": "Body",
         "region_confidence": 0.9,
         "region_model_version": "JcProg/region@v1",
@@ -66,11 +65,13 @@ async def _case(
         "observations": [],
         "status": status,
     }
+    corrected_label = overrides.pop("corrected_label", None)
     fields.update(overrides)
     case = await create_case(
         session, created_by_user_id=user.id, conversation_id=conversation.id, **fields
     )
     case.created_at = NOW - timedelta(days=days_ago)
+    case.corrected_label = corrected_label
     await session.commit()
     return case
 
@@ -269,3 +270,51 @@ async def test_the_summary_counts_tickets_flagged_in_the_window(
     summary = await drift_summary(db_async_session, DEFECT_MODEL, days=7, now=datetime.now(UTC))
 
     assert summary["tickets_flagged_in_window"] == 1
+
+
+async def _corrected_cases(
+    session: AsyncSession, user: User, conversation: Conversation, *, days_ago: float, corrected: int, total: int
+) -> None:
+    for i in range(total):
+        await _case(
+            session,
+            user,
+            conversation,
+            days_ago=days_ago,
+            corrected_label="Golden" if i < corrected else None,
+        )
+
+
+async def test_window_stats_counts_cases_whose_label_a_reviewer_corrected(
+    db_async_session: AsyncSession,
+) -> None:
+    user, conversation = await _setup(db_async_session)
+    await _corrected_cases(db_async_session, user, conversation, days_ago=1, corrected=1, total=4)
+
+    stats = await _stats(db_async_session)
+
+    assert (stats.total, stats.corrected) == (4, 1)
+    assert stats.correction_rate == 0.25
+    assert stats.to_dict()["corrected"] == 1
+
+
+async def test_a_jump_in_corrections_is_called_out(db_async_session: AsyncSession) -> None:
+    user, conversation = await _setup(db_async_session)
+    await _corrected_cases(db_async_session, user, conversation, days_ago=10, corrected=0, total=10)
+    await _corrected_cases(db_async_session, user, conversation, days_ago=2, corrected=6, total=10)
+
+    summary = await drift_summary(db_async_session, DEFECT_MODEL, days=7, now=NOW)
+
+    assert summary["previous"]["correction_rate"] == 0.0
+    assert summary["recent"]["correction_rate"] == 0.6
+    assert any("corrected" in signal for signal in summary["signals"])
+
+
+async def test_steady_corrections_raise_no_signal(db_async_session: AsyncSession) -> None:
+    user, conversation = await _setup(db_async_session)
+    await _corrected_cases(db_async_session, user, conversation, days_ago=10, corrected=2, total=10)
+    await _corrected_cases(db_async_session, user, conversation, days_ago=2, corrected=2, total=10)
+
+    summary = await drift_summary(db_async_session, DEFECT_MODEL, days=7, now=NOW)
+
+    assert not any("corrected" in signal for signal in summary["signals"])

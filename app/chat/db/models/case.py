@@ -1,7 +1,6 @@
 """Persistence model for the case-management workflow: app/chat/agents/inspection_agent/ creates a
 Case per flagged image (verdict REVIEW_REQUIRED or ACCEPTED); QA/Admin later resolve a
-REVIEW_REQUIRED case via review_case (app/chat/agents/inspection_agent/tools.py), moving it to
-APPROVED or OVERRIDDEN.
+REVIEW_REQUIRED case, moving it to APPROVED or OVERRIDDEN.
 """
 
 import uuid
@@ -22,10 +21,9 @@ def _utcnow() -> datetime:
 
 class CaseStatus(StrEnum):
     """ACCEPTED/REVIEW_REQUIRED are pipeline verdicts, set once by inspection_agent/graph.py's
-    persist_case node and never changed after. APPROVED/OVERRIDDEN are terminal, human-set states
-    from review_case - APPROVED confirms the flagged defect stands, OVERRIDDEN reverses a
-    REVIEW_REQUIRED call (treated as a false positive). Only a REVIEW_REQUIRED case can transition
-    to APPROVED/OVERRIDDEN - see app/chat/agents/inspection_agent/repository.py's resolve_case().
+    pipeline (app/chat/agents/inspection_agent/verdict.py) and never changed by it. APPROVED/
+    OVERRIDDEN are terminal, human-set states - APPROVED confirms the flagged defect stands,
+    OVERRIDDEN reverses a REVIEW_REQUIRED call (treated as a false positive).
     """
 
     ACCEPTED = "accepted"
@@ -54,7 +52,7 @@ class Case(Base):
 
     # Identifying fields - same names as case_agent/schemas.py's
     # ExplainabilityReviewRequest (board_id, component_ref); package/feature are additional,
-    # needed to key the golden-image bank unambiguously.
+    # kept for matching a case to its component.
     board_id: Mapped[str] = mapped_column(String, nullable=False)
     component_ref: Mapped[str] = mapped_column(String, nullable=False)
     package: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -64,9 +62,6 @@ class Case(Base):
     # Uploaded artifacts - stored filenames (app.chat.uploads.service convention), not blob data.
     image_id: Mapped[str] = mapped_column(String, nullable=False)
     inspection_xml_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    golden_image_id: Mapped[str | None] = mapped_column(
-        String, ForeignKey("golden_images.id"), nullable=True
-    )
 
     # Pipeline output - mirrors inspection_agent's AdcInspectionState fields worth persisting.
     region: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -96,6 +91,36 @@ class Case(Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # A reviewer's correction of the model's defect label (the relabel agent). Kept beside the
+    # model's own defect_label rather than over it, so what the model said is never lost - the
+    # pair is exactly what a retraining ticket and the drift numbers need.
+    corrected_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    corrected_by_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id"), nullable=True
+    )
+    corrected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    correction_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # A relabel is proposed in one chat turn and confirmed in a later one. The proposal waits here;
+    # confirming commits it to corrected_*, and proposing again replaces it.
+    pending_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_by_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id"), nullable=True
+    )
+    pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The same two-step shape for a reviewer's approve/override of a REVIEW_REQUIRED case (the review
+    # agent): "approve" or "override", proposed in one turn and confirmed in a later one.
+    pending_resolution: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_resolution_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_resolution_by_user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id"), nullable=True
+    )
+    pending_resolution_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -77,6 +77,7 @@ export class Work implements OnDestroy {
   protected readonly ipcClasses = IPC_CLASSES;
   protected readonly reviewCases = signal<WorkflowReviewCaseOut[]>([]);
   protected readonly consoleOpen = signal(false);
+  protected readonly consoleTab = signal<'review' | 'drift'>('review');
   protected readonly caseFilter = signal<'all' | 'pending' | 'reviewed'>('all');
   protected readonly selectedCaseId = signal<string | null>(null);
   protected readonly goldenImageUrl = signal<string | null>(null);

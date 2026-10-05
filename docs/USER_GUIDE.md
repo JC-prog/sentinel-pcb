@@ -15,169 +15,127 @@ assistant figures out which capability (if any) applies and calls it for you.
 
 | Role  | Can do |
 | ----- | ------ |
-| **QA**    | Everything below except viewing model/infra monitoring status. This is the role for day-to-day inspection work: submitting images, investigating cases, reviewing, flagging bad calls. |
-| **Admin** | Everything QA can do, plus registering golden reference images and viewing monitoring status. |
+| **QA**    | Everything below except the model-status overview. This is the role for day-to-day inspection work: inspecting images, correcting wrong labels, checking model health. |
+| **Admin** | Everything QA can do, plus the model-status overview, registering golden reference images, and approving retraining in the Models tab. |
 
 Your role is set when your account is registered (or by an Admin) - if the assistant tells you a
 tool "is not permitted for your role," that's a role gate, not a bug.
 
 ---
 
-## 2. Everyday chat
-
-Ask anything - general conversation, "what time is it in Singapore," "what's the weather in
-Austin" - and the assistant answers directly, or calls a small built-in tool (`current_time`,
-`get_weather`) if that's genuinely what's being asked. No attachment needed.
-
----
-
-## 3. Submitting a PCB image for inspection
+## 2. Inspecting a PCB image
 
 **Trigger:** attach an image to your message (paperclip button or drag-and-drop onto the chat
-window), then describe what you're flagging - e.g.:
+window), then say what you want to know - e.g.:
 
-> *"Check this component, the solder looks thin."* (image attached)
+> *"What defect does this have?"* (image attached)
 
 **Optional:** also attach an inspection XML file from the AOI machine, if you have one - the
 assistant will validate its measurements as part of the same check.
 
-**What happens:** the assistant runs the full inspection workflow on your image:
-1. Verifies the image is readable.
-2. Looks up a matching golden (known-good) reference image on file, if one is registered, and
-   checks your image aligns with it.
-3. Classifies the component region (Body/Lead/Text) and the specific defect.
-4. Validates the attached inspection XML's measurements, if you attached one.
-5. Decides **ACCEPTED** or **REVIEW_REQUIRED**.
-6. If **REVIEW_REQUIRED**, automatically runs a deeper diagnosis (see §4) and attaches it - you
-   don't need to ask for this separately.
-7. Saves everything as a **Case** with a case number, e.g. `CASE-000123`, whichever verdict it was.
+**What you get back:** a result card above the assistant's reply showing:
+- the **case number**, e.g. `CASE-000123` (every inspection is saved as a Case),
+- the **verdict** - *Accepted*, or *Review required* with the reasons why,
+- the **region** the model found (Body / Lead / Text) and the **defect** it classified, each with
+  its confidence,
+- **what else the model considered** - the runner-up labels and their scores,
+- whether the XML's **measurements** passed validation, if you attached one.
 
-**What you need to mention (in your own words - the assistant will ask if something's missing):**
-- The board identifier (e.g. `BOARD-1`)
-- The component reference designator (e.g. `U7`, `R131`, `C978`)
-- Optionally: package type, the specific feature/pad, and what looked wrong to you
+The assistant then explains the result in words. The card is the exact figures straight from the
+model; the words are the assistant's summary of them.
+
+**Mention, if you know them:** the board identifier (e.g. `BOARD-1`), the component reference
+(e.g. `U7`), and what looked wrong to you. None is required - you won't be blocked for lack of a
+reference designator.
 
 **Example:**
 
-> *"Flag component U7 on BOARD-1, package QFN32 - I think the solder joint is insufficient."*
-> (image attached)
+> *"Check U7 on BOARD-1 - I think the solder joint is insufficient."* (image attached)
 >
-> Assistant: *"This has been logged as CASE-000045. The model classified it as Body / Solder
-> Insufficient with 62% confidence, which is below the confidence threshold, so it's flagged
-> REVIEW_REQUIRED. I ran a deeper diagnosis: [...]"*
+> Assistant: *"Logged as CASE-000045. The region is Body and the defect is Solder Insufficient,
+> but only 62% confident - below the threshold - so it needs review."*
+
+If the inference service is down or the file isn't a readable image, you get an error instead of a
+case - nothing is saved, and you can simply try again.
 
 ---
 
-## 4. Getting a deep-dive diagnosis
+## 3. Correcting a wrong label
 
-Two ways to trigger the same underlying diagnosis (visual evidence + historical precedents +
-IPC-A-610 standards + AOI/ICT telemetry, reasoned into a root-cause explanation):
+If the model's defect label on a case is wrong, tell the assistant what it should have been and why:
 
-**a) From a fresh image** - attach an image and ask for an explanation directly:
+> *"That's wrong - it's actually a golden part, the shadow just looks like a missing component."*
+> *"CASE-000045 should be Tombstone, not MissingPart."*
 
-> *"Why does this look like a defect?"* (image attached, mention board id + component ref)
+**It always takes two messages.** First the assistant checks your label and shows what it *would*
+record - a card with the model's label crossed out and yours beside it - and asks you to confirm.
+**Nothing is saved yet.** Reply *"yes"* and only then is the correction recorded.
 
-**b) From an existing case, by case number** - no image needed, just reference the case:
-
-> *"Investigate CASE-000045."*
-> *"Why did the model flag CASE-000123?"*
-
-The assistant resolves the case's stored image (and inspection XML, if one was attached when the
-case was created) automatically - you never need to re-upload anything for a case that already
-exists.
-
-**Follow-up questions work too**, once a diagnosis has been run in the conversation:
-
-> *"Which past case is this most similar to?"*
-> *"What does IPC-A-610 say about this?"*
+- The label must be one the model can actually output. If it isn't, the assistant tells you the valid
+  ones. Spelling and spacing don't matter (*"missing part"* works for `MissingPart`).
+- **A reason is required** - a bare "this is wrong" is declined.
+- Without a case number it uses the latest case in the conversation.
+- A confirmed correction is recorded on the case (the model's original label is kept alongside), and
+  a **retraining ticket** is queued for engineering. It doesn't retrain anything by itself: an Admin
+  approves retraining in the Models tab.
+- A case where the region was too uncertain for a defect model to run has no defect label to
+  correct.
 
 ---
 
-## 5. Listing and reviewing cases
+## 4. Checking model health
 
-**List cases:**
+> *"Is the defect model drifting?"*
+> *"Show me the drift summary for pcb_body_defect over the last 14 days."*
 
-> *"Show me all cases pending review."*
-> *"List the last 10 cases."*
+Compares the model's recent period with the one before it: how many cases needed review, how often
+reviewers overrode it or **corrected its label**, how confident it has been, broken down by model
+version - with plain-language notes on whatever moved.
 
-**Approve or override a REVIEW_REQUIRED case** (only cases awaiting review can be resolved this
-way):
+If it looks like the model really has drifted:
 
-> *"Approve CASE-000045."*
-> *"Override CASE-000045 - false positive, the solder actually looks fine on closer inspection."*
+> *"Report that - lots of false Tombstone calls since Monday."* (files a drift report)
+> *"Draft a retraining plan."* (turns the open tickets from §3 into a plan awaiting approval)
 
-`approve` confirms the flagged defect stands; `override` reverses it as a false positive. Add a
-note explaining your decision - it's optional but recommended, and gets saved with the case.
+Both only record a request. **Approving a plan, and promoting a retrained model, are Admin actions
+in the Models tab - never from chat.**
 
----
-
-## 6. Flagging a bad model call for retraining
-
-If you believe the model's verdict on a case was wrong (not just a one-off false positive you're
-overriding, but a sign the model itself needs retraining), flag it:
-
-> *"Flag CASE-000045 for retraining - the model keeps confusing this component's normal shadow
-> for foreign material."*
-
-**You must give a reason** - a bare "this is wrong" without an explanation will be rejected. This
-only queues a ticket for engineering; it doesn't retrain anything automatically (retraining
-itself happens separately, on the inference server).
+**Admins** can also ask *"what's the model status?"* for the overview: which version of each model
+is live, open drift reports, open tickets and the retraining queue.
 
 ---
 
-## 7. Monitoring status (Admin only)
+## 5. Registering golden reference images (Admin only, not chat)
 
-> *"What's the model's current status?"*
-
-Currently a placeholder - it will tell you it's not implemented yet. Reserved for future
-model/dataset performance and drift-detection reporting.
-
----
-
-## 8. Registering golden reference images (Admin only, not chat)
-
-Golden (known-good) reference images used for alignment checks (§3, step 2) aren't registered
-through chat - an Admin uploads them one at a time via `POST /api/admin/golden-images` (board id,
-component ref, package, feature, and the image file). Ask whoever manages your deployment if you
-need one added.
+Golden (known-good) reference images aren't registered through chat - an Admin uploads them one at a
+time via `POST /api/admin/golden-images` (board id, component ref, package, feature, and the image
+file). The inspection no longer uses them for alignment checks, so this is currently reserved for
+future use.
 
 ---
 
-## 9. End-to-end example
+## 6. End-to-end example
 
-A full round trip, combining §3 and §4-6:
-
-1. **You:** *"Check U7 on BOARD-1, package QFN32 - looks off to me."* (image attached)
-   **Assistant:** *"Logged as CASE-000045, REVIEW_REQUIRED (Body confidence 0.55). Deeper
-   diagnosis: likely solder insufficient - laser height measurement is well below nominal,
-   consistent with a thin joint. IPC-A-610 General Workmanship Criteria: solder joint must
-   exhibit positive wetting and no bridging."*
-2. **You (later, or someone else on your team):** *"Investigate CASE-000045 again, and tell me
-   which past case is most similar."*
-   **Assistant:** *"[...] Most similar historical case: 91% match, also classified Solder
-   Insufficient."*
-3. **You:** *"Approve CASE-000045 - confirmed defect."*
-   **Assistant:** *"CASE-000045 is now APPROVED."*
-
-   ...or, if the verdict looked wrong on review instead:
-
-3. **You:** *"Override CASE-000045 - false positive, re-inspected under better lighting."*
-   **Assistant:** *"CASE-000045 is now OVERRIDDEN."*
-4. **You:** *"Actually, flag CASE-000045 for retraining - the model seems to be misreading this
-   component's normal solder profile as a defect."*
-   **Assistant:** *"Retraining ticket created for CASE-000045."*
+1. **You:** *"Check U7 on BOARD-1 - looks off to me."* (image attached)
+   **Assistant:** *[card: CASE-000045, Review required, Body 91%, MissingPart 58%]* "The defect
+   classifier is only 58% sure it's a missing part, so it's flagged for review."
+2. **You:** *"It's actually fine - a golden part. The shadow fools it."*
+   **Assistant:** *[card: relabel proposed - MissingPart → Golden]* "I'd record Golden instead and
+   queue it for retraining. Confirm?"
+3. **You:** *"Yes."*
+   **Assistant:** *[card: label corrected, queued for retraining]* "Done - CASE-000045 is corrected
+   to Golden."
+4. **Later:** *"Is the defect model drifting?"* - the correction now counts toward the model's
+   correction rate, and once enough accumulate you can ask for a retraining plan.
 
 ---
 
-## 10. Quick reference
+## 7. Quick reference
 
-| You want to...                                  | Attach                  | Say something like |
-| ------------------------------------------------ | ------------------------ | ------------------- |
-| Submit an image for inspection                    | image (+ optional XML)   | "check this board, component U7" |
-| Get a deep-dive diagnosis on a fresh image         | image                    | "why does this look like a defect" |
-| Get a deep-dive diagnosis on an existing case       | nothing                  | "investigate CASE-000123" |
-| Find similar past cases                            | nothing                  | "which case is similar to this one" |
-| List cases                                         | nothing                  | "show me cases pending review" |
-| Approve/override a reviewed case                   | nothing                  | "approve CASE-000123" / "override CASE-000123, ..." |
-| Flag a bad model call                              | nothing (reason required) | "flag CASE-000123 for retraining, reason: ..." |
-| Check monitoring status (Admin)                    | nothing                  | "what's the model status" |
+| You want to...                                   | Attach                  | Say something like |
+| ------------------------------------------------ | ----------------------- | ------------------ |
+| Inspect an image and see the result              | image (+ optional XML)  | "what defect does this have" |
+| Correct a wrong label                            | nothing (reason required) | "that's wrong, it should be Golden because ..." then "yes" |
+| Check whether a model is drifting                | nothing                 | "is the defect model drifting" |
+| Report drift / draft a retraining plan           | nothing                 | "report that" / "draft a retraining plan" |
+| See the model overview (Admin)                   | nothing                 | "what's the model status" |

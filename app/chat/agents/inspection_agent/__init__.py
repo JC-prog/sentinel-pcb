@@ -1,3 +1,3 @@
-from app.chat.agents.inspection_agent.tool import InspectImageTool
+from app.chat.agents.inspection_agent.tool import INSPECT_IMAGE
 
-__all__ = ["InspectImageTool"]
+__all__ = ["INSPECT_IMAGE"]

@@ -237,6 +237,15 @@ describe('Work', () => {
   });
 
   describe('per-sample results, drift reports and retraining tickets', () => {
+    // Drift reporting and retraining flags live in the Review Console's "Drift & Retraining" tab.
+    function showDriftTab(): void {
+      const buttons = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>);
+      buttons.find((btn) => btn.textContent?.includes('Open Review Console'))?.click();
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('[data-testid="tab-drift"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
     function checkboxes(): HTMLInputElement[] {
       // Scoped to the results section - the form above it also has checkboxes ("Use real LLM
       // Planner", "Fallback to deterministic planner").
@@ -282,7 +291,7 @@ describe('Work', () => {
 
     it('renders one row per sample with the real model name, not the routing key', () => {
       fake.result.set(runResult([sample({ sample_id: 'S1' }), sample({ sample_id: 'S2' })]));
-      fixture.detectChanges();
+      showDriftTab();
 
       const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
       expect(checkboxes()).toHaveLength(2);
@@ -292,9 +301,22 @@ describe('Work', () => {
       expect(text).not.toContain('>body<'); // the raw routing key never leaks into the row
     });
 
+    it('keeps the drift tools inside the Review Console tab, not on the page', () => {
+      fake.result.set(runResult([sample()]));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).toBeNull();
+
+      showDriftTab();
+      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).not.toBeNull();
+
+      (fixture.nativeElement.querySelector('[data-testid="tab-review"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).toBeNull();
+    });
+
     it('a sample that never reached routing shows placeholders, not an error', () => {
       fake.result.set(runResult([sample({ routing: undefined, defect_classification: undefined })]));
-      fixture.detectChanges();
+      showDriftTab();
 
       const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
       expect(text).toContain('—');
@@ -308,7 +330,7 @@ describe('Work', () => {
           sample({ sample_id: 'S3', routing: undefined }),
         ]),
       );
-      fixture.detectChanges();
+      showDriftTab();
 
       const options = Array.from(fixture.nativeElement.querySelectorAll('option'))
         .map((o) => (o as HTMLOptionElement).value)
@@ -318,7 +340,7 @@ describe('Work', () => {
 
     it('reports drift for the chosen model with every sample as evidence, once a model and description are given', async () => {
       fake.result.set(runResult([sample()]));
-      fixture.detectChanges();
+      showDriftTab();
 
       expect(findButton('Report drift').disabled).toBe(true);
 
@@ -337,7 +359,7 @@ describe('Work', () => {
 
     it('flag-for-retraining is disabled until a sample is selected and a reason is given', () => {
       fake.result.set(runResult([sample()]));
-      fixture.detectChanges();
+      showDriftTab();
 
       expect(findButton('Flag for retraining').disabled).toBe(true);
 
@@ -351,7 +373,7 @@ describe('Work', () => {
 
     it('flags only the selected samples, then clears the selection on success', async () => {
       fake.result.set(runResult([sample({ sample_id: 'S1' }), sample({ sample_id: 'S2' })]));
-      fixture.detectChanges();
+      showDriftTab();
       checkboxes()[1].click(); // S2
       setTextarea('retrainingReason', 'false positive');
 
@@ -367,7 +389,7 @@ describe('Work', () => {
     it('shows the server error when flagging is rejected, without clearing the selection', async () => {
       fake.flagForRetraining.mockRejectedValue(new Error('no resolvable model for sample(s): S1'));
       fake.result.set(runResult([sample()]));
-      fixture.detectChanges();
+      showDriftTab();
       checkboxes()[0].click();
       setTextarea('retrainingReason', 'x');
 
@@ -381,7 +403,7 @@ describe('Work', () => {
 
     it('clearing the log also clears the sample selection', () => {
       fake.result.set(runResult([sample()]));
-      fixture.detectChanges();
+      showDriftTab();
       checkboxes()[0].click();
       fixture.detectChanges();
       expect(checkedCount()).toBe(1);

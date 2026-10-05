@@ -190,7 +190,7 @@ class RetrainingTicketStatus(StrEnum):
 
 class RetrainingTicket(Base):
     """A QA/Admin reviewer's claim that a model's verdict was wrong - created by the chat
-    monitoring agent's flag_case_for_retraining tool (case_id set) or by the Work tab's bulk
+    relabel agent's confirm_relabel tool (case_id set) or by the Work tab's bulk
     orchestrator flagging a dataset sample (sample_ref set; workflow owns no Case row to point
     at). Creating one only records the claim; a RetrainingJob (drafted from open tickets, approved
     by an Admin) is what actually asks for a retrain - see jobs.py's draft_job, which is agnostic
@@ -215,7 +215,7 @@ class RetrainingTicket(Base):
     flagged_by_user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id"), nullable=False
     )
-    # Required, not optional - flag_case_for_retraining rejects an empty reason before this row
+    # Required, not optional - the relabel agent rejects an empty reason before this row
     # is ever created, so a bare "I don't like this verdict" flag is never silently accepted.
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     # Which model/version made the call and what it said, copied from the Case at flag time (the

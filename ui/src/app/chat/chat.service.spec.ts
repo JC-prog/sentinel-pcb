@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import { AuthService, AuthUser } from '../auth.service';
 import { ChatResponder, ChatResponderEvent, CHAT_RESPONDER } from './chat-responder';
 import { ChatService } from './chat.service';
+import { ToolResult } from './models/chat.models';
 
 function createFile(name = 'board.png', type = 'image/png'): File {
   return new File(['fake-bytes'], name, { type });
@@ -116,6 +117,42 @@ describe('ChatService', () => {
 
     chunks.complete();
     expect(streamingService.toolCallLabel(id)()).toBeNull();
+  });
+
+  it('puts a tool result on the assistant message, before and alongside its text', () => {
+    const chunks = new Subject<ChatResponderEvent>();
+    const streamingService = createChatService({ respond: () => chunks.asObservable() });
+    const toolResult: ToolResult = {
+      name: 'relabel_case',
+      result: {
+        status: 'awaiting_confirmation',
+        case_number: 'CASE-000001',
+        model: 'pcb_body_defect',
+        model_label: 'MissingPart',
+        proposed_label: 'Golden',
+        reason: 'false positive',
+      },
+    };
+
+    const id = streamingService.send(null, 'that is wrong, it is golden', []);
+    chunks.next({ type: 'toolCall', label: 'Relabel proposal' });
+    chunks.next({ type: 'toolResult', toolResult });
+
+    // the card exists before any text does, on an assistant message of its own
+    let messages = streamingService.get(id)()?.messages ?? [];
+    expect(messages.length).toBe(2);
+    expect(messages[1].role).toBe('assistant');
+    expect(messages[1].content).toBe('');
+    expect(messages[1].toolResults).toEqual([toolResult]);
+    expect(streamingService.toolCallLabel(id)()).toBeNull();
+
+    chunks.next({ type: 'delta', text: 'Shall I record Golden?' });
+    chunks.complete();
+
+    messages = streamingService.get(id)()?.messages ?? [];
+    expect(messages.length).toBe(2); // the text joined the same message, not a second one
+    expect(messages[1].content).toBe('Shall I record Golden?');
+    expect(messages[1].toolResults).toEqual([toolResult]);
   });
 
   it('appends a fallback message and clears loading when the responder errors', () => {

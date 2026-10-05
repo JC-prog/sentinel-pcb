@@ -1,17 +1,20 @@
 import { InjectionToken } from '@angular/core';
 import { Observable, from, of } from 'rxjs';
 import { concatMap, delay } from 'rxjs/operators';
+import { ToolResult } from './models/chat.models';
 
 /**
  * One item of a streaming reply: either a text chunk to append to the assistant message, or a
- * transient "a tool is running" progress notice (e.g. "Calling Explainability Agent...") that's
+ * transient "a tool is running" progress notice (e.g. "Calling Case lookup...") that's
  * never appended to message content - ChatService surfaces it as a separate, short-lived status
- * signal instead. Mirrors the backend's `event: delta` / `event: tool_call` SSE frames
- * (app/main.py's _chat_sse).
+ * signal instead. A 'toolResult' carries a tool's structured result (an inspection, a relabel) to
+ * be shown as a card on the assistant message. Mirrors the backend's `event: delta` /
+ * `event: tool_call` / `event: tool_result` SSE frames (app/chat/services/streaming.py).
  */
 export type ChatResponderEvent =
   | { type: 'delta'; text: string }
-  | { type: 'toolCall'; label: string };
+  | { type: 'toolCall'; label: string }
+  | { type: 'toolResult'; toolResult: ToolResult };
 
 /**
  * Swap point for the real backend: provide CHAT_RESPONDER with an implementation that calls
