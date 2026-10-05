@@ -247,6 +247,7 @@ async def orchestrator_review_image(
     _require_review_enabled(user)
     if kind not in {"golden", "defect"}:
         raise HTTPException(status_code=422, detail="kind must be golden or defect")
+    await reviews.ensure_run_loaded(run_id)
     path = reviews.image_path(run_id, sample_id, kind)
     if path is None:
         raise HTTPException(status_code=404, detail="image not available")

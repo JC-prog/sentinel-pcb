@@ -140,7 +140,8 @@ Here that became:
   `rglob()`-ing `.` and `../..` for a missing image (that crawled `.venv`/`node_modules` and the
   repo's parent directory on every miss - the backend only passes absolute, already-resolved
   paths, so a miss now just skips visual inspection). `adc_shared/*` were refreshed to the updated
-  copies too, but remain uncalled reference code (see below).
+  copies too; its `Repository` is now used in-process by `services/run_store.py` (see below), the
+  Data API / Agent 2 REST services stay unwired.
 - **`app/workflow/services/reviews.py`** + routes under `/api/orchestrator/reviews/` - the flow
   `ui.py` intends: when a full run finishes, **every REVIEW_REQUIRED sample is sent to Agent 2
   automatically** (`streaming._auto_review`, the equivalent of `_dispatch_agent2_reviews`), with the
@@ -152,15 +153,31 @@ Here that became:
   ever sends `{run_id, sample_id}`, and the golden/defect images are served by
   `GET .../reviews/image` from that registry. A browser-supplied image path would be read from disk
   and sent to a VLM, and the monitoring routes' "trust what the browser sends" approach is not
-  acceptable there. The registry (inputs and Agent 2 results) is in-memory and bounded, so a
-  backend restart means the dataset must be rerun to review its samples again.
+  acceptable there. The registry is an in-memory, bounded cache over Qdrant (below): after a
+  backend restart `reviews.ensure_run_loaded` rebuilds it from the stored sample points, so the
+  Review Console still lists the run. Only with Qdrant unreachable does a restart mean the dataset
+  must be rerun.
 - **Nothing is auto-approved.** Like the updated `ui.py` (whose per-sample modal was replaced by a
   persistent Review Console), agreement between the agents only changes what the log says -
   "Operator may still review it". The operator makes the final call for every case.
-- **Decisions persist in Postgres** (`workflow_review_decisions`, one row per `(run_id, sample_id)`,
-  a later decision replaces the earlier), not the source project's Qdrant Data API - the app
-  already has Postgres, Alembic and auth. `selected_source` keeps the source's `MACHINE`/`AI`/
-  `MANUAL` vocabulary; `final_result` is the canonical lower-case IPC class.
+- **Runs, reviews and decisions persist to Qdrant, like the source project** - the three
+  payload-only collections `adc_orchestrator_runs`, `adc_inspection_results`, `adc_agent2_reviews`
+  (point ids are uuid5 of `run_id[, sample_id]`; `adc_shared/repository.py` untouched). Instead of
+  the source's separate Data API process (:8000) and Agent 2 REST service (:8001),
+  `services/run_store.py` runs the `Repository` in-process against this app's Docker Qdrant
+  (`QDRANT_URL`; no vectors, so no clash with chat memory), one instance per process in a worker
+  thread. `streaming._run_full` saves the finished `WorkflowState` (`asdict(state)`, as `ui.py` does);
+  `run_review` stores Agent 2's output as the sample's review point (`GENERATED_UNVALIDATED`; the
+  first one is immutable, so asking again returns it without another VLM call); `save_decision` adds
+  `human_decision` / `review_status=COMPLETED` / `reviewed_at_utc` to that same point without
+  touching Agent 2's evidence (plus `decided_by_user_id` and `ai_diagnosis`, which the source
+  lacks). `selected_source` keeps the source's `MACHINE`/`AI`/`MANUAL` vocabulary; `final_result` is
+  the canonical lower-case IPC class. Fail-open: if Qdrant can't be reached the run still completes
+  from memory, and a decision falls back to Postgres (`workflow_review_decisions`, one row per
+  `(run_id, sample_id)`), which also still holds decisions saved before this change;
+  `list_decisions` merges both. The table is no longer the primary store - dropping it needs an
+  Alembic migration and is a follow-up. Uploaded images are still on local disk, so a restarted
+  *and* redeployed backend would list a run whose images are gone.
 - **Work tab** - an "Open Review Console" button (next to Run Agentic Workflow, with a pending
   count) opens a popup in `ui/src/app/work/` mirroring the tkinter `ReviewConsole`: an "Explanation
   Review Queue" with a Pending/Reviewed filter and a list of the run's cases (item, machine, AI,
@@ -174,11 +191,10 @@ Here that became:
 
 - **`src/agent2_explainability/{a2a,mcp}/`** - the A2A server and the FastMCP tool server. Present
   in the drop-in, unused: the review pipeline is called directly in-process.
-- **`adc_shared/`, `adc_rest.py`, `test_rest.py`, `README_rest.md`, `compose.qdrant.yaml`** - a
-  separate Shared Data API + Agent 2 REST API, backed by their own dedicated Qdrant (distinct from
-  both this repo's Docker Qdrant for chat memory and `data/images/qdrant_db/` for case review).
-  Not called by anything in `app/workflow/api/` or `app/workflow/services/` - a natural follow-up,
-  not something removed.
+- **`adc_shared/data_api.py`, `agent2_api.py`, `client.py`, `adc_rest.py`, `test_rest.py`,
+  `README_rest.md`, `compose.qdrant.yaml`** - the separate Shared Data API + Agent 2 REST API
+  processes (and their own dedicated Qdrant in `compose.qdrant.yaml`). Not run: only
+  `adc_shared/repository.py` is used, in-process, by `services/run_store.py`.
 
 ## See also
 

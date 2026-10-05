@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: a finished run, its Agent 2 reviews and the operator's decisions are now persisted to
+  Qdrant (the source project's `adc_orchestrator_runs` / `adc_inspection_results` /
+  `adc_agent2_reviews` collections, via `app/workflow/services/run_store.py`), so the Review Console
+  still lists a run's cases, reviews and decisions after a backend restart. The first Agent 2 review
+  of a sample is immutable (asking again returns it). If Qdrant is unreachable the run still works
+  from memory and decisions fall back to Postgres.
 - Chat: an always-present system prompt that says what the assistant is for and which tool answers
   which question, and asks for confirmation before tools that change something.
 - Chat: the **relabel agent** (`app/chat/agents/relabel_agent/`). A QA/Admin says the model's defect

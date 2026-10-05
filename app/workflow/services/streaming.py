@@ -18,11 +18,12 @@ import os
 import sys
 import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from app.shared.config.settings import settings
-from app.workflow.services import reviews
+from app.workflow.services import reviews, run_store
 from app.workflow.services import uploads as orchestrator_uploads
 from app.workflow.services.schemas import OrchestratorRunRequest
 
@@ -255,6 +256,12 @@ async def _run_full(
     # Agent 2 for every registered sample once the result has been sent.
     run_id = uuid.uuid4().hex
     reviewable = reviews.register_run(run_id, state.verified_samples, state.inference_results)
+    try:
+        # The durable record (the source project's runs/samples collections, via run_store);
+        # the in-memory registry above keeps working if Qdrant is down or rejects the payload.
+        await run_store.save_run(run_id, asdict(state))
+    except (run_store.StoreUnavailable, ValueError, TypeError) as exc:
+        logger.warning("run %s not persisted: %s", run_id, exc)
 
     result_payload = {
         "run_id": run_id,
