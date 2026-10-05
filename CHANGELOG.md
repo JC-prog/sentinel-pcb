@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Docs: a rewritten user guide (every chat prompt and UI action and what it triggers, verified
+  against the running app), `docs/DEMO.md` (a rehearsed demo script with the sample data and
+  thresholds to use) and `docs/REVIEW_DRIFT_RETRAINING.md` (the Qdrant schema, the review -> drift ->
+  retraining chain, API and tool reference, failure behaviour and limitations).
 - Work tab: the Review Console's **Drift & Retraining** tab now follows the Explanation Review. When
   the operator relabels a sample in User Final Decision, the tab shows per-model drift for the run
   (reviewed, corrected, Agent 2 disagreements, confidence) and a list of the operator's corrections,
@@ -81,6 +85,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Defect-label comparison (Agent 1 vs Agent 2 conflicts and run corrections) now treats the AOI
+  datasets' misspelling `SolderInsuffcient` as `solder insufficient`, as Agent 1's own pipeline
+  already did; before, those samples showed false conflicts and false corrections.
 - Chat: `inspect_image` no longer saves a Case on its own - it reports the result and the assistant
   asks whether to create one (see `create_case`). The inspection card shows "Not saved as a case".
   Drift numbers are computed from saved Cases, so they now cover the inspections users chose to keep

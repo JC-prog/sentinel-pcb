@@ -35,11 +35,11 @@ class OrchestratorRunRequest(BaseModel):
 # --- Monitoring: filing a drift report / retraining tickets from a finished run's results -------
 #
 # Deliberately duplicated rather than importing app.modelops.services.schemas: workflow and
-# modelops are independent feature modules (tests/test_module_boundaries.py), and orchestrator runs
-# are never persisted server-side (see app/workflow/services/streaming.py) - there's no run id for
-# these requests to reference, so the browser sends back the actual selected result dict(s) from
-# the SSE `result` event it already received. That data is only as trustworthy as the requesting
-# QA/Admin session; there's no server-side run record to check it against.
+# modelops are independent feature modules (tests/test_module_boundaries.py). The two "manual" forms
+# (drift-report, retraining-tickets) take the selected result dict(s) the browser received in the
+# run's SSE `result` event, so that data is only as trustworthy as the QA/Admin session sending it.
+# The Drift & Retraining tab's own routes (run-drift, run-retraining-tickets) instead read the run
+# the server stored in Qdrant (app/workflow/services/run_store.py) and take only ids.
 
 
 class WorkflowDriftReportRequest(BaseModel):

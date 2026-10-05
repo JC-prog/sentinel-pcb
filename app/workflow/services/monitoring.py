@@ -3,11 +3,12 @@ app/shared/modelops/ tables chat's monitoring agent and the Models tab already u
 app/workflow/api/orchestrator.py's two monitoring routes - kept out of that file the same way
 uploads.py/streaming.py are, per its own "Routes only" docstring.
 
-There is no run history on the server (orchestrator runs are streamed once and never persisted -
-see streaming.py), so every sample dict here is exactly what the frontend already received in the
-run's SSE `result` event and is sending back verbatim. That makes this data only as trustworthy as
-the requesting QA/Admin session, not a server-verified record - acceptable for an internal,
-role-gated action, but worth stating plainly rather than leaving implicit.
+Two paths live here. The manual forms (file_drift_report's `samples`, flag_samples_for_retraining)
+take sample dicts the frontend received in the run's SSE `result` event and sends back verbatim, so
+that data is only as trustworthy as the requesting QA/Admin session - acceptable for an internal,
+role-gated action, but worth stating plainly. The Drift & Retraining tab uses run_drift_summary and
+queue_corrections instead, which read the run the server stored in Qdrant (run_store.py) - the
+samples and the operator's decisions - and take only ids from the browser.
 
 A sample dict is one element of the teammate's WorkflowState.inference_results
 (app/workflow/src/agent1_orchestrator/agents/orchestrator.py, state/workflow_state.py), in one of

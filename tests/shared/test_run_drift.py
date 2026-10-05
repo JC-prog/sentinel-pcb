@@ -74,6 +74,8 @@ def _agent2(sample_id: str, predicted: str) -> dict[str, Any]:
         ("WrongPart_13", "wrong part"),
         ("Shift", "shifted"),
         ("shifted", "shifted"),
+        ("SolderInsuffcient_5", "solder insufficient"),  # the datasets' own spelling
+        ("SolderInsufficient", "solder insufficient"),
         ("Golden", "no defect"),
         (None, "no defect"),
         ("No Defect / Pass", "no defect / pass"),

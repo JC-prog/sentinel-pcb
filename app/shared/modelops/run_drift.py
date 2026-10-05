@@ -42,6 +42,8 @@ def normalize_defect(label: str | None) -> str:
     cleaned = label.strip().split("_")[0]
     spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", cleaned).lower().replace("-", " ")
     spaced = " ".join(spaced.split())
+    # The AOI datasets spell it "SolderInsuffcient"; Agent 1's own pipeline corrects it the same way.
+    spaced = spaced.replace("insuffcient", "insufficient")
     if spaced == "golden":
         return "no defect"
     squashed = spaced.replace(" ", "")
