@@ -8,10 +8,14 @@ Everything is read from Qdrant through app/chat/services/run_samples.py; nothing
 
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.chat.agents.sample_agent.errors import SampleRefused
 from app.chat.services import run_samples
 from app.chat.services.run_samples import RunStoreUnavailable, StoredRun
 from app.shared.config.langfuse import traced
+from app.shared.modelops import run_drift
+from app.shared.modelops import tickets as ticket_repo
 
 MAX_CASES = 50
 
@@ -201,6 +205,55 @@ async def review_cases(run_id: str | None, limit: int) -> dict[str, Any]:
         "shown": min(len(cases), limit),
         "cases": cases[:limit],
     }
+
+
+@traced("sample-run-drift")
+async def run_drift_overview(session: AsyncSession, run_id: str | None) -> dict[str, Any]:
+    """Drift numbers and the operator's corrections for a Work-tab run, from the run stored in
+    Qdrant (app/shared/modelops/run_drift.py - the same numbers the Review Console's Drift &
+    Retraining tab shows), with which corrections already have a retraining ticket."""
+
+    try:
+        run = await _resolve_run(run_id)
+        points = await run_samples.sample_points(run.run_id)
+        reviews = await run_samples.reviews_for_run(run.run_id)
+    except RunStoreUnavailable as exc:
+        raise SampleRefused(exc.message) from exc
+
+    summary = run_drift.summarize_run(points, reviews)
+    queued = await ticket_repo.sample_refs_for_run(session, run.run_id)
+    corrections = [
+        {**c, "queued": c["sample_id"] in queued} for c in summary["corrections"]
+    ]
+    waiting = [c for c in corrections if not c["queued"] and c["queueable"]]
+    models_with_tickets = sorted({c["model_name"] for c in corrections if c["queued"]})
+    return {
+        "run_id": run.run_id,
+        "run_saved_at": run.saved_at_utc,
+        "totals": summary["totals"],
+        "models": summary["models"],
+        "corrections": corrections[:MAX_CASES],
+        "corrections_shown": min(len(corrections), MAX_CASES),
+        "corrections_total": len(corrections),
+        "corrections_not_queued": len(waiting),
+        "instruction": _drift_instruction(len(waiting), models_with_tickets),
+    }
+
+
+def _drift_instruction(waiting: int, models_with_tickets: list[str | None]) -> str:
+    parts = ["Report the numbers as given; they cover only this run's samples."]
+    if waiting:
+        parts.append(
+            f"{waiting} operator correction(s) are not queued for retraining yet - only the "
+            "operator can queue them, in the Review Console's Drift & Retraining tab; you cannot."
+        )
+    if models_with_tickets:
+        names = ", ".join(str(m) for m in models_with_tickets)
+        parts.append(
+            f"Retraining tickets exist for {names}: if the user wants a plan, offer "
+            "draft_retraining_plan for that model - an Admin still approves it in the Models tab."
+        )
+    return " ".join(parts)
 
 
 async def _resolve_run(run_id: str | None) -> StoredRun:

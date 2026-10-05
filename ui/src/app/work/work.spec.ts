@@ -8,8 +8,10 @@ import {
   OrchestratorLogEntry,
   OrchestratorRunResult,
   OrchestratorStatusEvent,
+  WorkflowCorrection,
   WorkflowReviewCaseOut,
   WorkflowReviewOut,
+  WorkflowRunDrift,
 } from './models/orchestrator.models';
 
 const IDLE_STATUS: OrchestratorStatusEvent = {
@@ -22,6 +24,48 @@ const IDLE_STATUS: OrchestratorStatusEvent = {
   review_required: 0,
 };
 
+function correction(overrides: Partial<WorkflowCorrection> = {}): WorkflowCorrection {
+  return {
+    sample_id: 'S1',
+    model_name: 'pcb_body_defect',
+    model_version: 'JcProg/body@v2',
+    agent1_label: 'MissingPart',
+    final_result: 'tombstone',
+    selected_source: 'MANUAL',
+    operator_notes: 'bare pads',
+    queueable: true,
+    queued: false,
+    ...overrides,
+  };
+}
+
+function runDrift(
+  corrections: WorkflowCorrection[] = [],
+  overrides: Partial<WorkflowRunDrift> = {},
+): WorkflowRunDrift {
+  return {
+    run_id: 'run-1',
+    available: true,
+    totals: { samples: 2, review_required: 2, decided: corrections.length, corrected: corrections.length },
+    models: [
+      {
+        model_name: 'pcb_body_defect',
+        model_version: 'JcProg/body@v2',
+        samples: 2,
+        review_required: 2,
+        decided: corrections.length,
+        corrected: corrections.length,
+        correction_rate: corrections.length > 0 ? 0.5 : null,
+        agent2_disagreed: 1,
+        low_confidence_rate: 0.5,
+        mean_confidence: 0.7,
+      },
+    ],
+    corrections,
+    ...overrides,
+  };
+}
+
 function fakeWorkService(): {
   service: WorkService;
   log: ReturnType<typeof signal<OrchestratorLogEntry[]>>;
@@ -33,6 +77,8 @@ function fakeWorkService(): {
   getReviewCases: ReturnType<typeof vi.fn>;
   getReviewImageUrl: ReturnType<typeof vi.fn>;
   saveReviewDecision: ReturnType<typeof vi.fn>;
+  getRunDrift: ReturnType<typeof vi.fn>;
+  queueCorrections: ReturnType<typeof vi.fn>;
   reviewTick: ReturnType<typeof signal<number>>;
 } {
   const log = signal<OrchestratorLogEntry[]>([]);
@@ -65,6 +111,9 @@ function fakeWorkService(): {
     decided_by_user_id: 'u1',
   }));
 
+  const getRunDrift = vi.fn().mockResolvedValue(runDrift());
+  const queueCorrections = vi.fn().mockResolvedValue({ created: [], already_queued: [] });
+
   const service = {
     status: signal(IDLE_STATUS),
     log,
@@ -82,6 +131,8 @@ function fakeWorkService(): {
     getReviewCases,
     getReviewImageUrl,
     saveReviewDecision,
+    getRunDrift,
+    queueCorrections,
   } as unknown as WorkService;
 
   return {
@@ -95,6 +146,8 @@ function fakeWorkService(): {
     getReviewCases,
     getReviewImageUrl,
     saveReviewDecision,
+    getRunDrift,
+    queueCorrections,
     reviewTick,
   };
 }
@@ -794,6 +847,168 @@ describe('Work', () => {
       fixture.detectChanges();
 
       expect(popup()).toBeNull();
+    });
+
+    describe('Drift & Retraining follows the Explanation Review', () => {
+      function driftText(): string {
+        return (fixture.nativeElement.querySelector('[data-testid="run-drift"]') as HTMLElement | null)?.textContent ?? '';
+      }
+
+      async function openDriftTab(): Promise<void> {
+        await openConsole();
+        (fixture.nativeElement.querySelector('[data-testid="tab-drift"]') as HTMLButtonElement).click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
+      function queueButton(): HTMLButtonElement {
+        return fixture.nativeElement.querySelector('[data-testid="queue-corrections"]') as HTMLButtonElement;
+      }
+
+      function correctionBoxes(): HTMLInputElement[] {
+        return Array.from(
+          fixture.nativeElement.querySelectorAll('[data-testid="corrections"] input[type="checkbox"]'),
+        );
+      }
+
+      it('shows the server\'s per-model numbers for the run', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(fake.getRunDrift).toHaveBeenCalledWith('run-1');
+        const row = fixture.nativeElement.querySelector('[data-model="pcb_body_defect"]') as HTMLElement;
+        expect(row.textContent).toContain('pcb_body_defect');
+        expect(row.querySelector('[data-testid="corrected"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+          '1 (50%)',
+        );
+        expect(row.textContent).toContain('70%'); // mean confidence
+      });
+
+      it('lists the operator\'s corrections, pre-selected, and says when there are none', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+        expect(fixture.nativeElement.querySelector('[data-testid="no-corrections"]')).not.toBeNull();
+        expect(queueButton().disabled).toBe(true);
+
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
+        await fixture.componentInstance.refreshDrift();
+        fixture.detectChanges();
+
+        expect(driftText()).toContain('MissingPart → tombstone');
+        expect(correctionBoxes()).toHaveLength(2);
+        expect(correctionBoxes().every((box) => box.checked)).toBe(true);
+        expect(queueButton().textContent).toContain('Queue 2 for retraining');
+        expect(queueButton().disabled).toBe(false);
+      });
+
+      it('refetches the drift numbers after the operator saves a decision', async () => {
+        await showRun([reviewCase()]);
+        await openCase();
+        fake.getRunDrift.mockClear();
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+
+        submit().click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(fake.getRunDrift).toHaveBeenCalledWith('run-1');
+        expect(fixture.nativeElement.querySelector('[data-testid="corrections-badge"]')?.textContent).toContain(
+          '1 to queue',
+        );
+      });
+
+      it('queues only the ticked corrections and sends ids, not sample data', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]),
+        );
+        fake.queueCorrections.mockResolvedValue({
+          created: [{ id: 't1', sample_ref: 'S2', model_name: 'pcb_body_defect', status: 'open' }],
+          already_queued: [],
+        });
+        await showRun([reviewCase()]);
+        await openDriftTab();
+        correctionBoxes()[0].click(); // untick S1
+        fixture.detectChanges();
+        expect(queueButton().textContent).toContain('Queue 1 for retraining');
+
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2', queued: true })]),
+        );
+        queueButton().click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(fake.queueCorrections).toHaveBeenCalledWith({ run_id: 'run-1', sample_ids: ['S2'] });
+        expect(text()).toContain('Queued 1 correction for retraining.');
+        const statuses = Array.from(
+          fixture.nativeElement.querySelectorAll('[data-testid="correction-status"]') as NodeListOf<HTMLElement>,
+        ).map((cell) => cell.textContent?.trim());
+        expect(statuses).toEqual(['Ready', 'Queued']);
+      });
+
+      it('cannot queue a correction that is already queued or has no model recorded', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', queued: true }),
+            correction({ sample_id: 'S2', queueable: false, model_name: null }),
+          ]),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(correctionBoxes().every((box) => box.disabled && !box.checked)).toBe(true);
+        expect(queueButton().disabled).toBe(true);
+        expect(driftText()).toContain('No model recorded');
+        expect(fixture.nativeElement.querySelector('[data-testid="corrections-badge"]')).toBeNull();
+      });
+
+      it('shows the server error when queueing is rejected, keeping the selection', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        fake.queueCorrections.mockRejectedValue(new Error('no model recorded for sample(s): S1'));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        queueButton().click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(text()).toContain('no model recorded for sample(s): S1');
+        expect(queueButton().disabled).toBe(false);
+      });
+
+      it('says so when the stored run cannot be read, and when loading fails', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([], { available: false, message: 'The stored run could not be read right now', models: [] }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+        expect(fixture.nativeElement.querySelector('[data-testid="drift-unavailable"]')?.textContent).toContain(
+          'could not be read',
+        );
+
+        fake.getRunDrift.mockRejectedValue(new Error('boom'));
+        await fixture.componentInstance.refreshDrift();
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[data-testid="drift-error"]')?.textContent).toContain('boom');
+      });
+
+      it('sends the run id with a manual drift report and manual flags', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        fixture.componentInstance['driftModelName'].set('pcb_body_defect');
+        fixture.componentInstance['driftDescription'].set('looks off');
+        await fixture.componentInstance.reportDrift();
+        expect(fake.reportDrift).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'run-1' }));
+
+        fixture.componentInstance['selectedSampleIds'].set(new Set(['S1']));
+        fixture.componentInstance['retrainingReason'].set('wrong');
+        await fixture.componentInstance.flagSelectedForRetraining();
+        expect(fake.flagForRetraining).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'run-1' }));
+      });
     });
   });
 });

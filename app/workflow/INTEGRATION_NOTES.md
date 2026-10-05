@@ -184,8 +184,25 @@ Here that became:
   status) and, for the selected one, the golden and defect images side by side, the Machine / AI
   results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
   Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
-- Still chat-invisible: the routes are QA/Admin-gated, behind both `ORCHESTRATOR_AGENT_ENABLED` and
-  `EXPLAINABILITY_REVIEW_AGENT_ENABLED`, and nothing here is registered in `app/chat/`.
+- **Drift & Retraining follows the decisions.** The console's second tab no longer trusts what the
+  browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
+  review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
+  drift plus the operator's *corrections* - a sample whose final decision differs from Agent 1's label
+  (normalised, so `WrongPart_13` == `wrong part`; Accept Machine is agreement) - with the pure
+  `app/shared/modelops/run_drift.py`, which chat's `get_run_drift` tool shares (chat may not import
+  workflow). The UI refetches after every saved decision. `POST .../run-retraining-tickets
+  {run_id, sample_ids}` builds one `RetrainingTicket` per selected correction from the *stored*
+  sample and decision (model, version, observed = Agent 1's label, correct = the operator's), all or
+  nothing; a sample with no correction or no routed model rejects the request, and one already
+  queued is skipped (`retraining_tickets.run_id` + a partial unique index on `(run_id, sample_ref)`,
+  because sample ids restart every run). Corrections are queued by the operator, never automatically.
+  Drift reports filed with a `run_id` snapshot the server's numbers into `DriftReport.stats`; the older
+  browser-sample forms remain under "Manual". Fail-open: with Qdrant unreachable the tab shows a
+  message and queueing returns 503.
+- The review/decision routes stay QA/Admin-gated, behind both `ORCHESTRATOR_AGENT_ENABLED` and
+  `EXPLAINABILITY_REVIEW_AGENT_ENABLED`. Nothing from `app/workflow/` is registered in `app/chat/`;
+  chat reads the same Qdrant collections read-only through its own reader
+  (`app/chat/services/run_samples.py`, the sample agent).
 
 ## Explicitly kept, not wired
 

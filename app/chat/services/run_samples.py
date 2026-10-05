@@ -161,6 +161,12 @@ async def find_samples(sample_id: str, run_id: str | None = None) -> list[Stored
     return sorted(found, key=lambda s: s.run.saved_at_utc, reverse=True)
 
 
+async def sample_points(run_id: str) -> list[dict[str, Any]]:
+    """Every sample point of a run (`sample` + `inference` + `final_decision`), reviewed or not."""
+
+    return await _scroll(SAMPLES, _match(run_id=run_id))
+
+
 async def review_case_points(run_id: str) -> list[dict[str, Any]]:
     """The run's REVIEW_REQUIRED sample points (`sample` + `inference`)."""
 

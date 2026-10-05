@@ -106,6 +106,8 @@ export interface WorkflowDriftReportRequest {
   model_name: string;
   description: string;
   model_version?: string | null;
+  /** The run being reported on - the server then snapshots its own numbers for the model. */
+  run_id?: string | null;
   samples: OrchestratorInferenceResult[];
 }
 
@@ -123,6 +125,8 @@ export interface WorkflowRetrainingTicketItem {
 }
 
 export interface WorkflowRetrainingTicketsRequest {
+  /** With a run id, a sample already flagged for that run is skipped instead of flagged twice. */
+  run_id?: string | null;
   tickets: WorkflowRetrainingTicketItem[];
 }
 
@@ -131,6 +135,56 @@ export interface WorkflowRetrainingTicketOut {
   sample_ref: string | null;
   model_name: string | null;
   status: string;
+}
+
+/** One model's numbers for a run, computed on the server from the stored samples and the
+ * operator's decisions (GET /api/orchestrator/monitoring/run-drift). `model_name` is null for
+ * samples that stopped at feature classification and reached no defect model. */
+export interface WorkflowModelDrift {
+  model_name: string | null;
+  model_version: string | null;
+  samples: number;
+  review_required: number;
+  decided: number;
+  corrected: number;
+  correction_rate: number | null;
+  agent2_disagreed: number;
+  low_confidence_rate: number | null;
+  mean_confidence: number | null;
+}
+
+/** A sample where the operator's final result differs from Agent 1's label. `queueable` is false
+ * when no model was recorded to file a retraining ticket against; `queued` when one exists. */
+export interface WorkflowCorrection {
+  sample_id: string;
+  model_name: string | null;
+  model_version: string | null;
+  agent1_label: string | null;
+  final_result: string;
+  selected_source: string | null;
+  operator_notes: string | null;
+  queueable: boolean;
+  queued: boolean;
+}
+
+export interface WorkflowRunDrift {
+  run_id: string;
+  /** False when the stored run could not be read; `message` says so. */
+  available: boolean;
+  message?: string | null;
+  totals: { samples: number; review_required: number; decided: number; corrected: number };
+  models: WorkflowModelDrift[];
+  corrections: WorkflowCorrection[];
+}
+
+export interface WorkflowQueueCorrectionsRequest {
+  run_id: string;
+  sample_ids: string[];
+}
+
+export interface WorkflowQueueCorrectionsOut {
+  created: WorkflowRetrainingTicketOut[];
+  already_queued: string[];
 }
 
 /** One Agent 2 review next to Agent 1's verdict, pushed over the run stream as a `review` event and

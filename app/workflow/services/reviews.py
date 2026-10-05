@@ -23,7 +23,6 @@ import asyncio
 import importlib
 import logging
 import os
-import re
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -36,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.shared.config.settings import settings
 from app.shared.db import User
 from app.shared.db.models import WorkflowReviewDecision
+from app.shared.modelops.run_drift import normalize_defect
 from app.workflow.services import run_store
 from app.workflow.services.schemas import (
     WorkflowReviewCaseOut,
@@ -53,42 +53,9 @@ _cases: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
 _reviews: dict[tuple[str, str], WorkflowReviewOut] = {}
 _cases_lock = threading.Lock()
 
-_CANONICAL_DEFECTS = (
-    "missing part",
-    "shifted",
-    "foreign material",
-    "tombstone",
-    "solder insufficient",
-    "wrong part",
-    "no defect",
-)
-
-
 class UnknownReviewCase(Exception):
     """No registered Agent 2 input for this (run_id, sample_id) - never registered, evicted, or
     lost to a backend restart."""
-
-
-def normalize_defect(label: str | None) -> str:
-    """'MissingPart' / 'WrongPart_13' / 'Shift' / 'Golden' -> the canonical lower-case IPC class,
-    the same comparison ui.py's normalize_defect does before deciding whether the agents agree."""
-
-    if not label:
-        return "no defect"
-    cleaned = label.strip().split("_")[0]
-    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", cleaned).lower().replace("-", " ")
-    spaced = " ".join(spaced.split())
-    if spaced == "golden":
-        return "no defect"
-    squashed = spaced.replace(" ", "")
-    for canonical in _CANONICAL_DEFECTS:
-        if canonical.replace(" ", "") == squashed:
-            return canonical
-    # The body model's "Shift" is a prefix of the canonical "shifted".
-    for canonical in _CANONICAL_DEFECTS:
-        if len(squashed) >= 4 and canonical.replace(" ", "").startswith(squashed):
-            return canonical
-    return spaced
 
 
 def _agent1_label(result: dict[str, Any]) -> str | None:

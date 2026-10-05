@@ -202,6 +202,16 @@ class RetrainingTicket(Base):
             "case_id IS NOT NULL OR sample_ref IS NOT NULL",
             name="ck_retraining_tickets_case_or_sample",
         ),
+        # A Work-tab sample can be flagged once per run: sample ids restart every run, so the run is
+        # part of the identity (tickets without a run - chat's, or flagged before runs were stored -
+        # are exempt).
+        Index(
+            "uq_retraining_tickets_run_sample",
+            "run_id",
+            "sample_ref",
+            unique=True,
+            postgresql_where=text("run_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
@@ -212,6 +222,9 @@ class RetrainingTicket(Base):
     # Exactly one of case_id/sample_ref is set - enforced by the CHECK constraint above and by
     # tickets.create_ticket.
     sample_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The Work-tab run that sample came from (None for a chat Case, or a ticket flagged before runs
+    # were stored); with sample_ref it identifies the sample, since sample ids restart every run.
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True)
     flagged_by_user_id: Mapped[str] = mapped_column(
         String, ForeignKey("users.id"), nullable=False
     )

@@ -18,6 +18,7 @@ async def create_ticket(
     reason: str,
     case_id: str | None = None,
     sample_ref: str | None = None,
+    run_id: str | None = None,
     model_name: str | None = None,
     model_version: str | None = None,
     observed_label: str | None = None,
@@ -35,6 +36,7 @@ async def create_ticket(
         case_id=case_id,
         case_number=case_number,
         sample_ref=sample_ref,
+        run_id=run_id,
         flagged_by_user_id=flagged_by_user_id,
         reason=reason,
         model_name=model_name,
@@ -46,6 +48,17 @@ async def create_ticket(
     await session.commit()
     await session.refresh(ticket)
     return ticket
+
+
+async def sample_refs_for_run(session: AsyncSession, run_id: str) -> set[str]:
+    """The samples of a Work-tab run that already have a ticket (whatever its status)."""
+
+    result = await session.scalars(
+        select(RetrainingTicket.sample_ref).where(
+            RetrainingTicket.run_id == run_id, RetrainingTicket.sample_ref.is_not(None)
+        )
+    )
+    return {ref for ref in result if ref is not None}
 
 
 async def list_open_tickets(session: AsyncSession, model_name: str) -> list[RetrainingTicket]:

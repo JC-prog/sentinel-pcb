@@ -9,7 +9,8 @@ its logic and its rules:
 - relabel_agent    - `relabel_case` / `confirm_relabel`: record a QA's correction of a wrong label.
 - review_agent     - `review_case` / `confirm_review`: approve or override a case flagged for review.
 - monitoring_agent - drift summaries and reports, retraining plans, the Admin status overview.
-- sample_agent     - `get_sample` / `list_review_cases`: read what the Work tab stored about a sample.
+- sample_agent     - `get_sample` / `list_review_cases` / `get_run_drift`: read what the Work tab
+  stored about a sample or a run (including how often the operator corrected the model).
 
 Agents never import each other (tests/chat/test_agent_boundaries.py); what they share lives in
 app/chat/services/. This module, supervisor.py, registry.py, access.py and toolkit.py are the
@@ -26,7 +27,7 @@ from app.chat.agents.monitoring_agent import (
 from app.chat.agents.registry import ToolNotFound, ToolRegistry
 from app.chat.agents.relabel_agent import CONFIRM_RELABEL, RELABEL_CASE
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
-from app.chat.agents.sample_agent import GET_SAMPLE, LIST_REVIEW_CASES
+from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES
 
 tool_registry = ToolRegistry(
     [
@@ -42,6 +43,7 @@ tool_registry = ToolRegistry(
         MONITORING_STATUS,
         GET_SAMPLE,
         LIST_REVIEW_CASES,
+        GET_RUN_DRIFT,
     ]
 )
 

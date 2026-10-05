@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Review Console's **Drift & Retraining** tab now follows the Explanation Review. When
+  the operator relabels a sample in User Final Decision, the tab shows per-model drift for the run
+  (reviewed, corrected, Agent 2 disagreements, confidence) and a list of the operator's corrections,
+  computed on the server from the stored decisions; "Queue N for retraining" files a retraining
+  ticket per correction (once per run and sample). The tickets are drafted into a retraining plan by
+  chat's `draft_retraining_plan` and approved in the Models tab. New
+  `GET /api/orchestrator/monitoring/run-drift` and `POST .../run-retraining-tickets`; drift reports
+  filed for a run snapshot the server's numbers. Tickets now record their run
+  (Alembic `c7e2b9d4f163`).
+- Chat: `get_run_drift` (sample agent) - how the models did in a Work-tab run and what the operator
+  corrected, and which corrections already have a retraining ticket.
 - Chat: the **sample agent** (`app/chat/agents/sample_agent/`). Give it a dataset `sample_id` such as
   `S000001` and `get_sample` reports what the Work tab stored in Qdrant - board and component, the
   machine's call and failed measurements, Agent 1's verdict, Agent 2's review and the operator's

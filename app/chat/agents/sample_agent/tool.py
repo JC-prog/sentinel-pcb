@@ -57,9 +57,29 @@ async def list_review_cases(
         raise ToolRefused(refusal.message) from refusal
 
 
+@tool("get_run_drift")
+@returns_json
+async def get_run_drift(
+    runtime: Runtime,
+    run_id: Annotated[str | None, _RUN_ID] = None,
+) -> dict[str, Any]:
+    """Shows how the models did in a Work-tab bulk run, per model: how many samples were reviewed,
+    how often the operator corrected the model's label in the Review Console, how often Agent 2
+    disagreed with it, and its confidence - plus the list of operator corrections and which already
+    have a retraining ticket. Read-only. Use it for 'how is the model doing in the last run?' and
+    'what did the operator correct?' (not get_drift_summary, which measures saved cases). Uses the
+    latest run unless a run id is given."""
+
+    try:
+        return await service.run_drift_overview(runtime.context.session, text(run_id) or None)
+    except SampleRefused as refusal:
+        raise ToolRefused(refusal.message) from refusal
+
+
 def _enabled() -> bool:
     return settings.sample_lookup_agent_enabled
 
 
 GET_SAMPLE = ChatTool(get_sample, label="Sample lookup", enabled=_enabled)
 LIST_REVIEW_CASES = ChatTool(list_review_cases, label="Review queue", enabled=_enabled)
+GET_RUN_DRIFT = ChatTool(get_run_drift, label="Run drift", enabled=_enabled)

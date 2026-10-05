@@ -120,6 +120,8 @@ export interface JobSample {
   case_id: string | null;
   case_number: string | null;
   sample_ref: string | null;
+  /** The Work-tab run the sample came from; absent for a chat Case or an older ticket. */
+  run_id?: string | null;
   ticket_id: string | null;
   observed_label: string | null;
   expected_label: string | null;

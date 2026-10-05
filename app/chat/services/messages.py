@@ -20,6 +20,8 @@ yet, offer to create one first.
 - The model looks less reliable overall: get_drift_summary, report_model_drift, draft_retraining_plan.
 - The user gives a sample id such as S000001 (a row of a Work-tab bulk run, not a case number): get_sample.
 - They ask what is waiting for review in a Work-tab run: list_review_cases.
+- They ask how the models did in a Work-tab run, or what the operator corrected: get_run_drift \
+(get_drift_summary is for saved cases, not runs).
 When the user says "it", "that case" or "this defect" without a number, the case tools use the latest \
 case in this conversation - you do not need to ask for the number.
 

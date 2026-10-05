@@ -69,6 +69,7 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
         "create_case",
         "get_sample",
         "list_review_cases",
+        "get_run_drift",
     }
 
 

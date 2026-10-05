@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 
 from app.shared.config.settings import settings
 
@@ -122,6 +122,20 @@ async def _pages(fetch: Callable[[Any, str | None], dict[str, Any]]) -> list[dic
         cursor = page["next_cursor"]
         if not cursor:
             return items
+
+
+def _samples_page(repo: Any, run_id: str, cursor: str | None) -> dict[str, Any]:
+    repo.ready_run(run_id)
+    conditions = [models.FieldCondition(key="run_id", match=models.MatchValue(value=run_id))]
+    items, next_cursor = repo.page(SAMPLES, _PAGE, cursor, conditions)
+    return {"items": items, "next_cursor": next_cursor}
+
+
+async def sample_points(run_id: str) -> list[dict[str, Any]]:
+    """Every sample point of a run (`sample` + `inference` + `final_decision`), reviewed or not.
+    KeyError when the run is not stored."""
+
+    return await _pages(lambda repo, cursor: _samples_page(repo, run_id, cursor))
 
 
 async def review_cases(run_id: str) -> list[dict[str, Any]]:

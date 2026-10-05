@@ -29,6 +29,7 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # Read-only views of the Work tab's stored runs, which are QA/Admin only there too.
     "get_sample": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_review_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "get_run_drift": frozenset({UserRole.QA, UserRole.ADMIN}),
 }
 
 

@@ -47,6 +47,7 @@ CANNED_RESULTS: dict[str, dict[str, Any]] = {
     "create_case": {"status": "created", "case_number": "CASE-000099"},
     "get_sample": {"sample_id": "S000001", "run_id": "run-1", "review_state": "awaiting_operator"},
     "list_review_cases": {"run_id": "run-1", "total": 2, "cases": []},
+    "get_run_drift": {"run_id": "run-1", "totals": {"decided": 2, "corrected": 1}, "models": []},
     "relabel_case": {"status": "proposed", "case_id": "CASE-000012", "proposed_label": "short"},
     "confirm_relabel": {"status": "confirmed", "case_id": "CASE-000012"},
     "get_drift_summary": {"status": "ok", "review_rate": 0.12, "correction_rate": 0.03},

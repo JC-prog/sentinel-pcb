@@ -109,8 +109,10 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the supervisor is given the tools this r
   since the model cannot reference a real upload id on its own. It saves nothing; `create_case`
   (offered always, no image needed) turns the inspection into a Case once the user has said yes in
   a later turn.
-- `get_sample`, `list_review_cases` - the Sample Agent: read-only views of the Work tab's stored
-  runs (Qdrant), looked up by the dataset's `sample_id`.
+- `get_sample`, `list_review_cases`, `get_run_drift` - the Sample Agent: read-only views of the Work
+  tab's stored runs (Qdrant), looked up by the dataset's `sample_id`, plus per-model drift for a run
+  and the operator's corrections. Those corrections are queued as retraining tickets in the Review
+  Console's Drift & Retraining tab; `draft_retraining_plan` drafts the tickets into a job.
 - `relabel_case`, `confirm_relabel` - the Relabel Agent below; they work from a case number (or the
   latest case in the conversation), so no image is needed.
 - `get_drift_summary`, `report_model_drift`, `draft_retraining_plan` - the Monitoring Agent's

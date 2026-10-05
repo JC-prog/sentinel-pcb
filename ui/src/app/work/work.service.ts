@@ -9,7 +9,10 @@ import {
   WorkflowDriftReportOut,
   WorkflowRetrainingTicketOut,
   WorkflowRetrainingTicketsRequest,
+  WorkflowQueueCorrectionsOut,
+  WorkflowQueueCorrectionsRequest,
   WorkflowReviewCaseOut,
+  WorkflowRunDrift,
   WorkflowReviewDecisionOut,
   WorkflowReviewDecisionRequest,
 } from './models/orchestrator.models';
@@ -77,6 +80,14 @@ export class WorkService {
     request: WorkflowRetrainingTicketsRequest,
   ): Promise<WorkflowRetrainingTicketOut[]> {
     return this.client.flagForRetraining(request);
+  }
+
+  getRunDrift(runId: string): Promise<WorkflowRunDrift> {
+    return this.client.getRunDrift(runId);
+  }
+
+  queueCorrections(request: WorkflowQueueCorrectionsRequest): Promise<WorkflowQueueCorrectionsOut> {
+    return this.client.queueCorrections(request);
   }
 
   getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {

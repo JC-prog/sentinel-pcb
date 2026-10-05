@@ -12,14 +12,21 @@ from typing import Any, cast
 
 import pytest
 from qdrant_client import AsyncQdrantClient, QdrantClient, models
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents import tool_registry
-from app.chat.agents.sample_agent import GET_SAMPLE, LIST_REVIEW_CASES
+from app.chat.agents.monitoring_agent import DRAFT_RETRAINING_PLAN
+from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES
 from app.chat.services import run_samples
 from app.shared.config.settings import settings
-from app.shared.db.models import UserRole
-from app.workflow.services import run_store
+from app.shared.db.models import RetrainingJob, UserRole
+from app.shared.modelops import tickets as ticket_repo
+from app.shared.modelops.versions import sync_versions
+from app.workflow.services import monitoring, run_store
+from app.workflow.services.schemas import WorkflowQueueCorrectionsRequest
 from tests.chat.agents._helpers import call, tool_context
+from tests.shared._modelops_helpers import make_user, model_info
 
 COLLECTIONS = (run_store.RUNS, run_store.SAMPLES, run_store.REVIEWS)
 
@@ -333,7 +340,129 @@ def test_the_tools_are_registered_for_qa_and_admin_and_follow_the_kill_switch(
         return {t.name for t in tool_registry.available(role=role, has_image=False)}
 
     for role in (UserRole.QA, UserRole.ADMIN):
-        assert {"get_sample", "list_review_cases"} <= names(role)
+        assert {"get_sample", "list_review_cases", "get_run_drift"} <= names(role)
 
     monkeypatch.setattr(settings, "sample_lookup_agent_enabled", False)
-    assert not {"get_sample", "list_review_cases"} & names(UserRole.QA)
+    assert not {"get_sample", "list_review_cases", "get_run_drift"} & names(UserRole.QA)
+
+
+# --- get_run_drift: how the models did in a run, and what the operator corrected ----------------
+
+
+def _routed(sample_id: str, label: str = "MissingPart") -> dict[str, Any]:
+    """A completed sample that reached a defect model (so it can be ticketed)."""
+
+    return {
+        **_completed(sample_id, "REVIEW_REQUIRED"),
+        "routing": {"selected_model": "body", "service_model": "pcb_body_defect"},
+        "defect_classification": {
+            "prediction": label,
+            "confidence": 0.61,
+            "model_version": "JcProg/body@v2",
+        },
+    }
+
+
+async def _run_with_one_correction(client: AsyncQdrantClient) -> Any:
+    repo = _repo()
+    repo.save_run("run-a", _state([_routed("S1"), _routed("S2")]))
+    repo.save_decision(
+        "run-a", "S1", {"selected_source": "MACHINE", "final_result": "missing part"}
+    )
+    repo.save_decision(
+        "run-a",
+        "S2",
+        {"selected_source": "MANUAL", "final_result": "Tombstone", "operator_notes": "bare pads"},
+    )
+    await _publish(repo, client)
+    return repo
+
+
+async def test_get_run_drift_reports_the_operators_corrections_and_who_still_needs_queueing(
+    client: AsyncQdrantClient, db_async_session: AsyncSession
+) -> None:
+    await _run_with_one_correction(client)
+    user = await make_user(db_async_session)
+    ctx = tool_context(db_async_session, user)
+
+    result = await call(GET_RUN_DRIFT, ctx)
+
+    assert result["run_id"] == "run-a"
+    assert result["totals"] == {"samples": 2, "review_required": 2, "decided": 2, "corrected": 1}
+    (model,) = result["models"]
+    assert (model["model_name"], model["corrected"], model["correction_rate"]) == (
+        "pcb_body_defect",
+        1,
+        0.5,
+    )
+    (correction,) = result["corrections"]
+    assert (correction["sample_id"], correction["agent1_label"], correction["final_result"]) == (
+        "S2",
+        "MissingPart",
+        "Tombstone",
+    )
+    assert correction["queued"] is False and result["corrections_not_queued"] == 1
+    assert "Drift & Retraining tab" in result["instruction"]
+    assert "draft_retraining_plan" not in result["instruction"]  # nothing queued yet
+
+    await ticket_repo.create_ticket(
+        db_async_session,
+        flagged_by_user_id=user.id,
+        reason="operator correction",
+        sample_ref="S2",
+        run_id="run-a",
+        model_name="pcb_body_defect",
+    )
+    queued = await call(GET_RUN_DRIFT, ctx)
+    assert queued["corrections"][0]["queued"] is True and queued["corrections_not_queued"] == 0
+    assert "draft_retraining_plan" in queued["instruction"] and "pcb_body_defect" in queued["instruction"]
+
+
+async def test_get_run_drift_defaults_to_the_latest_run_and_refuses_unknown_ones(
+    client: AsyncQdrantClient, db_async_session: AsyncSession
+) -> None:
+    assert "run a dataset" in (await call(GET_RUN_DRIFT, _ctx()))["error"]
+
+    repo = _repo()
+    repo.save_run("run-old", _state([_routed("S9")]))
+    repo.save_run("run-new", _state([_routed("S1")]))
+    await _publish(repo, client)
+    user = await make_user(db_async_session)
+    ctx = tool_context(db_async_session, user)
+
+    assert (await call(GET_RUN_DRIFT, ctx))["run_id"] == "run-new"
+    assert (await call(GET_RUN_DRIFT, ctx, run_id="run-old"))["run_id"] == "run-old"
+    assert "error" in await call(GET_RUN_DRIFT, ctx, run_id="nope")
+
+
+async def test_a_ticket_queued_from_the_work_tab_is_drafted_into_a_plan_by_the_chat_agent(
+    db_async_session: AsyncSession,
+) -> None:
+    """The chain end to end: the operator's correction is queued by the workflow, and chat's
+    monitoring agent turns the open ticket into a retraining job awaiting Admin approval."""
+
+    repo = _repo()
+    repo.save_run("run-a", _state([_routed("S1"), _routed("S2")]))
+    repo.save_decision("run-a", "S2", {"selected_source": "MANUAL", "final_result": "Tombstone"})
+    user = await make_user(db_async_session)
+    run_store.set_repository(repo)
+    try:
+        queued = await monitoring.queue_corrections(
+            db_async_session,
+            request=WorkflowQueueCorrectionsRequest(run_id="run-a", sample_ids=["S2"]),
+            user=user,
+        )
+    finally:
+        run_store.set_repository(None)
+    assert len(queued.created) == 1
+    await sync_versions(db_async_session, [model_info("pcb_body_defect", "JcProg/body@v2")])
+
+    plan = await call(
+        DRAFT_RETRAINING_PLAN, tool_context(db_async_session, user), model="pcb_body_defect"
+    )
+
+    assert plan["status"] == "pending_approval", plan
+    (job,) = (await db_async_session.scalars(select(RetrainingJob))).all()
+    (sample,) = job.samples
+    assert (sample["sample_ref"], sample["run_id"]) == ("S2", "run-a")
+    assert (sample["observed_label"], sample["expected_label"]) == ("MissingPart", "Tombstone")
