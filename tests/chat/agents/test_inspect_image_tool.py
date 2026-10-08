@@ -1,5 +1,6 @@
-"""`inspect_image` end to end: the user's attached upload in, a saved Case and the result the user
-sees out. The inference service is faked at the HTTP boundary; uploads are real files."""
+"""`inspect_image` end to end: the user's attached upload in, the result the user sees out, and the
+inspection parked as a draft - no Case yet (create_case makes one after the user says yes, see
+test_create_case.py). The inference service is faked at the HTTP boundary; uploads are real files."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -12,8 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents.inspection_agent import INSPECT_IMAGE
-from app.chat.db.models import Case, Conversation
-from app.chat.services.cases import get_case_by_sequence_number, parse_case_number
+from app.chat.db.models import Case, CaseDraft, Conversation
 from app.shared.config.settings import settings
 from app.shared.db.models import User, UserRole
 from tests.chat.agents._helpers import VALID_IMAGE, call, tool_context, upload
@@ -142,12 +142,15 @@ async def _all_cases(session: AsyncSession) -> list[Case]:
     return list((await session.scalars(select(Case))).all())
 
 
-async def _fetch_case(session: AsyncSession, case_number: str) -> Case:
-    sequence_number = parse_case_number(case_number)
-    assert sequence_number is not None
-    case = await get_case_by_sequence_number(session, sequence_number)
-    assert case is not None
-    return case
+async def _drafts(session: AsyncSession) -> list[CaseDraft]:
+    return list((await session.scalars(select(CaseDraft))).all())
+
+
+async def _only_draft(session: AsyncSession) -> dict[str, Any]:
+    """What the inspection parked for the user's yes - the arguments create_case will be given."""
+
+    (draft,) = await _drafts(session)
+    return dict(draft.payload)
 
 
 async def test_inspect_image_accepted_end_to_end(
@@ -163,11 +166,18 @@ async def test_inspect_image_accepted_end_to_end(
     assert result["region"]["label"] == "Body"
     assert result["defect"]["label"] == "MissingPart"
     assert result["defect"]["confidence"] == 0.8
-    assert result["case_number"].startswith("CASE-")
     assert result["measurement_validation"] is None
+    # nothing is saved as a case - the model is told to ask the user first
+    assert result["case_created"] is False and "case_number" not in result
+    assert "ask the user whether they want a case" in result["instruction"]
+    assert await _all_cases(db_async_session) == []
 
-    (case,) = await _all_cases(db_async_session)
-    assert (case.status, case.defect_label, case.image_id) == ("accepted", "MissingPart", "board.png")
+    payload = await _only_draft(db_async_session)
+    assert (payload["status"], payload["defect_label"], payload["image_id"]) == (
+        "accepted",
+        "MissingPart",
+        "board.png",
+    )
 
 
 async def test_inspect_image_shows_the_runner_up_scores_best_first(
@@ -193,9 +203,9 @@ async def test_inspect_image_stamps_the_model_versions_that_answered(
 
     assert result["region"]["model_version"] == "JcProg/pcb_region@v1"
     assert result["defect"]["model_version"] == "JcProg/pcb_body_defect@v1"
-    case = await _fetch_case(db_async_session, result["case_number"])
-    assert case.region_model_version == "JcProg/pcb_region@v1"
-    assert case.defect_model_version == "JcProg/pcb_body_defect@v1"
+    payload = await _only_draft(db_async_session)
+    assert payload["region_model_version"] == "JcProg/pcb_region@v1"
+    assert payload["defect_model_version"] == "JcProg/pcb_body_defect@v1"
 
 
 async def test_inspect_image_review_required_on_uncertain_region(
@@ -209,8 +219,7 @@ async def test_inspect_image_review_required_on_uncertain_region(
     assert result["review_required"] is True
     assert result["defect"] is None  # stage 2 never ran
     assert "region confidence 0.50" in result["review_reasons"][0]
-    (case,) = await _all_cases(db_async_session)
-    assert case.status == "review_required"
+    assert (await _only_draft(db_async_session))["status"] == "review_required"
 
 
 async def test_inspect_image_with_valid_xml_keeps_confident_verdict(
@@ -222,8 +231,7 @@ async def test_inspect_image_with_valid_xml_keeps_confident_verdict(
 
     assert result["verdict"] == "accepted"
     assert result["measurement_validation"]["valid"] is True
-    case = await _fetch_case(db_async_session, result["case_number"])
-    assert case.inspection_xml_id == "inspection.xml"
+    assert (await _only_draft(db_async_session))["inspection_xml_id"] == "inspection.xml"
 
 
 async def test_inspect_image_with_invalid_xml_downgrades_confident_verdict(
@@ -244,7 +252,7 @@ async def test_inspect_image_returns_error_for_unreadable_image(
     result = await _inspect(db_async_session, uploads, image=b"\x89PNGfake")
 
     assert result["error"].startswith("IMAGE_UNREADABLE")
-    assert await _all_cases(db_async_session) == []
+    assert await _all_cases(db_async_session) == [] and await _drafts(db_async_session) == []
 
 
 async def test_inspect_image_returns_error_when_inference_not_configured(
@@ -255,20 +263,20 @@ async def test_inspect_image_returns_error_when_inference_not_configured(
     result = await _inspect(db_async_session, uploads)
 
     assert "not configured" in result["error"]
-    assert await _all_cases(db_async_session) == []
+    assert await _all_cases(db_async_session) == [] and await _drafts(db_async_session) == []
 
 
 async def test_inspect_image_returns_error_when_the_service_fails(
     db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
 ) -> None:
-    """An outage is an error with no Case, not a case waiting for review."""
+    """An outage is an error with nothing to save, not a case waiting for review."""
 
     _mock_async_client(monkeypatch, lambda request: httpx.Response(500, json={"detail": "boom"}))
 
     result = await _inspect(db_async_session, uploads)
 
     assert "Region classification failed" in result["error"]
-    assert await _all_cases(db_async_session) == []
+    assert await _all_cases(db_async_session) == [] and await _drafts(db_async_session) == []
 
 
 async def test_inspect_image_defaults_unknown_board_and_component(
@@ -280,8 +288,9 @@ async def test_inspect_image_defaults_unknown_board_and_component(
 
     result = await _inspect(db_async_session, uploads, board_id=None, component_ref="  ")
 
-    case = await _fetch_case(db_async_session, result["case_number"])
-    assert (case.board_id, case.component_ref) == ("unknown", "unknown")
+    assert result["case_created"] is False
+    payload = await _only_draft(db_async_session)
+    assert (payload["board_id"], payload["component_ref"]) == ("unknown", "unknown")
 
 
 async def test_an_attached_image_that_is_gone_is_a_refusal_not_a_crash(
@@ -296,7 +305,7 @@ async def test_an_attached_image_that_is_gone_is_a_refusal_not_a_crash(
     result = await call(INSPECT_IMAGE, ctx)
 
     assert "could not be found" in result["error"]
-    assert await _all_cases(db_async_session) == []
+    assert await _all_cases(db_async_session) == [] and await _drafts(db_async_session) == []
 
 
 def test_the_model_cannot_name_an_image_or_a_user() -> None:

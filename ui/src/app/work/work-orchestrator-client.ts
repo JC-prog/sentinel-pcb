@@ -14,7 +14,11 @@ import {
   WorkflowRetrainingTicketOut,
   WorkflowRetrainingTicketsRequest,
   WorkflowReviewDecisionOut,
+  WorkflowQueueCorrectionsOut,
+  WorkflowQueueCorrectionsRequest,
+  WorkflowRetrainingPlanOut,
   WorkflowReviewCaseOut,
+  WorkflowRunDrift,
   WorkflowReviewDecisionRequest,
   WorkflowReviewOut,
 } from './models/orchestrator.models';
@@ -198,6 +202,26 @@ export class WorkOrchestratorClient {
     request: WorkflowRetrainingTicketsRequest,
   ): Promise<WorkflowRetrainingTicketOut[]> {
     return this.post('/api/orchestrator/monitoring/retraining-tickets', request);
+  }
+
+  async getRunDrift(runId: string): Promise<WorkflowRunDrift> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/monitoring/run-drift?run_id=${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowRunDrift;
+  }
+
+  async queueCorrections(
+    request: WorkflowQueueCorrectionsRequest,
+  ): Promise<WorkflowQueueCorrectionsOut> {
+    return this.post('/api/orchestrator/monitoring/run-retraining-tickets', request);
+  }
+
+  async draftRetrainingPlan(modelName: string): Promise<WorkflowRetrainingPlanOut> {
+    return this.post('/api/orchestrator/monitoring/retraining-plan', { model_name: modelName });
   }
 
   async getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {

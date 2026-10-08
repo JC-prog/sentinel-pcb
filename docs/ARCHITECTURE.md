@@ -14,8 +14,9 @@ diagnose **PCB (printed circuit board) inspection defects** from an attached ima
 - a streaming chat UI (Angular) over a FastAPI backend,
 - a per-conversation choice of LLM provider (a local Ollama model, or OpenAI through a gateway),
 - user accounts with roles, short-term (per-conversation) and long-term (cross-conversation) memory,
-- mid-conversation tool calling over three agents - an **inspect agent** that classifies an
-  uploaded image and shows the result, a **relabel agent** that records a QA's correction of a
+- mid-conversation tool calling over several agents - an **inspect agent** that classifies an
+  uploaded image and shows the result (a Case is only created if the user asks for one), a
+  **sample agent** that looks up what the Work tab stored about a dataset sample, a **relabel agent** that records a QA's correction of a
   wrong label for retraining, and a **monitoring agent** for model drift,
 - a standalone **inference service** that runs ONNX image classifiers.
 
@@ -70,7 +71,7 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 | **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
 | **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/shared/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
-| **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. |
+| **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. The Work tab also keeps its run/review/decision records here, as payload-only collections (`adc_*`, no vectors) via `app/workflow/services/run_store.py`. |
 
 ---
 
@@ -105,7 +106,13 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the supervisor is given the tools this r
 **supervisor**: it picks among the three agents' tools and writes the answer. Registered tools:
 
 - `inspect_image` - the Inspect Agent below; only offered when the message has an attached image,
-  since the model cannot reference a real upload id on its own.
+  since the model cannot reference a real upload id on its own. It saves nothing; `create_case`
+  (offered always, no image needed) turns the inspection into a Case once the user has said yes in
+  a later turn.
+- `get_sample`, `list_review_cases`, `get_run_drift` - the Sample Agent: read-only views of the Work
+  tab's stored runs (Qdrant), looked up by the dataset's `sample_id`, plus per-model drift for a run
+  and the operator's corrections. Those corrections are queued as retraining tickets in the Review
+  Console's Drift & Retraining tab; `draft_retraining_plan` drafts the tickets into a job.
 - `relabel_case`, `confirm_relabel` - the Relabel Agent below; they work from a case number (or the
   latest case in the conversation), so no image is needed.
 - `get_drift_summary`, `report_model_drift`, `draft_retraining_plan` - the Monitoring Agent's
@@ -161,13 +168,13 @@ in unchanged rather than adapted.
 
 ### Inspect Agent
 
-`app/chat/agents/inspection_agent/`, exposed as the `inspect_image` chat tool: a QA/Admin attaches
-**one image** (optionally an inspection XML) and gets the inference result. Built from sub-agents,
+`app/chat/agents/inspection_agent/`, exposed as the `inspect_image` and `create_case` chat tools: a
+QA/Admin attaches **one image** (optionally an inspection XML) and gets the inference result. Built from sub-agents,
 each callable on its own:
 
 ```
 verifier           classifier                      verdict            pipeline
- readable image?    pcb_region                      ACCEPTED /         persists a Case,
+ readable image?    pcb_region                      ACCEPTED /         parks a draft Case,
  validate XML       -> pcb_body|lead|text_defect    REVIEW_REQUIRED    stamped with the model
  measurements       (inference service)             + every reason     versions that answered
 ```
@@ -177,10 +184,14 @@ inspection steps are its tools (plus read-only `get_scores`, `check_image_qualit
 it chooses the order and writes a short summary. Every step it asks for passes `policy.py` - the
 same step-order rules the deterministic path uses - so an out-of-order call is refused with the
 reason. **The LLM never decides the verdict or saves anything**: afterwards `pipeline._complete` runs
-any step it skipped, `verdict.decide` applies fixed confidence/measurement rules, and the Case is
-written. A failed or confused LLM run therefore only costs time, and without an OpenAI key (or with
+any step it skipped, `verdict.decide` applies fixed confidence/measurement rules, and the result is
+parked as a draft (`inspection_drafts`). A failed or confused LLM run therefore only costs time, and without an OpenAI key (or with
 `INSPECTION_AGENT_LLM_ENABLED` off) the pipeline runs unassisted. An inference-service outage is an
-error with no Case, not a case parked in review. `ADC_INSPECTION_AGENT_ENABLED` is its kill switch.
+error with no draft, not a case parked in review. **No Case is saved by `inspect_image`**: a Case is
+what a user relabels or reviews, so the agent asks whether they want one, and `create_case` (no
+arguments - it saves exactly what was inspected) creates it only in a *later* chat turn than the
+inspection (`app/chat/services/confirmation.py`, enforced in code). `ADC_INSPECTION_AGENT_ENABLED`
+is its kill switch.
 Not to be confused with the Work tab's bulk Orchestrator agent below.
 
 ### Relabel Agent

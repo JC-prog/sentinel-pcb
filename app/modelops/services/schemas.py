@@ -72,6 +72,7 @@ class SampleOut(BaseModel):
     case_id: str | None = None
     case_number: str | None = None
     sample_ref: str | None = None
+    run_id: str | None = None
     ticket_id: str | None = None
     observed_label: str | None = None
     expected_label: str | None = None

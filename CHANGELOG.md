@@ -9,6 +9,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Drift & Retraining tab has a **Retraining plan** section. Queued corrections wait as
+  tickets (shown as "unplanned" in the Models tab); **Draft retraining plan** turns a model's open
+  tickets into a retraining job awaiting Admin approval, so the whole flow works without leaving the
+  Work tab. New `POST /api/orchestrator/monitoring/retraining-plan`; `run-drift` also returns
+  `open_tickets` per model.
+- Docs: a rewritten user guide (every chat prompt and UI action and what it triggers, verified
+  against the running app), `docs/DEMO.md` (a rehearsed demo script with the sample data and
+  thresholds to use) and `docs/REVIEW_DRIFT_RETRAINING.md` (the Qdrant schema, the review -> drift ->
+  retraining chain, API and tool reference, failure behaviour and limitations).
+- Work tab: the Review Console's **Drift & Retraining** tab now follows the Explanation Review. When
+  the operator relabels a sample in User Final Decision, the tab shows per-model drift for the run
+  (reviewed, corrected, Agent 2 disagreements, confidence) and a list of the operator's corrections,
+  computed on the server from the stored decisions; "Queue N for retraining" files a retraining
+  ticket per correction (once per run and sample). The tickets are drafted into a retraining plan by
+  chat's `draft_retraining_plan` and approved in the Models tab. New
+  `GET /api/orchestrator/monitoring/run-drift` and `POST .../run-retraining-tickets`; drift reports
+  filed for a run snapshot the server's numbers. Tickets now record their run
+  (Alembic `c7e2b9d4f163`).
+- Chat: `get_run_drift` (sample agent) - how the models did in a Work-tab run and what the operator
+  corrected, and which corrections already have a retraining ticket.
+- Chat: the **sample agent** (`app/chat/agents/sample_agent/`). Give it a dataset `sample_id` such as
+  `S000001` and `get_sample` reports what the Work tab stored in Qdrant - board and component, the
+  machine's call and failed measurements, Agent 1's verdict, Agent 2's review and the operator's
+  decision - and `list_review_cases` lists what a run flagged for review. Read-only (a sample is not a
+  Case); a sample found in several runs answers from the latest and names the others. New
+  `SAMPLE_LOOKUP_AGENT_ENABLED` kill switch.
+- Chat: a `create_case` tool. After an image inspection the assistant asks whether you want a case
+  created, and makes one only after you say yes in your next message (enforced in code, like relabel
+  and review). New `inspection_drafts` table (Alembic `b5c1f8a3d742`) holds the inspection meanwhile.
+- Work tab: a finished run, its Agent 2 reviews and the operator's decisions are now persisted to
+  Qdrant (the source project's `adc_orchestrator_runs` / `adc_inspection_results` /
+  `adc_agent2_reviews` collections, via `app/workflow/services/run_store.py`), so the Review Console
+  still lists a run's cases, reviews and decisions after a backend restart. The first Agent 2 review
+  of a sample is immutable (asking again returns it). If Qdrant is unreachable the run still works
+  from memory and decisions fall back to Postgres.
 - Chat: an always-present system prompt that says what the assistant is for and which tool answers
   which question, and asks for confirmation before tools that change something.
 - Chat: the **relabel agent** (`app/chat/agents/relabel_agent/`). A QA/Admin says the model's defect
@@ -53,8 +88,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inputs are kept server-side per run, so a backend restart requires rerunning the dataset to review
   its samples. See `app/workflow/INTEGRATION_NOTES.md`.
 
+### Fixed
+
+- Approving a retraining job made of Work-tab tickets failed: the inference service requires a string
+  `case_id` per sample and these tickets have none. They are now sent as `<run_id>:<sample_id>`.
+
 ### Changed
 
+- Defect-label comparison (Agent 1 vs Agent 2 conflicts and run corrections) now treats the AOI
+  datasets' misspelling `SolderInsuffcient` as `solder insufficient`, as Agent 1's own pipeline
+  already did; before, those samples showed false conflicts and false corrections.
+- Chat: `inspect_image` no longer saves a Case on its own - it reports the result and the assistant
+  asks whether to create one (see `create_case`). The inspection card shows "Not saved as a case".
+  Drift numbers are computed from saved Cases, so they now cover the inspections users chose to keep
+  as cases rather than every inspection.
 - Chat agents rebuilt around three: an **inspect agent** (verifier and classifier sub-agents, fixed
   verdict rules, and an LLM-driven ReAct pass on LangChain `create_agent`), the new relabel agent, and
   the monitoring agent. The LLM never decides the verdict or saves anything; an inference-service outage

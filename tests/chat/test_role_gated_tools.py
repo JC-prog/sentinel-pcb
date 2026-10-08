@@ -45,6 +45,10 @@ def test_qa_sees_inspect_image_and_model_health_tools_when_an_image_is_attached(
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
+        "create_case",
+        "get_sample",
+        "list_review_cases",
+        "get_run_drift",
     }
 
 
@@ -63,6 +67,10 @@ def test_qa_sees_only_model_health_tools_without_an_image_attached(
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
+        "create_case",
+        "get_sample",
+        "list_review_cases",
+        "get_run_drift",
     }
 
 
@@ -80,6 +88,10 @@ def test_admin_sees_every_tool(
         "get_drift_summary",
         "draft_retraining_plan",
         "monitoring_status",
+        "create_case",
+        "get_sample",
+        "list_review_cases",
+        "get_run_drift",
     }
 
 

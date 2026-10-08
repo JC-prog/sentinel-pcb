@@ -157,6 +157,68 @@ describe('WorkOrchestratorClient', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/monitoring/retraining-tickets');
   });
 
+  it('fetches the server-computed drift of a run', async () => {
+    const drift = { run_id: 'run 1', available: true, totals: {}, models: [], corrections: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(drift) } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new WorkOrchestratorClient(authService).getRunDrift('run 1');
+
+    expect(result).toEqual(drift);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/monitoring/run-drift?run_id=run%201');
+  });
+
+  it('posts only ids to queue the operator corrections, and surfaces a rejection', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ created: [{ id: 't1' }], already_queued: [] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        json: () => Promise.resolve({ detail: 'no operator correction recorded for sample(s): S2' }),
+      } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new WorkOrchestratorClient(authService);
+
+    await client.queueCorrections({ run_id: 'run-1', sample_ids: ['S1'] });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/orchestrator/monitoring/run-retraining-tickets');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ run_id: 'run-1', sample_ids: ['S1'] });
+
+    await expect(client.queueCorrections({ run_id: 'run-1', sample_ids: ['S2'] })).rejects.toThrow(
+      'no operator correction recorded for sample(s): S2',
+    );
+  });
+
+  it('posts the model to draft a retraining plan for, and surfaces a refusal', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ job_id: 'j1', status: 'pending_approval', sample_count: 2 }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ detail: 'no open retraining tickets for pcb_body_defect' }),
+      } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new WorkOrchestratorClient(authService);
+
+    expect((await client.draftRetrainingPlan('pcb_body_defect')).job_id).toBe('j1');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/orchestrator/monitoring/retraining-plan');
+    expect(JSON.parse(init.body)).toEqual({ model_name: 'pcb_body_defect' });
+
+    await expect(client.draftRetrainingPlan('pcb_body_defect')).rejects.toThrow(
+      'no open retraining tickets for pcb_body_defect',
+    );
+  });
+
   it('fetches the review cases of a run', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

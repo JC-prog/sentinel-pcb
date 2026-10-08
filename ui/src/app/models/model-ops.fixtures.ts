@@ -137,6 +137,7 @@ export function jobDetail(overrides: Partial<RetrainingJobDetail> = {}): Retrain
         case_id: null,
         case_number: null,
         sample_ref: 'S1',
+        run_id: 'run12345-aaaa',
         ticket_id: 't-3',
         observed_label: 'MissingPart',
         expected_label: null,

@@ -195,5 +195,8 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 
 - [`README.md`](README.md) - what the product is, the dependency table
 - [`DEVELOPMENT.md`](DEVELOPMENT.md) - architecture, module boundaries, branching/PR workflow, known gotchas
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) - what to type and click to trigger each behaviour
+- [`docs/DEMO.md`](docs/DEMO.md) - a rehearsed step-by-step demo script (with the sample data to use)
+- [`docs/REVIEW_DRIFT_RETRAINING.md`](docs/REVIEW_DRIFT_RETRAINING.md) - Qdrant schema, the review -> drift -> retraining chain, API and tool reference
 - [`infra/litellm/README.md`](infra/litellm/README.md) - why the app never calls `api.openai.com` directly; per-developer key vs one production key
 - [`infra/production/README.md`](infra/production/README.md) - what the AWS deployment looks like

@@ -6,8 +6,12 @@ configures), user accounts, and both short-term (per-conversation) and long-term
 (cross-conversation) chat memory. The assistant can also call tools mid-conversation - the
 current time, live weather for a named location, and (when you attach an image - via the
 paperclip button or by dragging a file onto the chat window) PCB defect inspection and diagnosis -
-deciding on its own when one is actually needed. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
-for what to type/attach to trigger each capability.
+deciding on its own when one is actually needed. A **Work** tab runs bulk datasets through the
+two-stage classifier with an explanation-review step, and a **Models** tab manages model versions
+and retraining. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for what to type/attach/click to
+trigger each capability, [`docs/DEMO.md`](docs/DEMO.md) for a step-by-step demo script, and
+[`docs/REVIEW_DRIFT_RETRAINING.md`](docs/REVIEW_DRIFT_RETRAINING.md) for how review, drift and
+retraining fit together.
 
 ## Getting started
 

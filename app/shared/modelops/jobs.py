@@ -119,6 +119,7 @@ async def draft_job(
                 "case_id": t.case_id,
                 "case_number": t.case_number,
                 "sample_ref": t.sample_ref,
+                "run_id": t.run_id,
                 "ticket_id": t.id,
                 "observed_label": t.observed_label,
                 "expected_label": t.correct_label,

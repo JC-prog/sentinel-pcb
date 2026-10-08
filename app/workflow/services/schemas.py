@@ -35,17 +35,20 @@ class OrchestratorRunRequest(BaseModel):
 # --- Monitoring: filing a drift report / retraining tickets from a finished run's results -------
 #
 # Deliberately duplicated rather than importing app.modelops.services.schemas: workflow and
-# modelops are independent feature modules (tests/test_module_boundaries.py), and orchestrator runs
-# are never persisted server-side (see app/workflow/services/streaming.py) - there's no run id for
-# these requests to reference, so the browser sends back the actual selected result dict(s) from
-# the SSE `result` event it already received. That data is only as trustworthy as the requesting
-# QA/Admin session; there's no server-side run record to check it against.
+# modelops are independent feature modules (tests/test_module_boundaries.py). The two "manual" forms
+# (drift-report, retraining-tickets) take the selected result dict(s) the browser received in the
+# run's SSE `result` event, so that data is only as trustworthy as the QA/Admin session sending it.
+# The Drift & Retraining tab's own routes (run-drift, run-retraining-tickets) instead read the run
+# the server stored in Qdrant (app/workflow/services/run_store.py) and take only ids.
 
 
 class WorkflowDriftReportRequest(BaseModel):
     model_name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     model_version: str | None = None
+    # The run being reported on. When given, the report snapshots the server's own numbers for the
+    # model (computed from the stored run) instead of relying on `samples` alone.
+    run_id: str | None = None
     # The selected per-sample result dicts, kept as evidence only (case_ids/case_numbers on the
     # DriftReport stay empty - those mean chat Case identifiers, not workflow samples).
     samples: list[dict[str, Any]] = Field(default_factory=list)
@@ -65,6 +68,8 @@ class WorkflowRetrainingTicketItem(BaseModel):
 
 
 class WorkflowRetrainingTicketsRequest(BaseModel):
+    # With a run id, a sample already flagged for that run is skipped instead of flagged twice.
+    run_id: str | None = None
     tickets: list[WorkflowRetrainingTicketItem] = Field(min_length=1)
 
 
@@ -73,6 +78,76 @@ class WorkflowRetrainingTicketOut(BaseModel):
     sample_ref: str | None
     model_name: str | None
     status: str
+
+
+class WorkflowModelDriftOut(BaseModel):
+    """One model's numbers for a run (app/shared/modelops/run_drift.py). `model_name` is None for
+    samples that stopped at feature classification and so reached no defect model."""
+
+    model_name: str | None
+    model_version: str | None
+    samples: int
+    review_required: int
+    decided: int
+    corrected: int
+    correction_rate: float | None
+    agent2_disagreed: int
+    low_confidence_rate: float | None
+    mean_confidence: float | None
+
+
+class WorkflowCorrectionOut(BaseModel):
+    """A sample where the operator's final result differs from Agent 1's label - the raw material
+    for a retraining ticket. `queueable` is False when no model was recorded to file it against."""
+
+    sample_id: str
+    model_name: str | None
+    model_version: str | None
+    agent1_label: str | None
+    final_result: str
+    selected_source: str | None
+    operator_notes: str | None
+    queueable: bool
+    queued: bool
+
+
+class WorkflowRunDriftOut(BaseModel):
+    run_id: str
+    # False when the stored run could not be read (Qdrant unreachable); `message` says so.
+    available: bool
+    message: str | None = None
+    totals: dict[str, int]
+    models: list[WorkflowModelDriftOut]
+    corrections: list[WorkflowCorrectionOut]
+    # Open (not yet planned) retraining tickets per model, whatever their origin - what a plan drafted
+    # now would contain. Models with none are left out.
+    open_tickets: dict[str, int] = Field(default_factory=dict)
+
+
+class WorkflowRetrainingPlanRequest(BaseModel):
+    model_name: str = Field(min_length=1)
+    rationale: str | None = None
+
+
+class WorkflowRetrainingPlanOut(BaseModel):
+    """A drafted plan: a retraining job awaiting an Admin's approval in the Models tab."""
+
+    job_id: str
+    model_name: str
+    status: str
+    base_version: str
+    sample_count: int
+    drift_reports_linked: int
+
+
+class WorkflowQueueCorrectionsRequest(BaseModel):
+    run_id: str = Field(min_length=1)
+    sample_ids: list[str] = Field(min_length=1)
+
+
+class WorkflowQueueCorrectionsOut(BaseModel):
+    created: list[WorkflowRetrainingTicketOut]
+    already_queued: list[str]
 
 
 # --- Agent 2 review + human-in-the-loop conflict resolution -------------------------------------

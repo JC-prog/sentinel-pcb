@@ -23,6 +23,10 @@ from app.workflow.services.schemas import (
     OrchestratorUploadRecord,
     WorkflowDriftReportOut,
     WorkflowDriftReportRequest,
+    WorkflowQueueCorrectionsOut,
+    WorkflowQueueCorrectionsRequest,
+    WorkflowRetrainingPlanOut,
+    WorkflowRetrainingPlanRequest,
     WorkflowRetrainingTicketOut,
     WorkflowRetrainingTicketsRequest,
     WorkflowReviewCaseOut,
@@ -30,6 +34,7 @@ from app.workflow.services.schemas import (
     WorkflowReviewDecisionRequest,
     WorkflowReviewOut,
     WorkflowReviewRunRequest,
+    WorkflowRunDriftOut,
 )
 from app.workflow.services.streaming import orchestrator_sse
 
@@ -163,6 +168,63 @@ async def orchestrator_flag_samples_for_retraining(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/api/orchestrator/monitoring/run-drift")
+async def orchestrator_run_drift(
+    run_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> WorkflowRunDriftOut:
+    """The Drift & Retraining tab's numbers for a run: per-model drift and the operator's
+    corrections, computed server-side from the stored run (Qdrant) so they follow every decision
+    saved in the Explanation Review."""
+
+    _require_orchestrator_and_modelops_enabled(user)
+    try:
+        return await monitoring.run_drift_summary(session, run_id=run_id)
+    except monitoring.UnknownRun as exc:
+        raise HTTPException(status_code=404, detail=f"run {run_id} is not stored") from exc
+
+
+@router.post("/api/orchestrator/monitoring/run-retraining-tickets")
+async def orchestrator_queue_corrections(
+    request: WorkflowQueueCorrectionsRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> WorkflowQueueCorrectionsOut:
+    """Queues a retraining ticket for each selected sample the operator corrected, built on the
+    server from the stored sample and decision. All-or-nothing on the selection; samples already
+    queued for the run are reported, not duplicated."""
+
+    _require_orchestrator_and_modelops_enabled(user)
+    try:
+        return await monitoring.queue_corrections(session, request=request, user=user)
+    except monitoring.UnknownRun as exc:
+        raise HTTPException(status_code=404, detail=f"run {request.run_id} is not stored") from exc
+    except monitoring.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="the stored run could not be read - try again shortly"
+        ) from exc
+    except (monitoring.NotACorrection, UnresolvableSample) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/api/orchestrator/monitoring/retraining-plan")
+async def orchestrator_draft_retraining_plan(
+    request: WorkflowRetrainingPlanRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> WorkflowRetrainingPlanOut:
+    """Drafts a retraining plan (a job pending Admin approval) from the model's open tickets - the
+    same job chat's draft_retraining_plan makes. Approving it stays an Admin action in the Models
+    tab; nothing is sent for retraining from here."""
+
+    _require_orchestrator_and_modelops_enabled(user)
+    try:
+        return await monitoring.draft_retraining_plan(session, request=request, user=user)
+    except monitoring.PlanRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 def _require_review_enabled(user: User) -> None:
     """Agent 2 reviews and decisions sit on top of a finished orchestrator run, so both the
     orchestrator and the explainability-review switches gate them."""
@@ -247,6 +309,7 @@ async def orchestrator_review_image(
     _require_review_enabled(user)
     if kind not in {"golden", "defect"}:
         raise HTTPException(status_code=422, detail="kind must be golden or defect")
+    await reviews.ensure_run_loaded(run_id)
     path = reviews.image_path(run_id, sample_id, kind)
     if path is None:
         raise HTTPException(status_code=404, detail="image not available")

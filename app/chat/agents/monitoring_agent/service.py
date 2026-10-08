@@ -147,7 +147,8 @@ async def draft_plan(
     except job_repo.NothingToRetrain as exc:
         raise PlanRefused(
             f"no open retraining tickets for {model} - correct the cases it got wrong first "
-            "(relabel_case, then confirm_relabel)"
+            "(relabel_case, then confirm_relabel), or have the operator queue their corrections "
+            "from the Work tab's Drift & Retraining tab"
         ) from exc
     except job_repo.BaseVersionUnknown as exc:
         raise PlanRefused(

@@ -8,6 +8,9 @@ from app.shared.db.models import UserRole
 
 TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "inspect_image": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Inspecting saves nothing; creating the Case (only after the user says yes) is what makes the
+    # inspection something to relabel or review.
+    "create_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a relabel saves nothing; confirming it records the correction and queues a
     # retraining ticket - an Admin still approves the retraining itself in the Models tab.
     "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),
@@ -23,6 +26,10 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # Admin-only, not QA - infra/monitoring visibility is a configuration concern, not a QA
     # day-to-day action.
     "monitoring_status": frozenset({UserRole.ADMIN}),
+    # Read-only views of the Work tab's stored runs, which are QA/Admin only there too.
+    "get_sample": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "list_review_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "get_run_drift": frozenset({UserRole.QA, UserRole.ADMIN}),
 }
 
 

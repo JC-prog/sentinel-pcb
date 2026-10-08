@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.config.settings import settings
 from app.shared.db.models import WorkflowReviewDecision
+from app.shared.modelops.run_drift import normalize_defect
 from app.workflow.services import reviews, streaming
 
 RUN_URL = "/api/orchestrator/reviews/run"
@@ -79,7 +80,7 @@ def _stub_pipeline(monkeypatch: pytest.MonkeyPatch, output: dict[str, Any]) -> l
     ],
 )
 def test_normalize_defect(label: str | None, expected: str) -> None:
-    assert reviews.normalize_defect(label) == expected
+    assert normalize_defect(label) == expected
 
 
 def test_register_run_keeps_every_review_required_sample_but_nothing_else() -> None:
@@ -114,7 +115,7 @@ def test_a_sample_that_stopped_at_feature_classification_falls_back_to_the_machi
     agent2_input = reviews.build_agent2_input(sample, stage_one_only)
 
     assert agent2_input["preliminary_defect"] == "WrongPart_13"
-    assert reviews.normalize_defect(agent2_input["preliminary_defect"]) == "wrong part"
+    assert normalize_defect(agent2_input["preliminary_defect"]) == "wrong part"
     assert agent2_input["feature_type"] == "Text"
     assert agent2_input["confidence"] == 0.0
     # no stage-1 result at all: the dataset's own feature label is used, not a made-up "Body"

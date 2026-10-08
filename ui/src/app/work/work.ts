@@ -4,7 +4,9 @@ import {
   OrchestratorInferenceResult,
   OrchestratorRunMode,
   WorkflowDecisionSource,
+  WorkflowCorrection,
   WorkflowReviewCaseOut,
+  WorkflowRunDrift,
 } from './models/orchestrator.models';
 import { WorkService } from './work.service';
 
@@ -72,6 +74,38 @@ export class Work implements OnDestroy {
   protected readonly monitoringBusy = signal(false);
   protected readonly monitoringError = signal<string | null>(null);
   protected readonly monitoringMessage = signal<string | null>(null);
+
+  // The Drift & Retraining tab's view of the run - per-model numbers and the operator's corrections,
+  // computed on the server from the stored decisions and refetched whenever one is saved.
+  protected readonly runDrift = signal<WorkflowRunDrift | null>(null);
+  protected readonly driftLoading = signal(false);
+  protected readonly driftError = signal<string | null>(null);
+  /** Corrections the operator unticked: every queueable, not-yet-queued one starts selected. */
+  protected readonly skippedCorrectionIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly corrections: Signal<WorkflowCorrection[]> = computed(
+    () => this.runDrift()?.corrections ?? [],
+  );
+  protected readonly pendingCorrections: Signal<WorkflowCorrection[]> = computed(() =>
+    this.corrections().filter((c) => c.queueable && !c.queued),
+  );
+  protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
+    this.pendingCorrections().filter((c) => !this.skippedCorrectionIds().has(c.sample_id)),
+  );
+  /** Models with queued tickets that no plan covers yet, with how many - what "Draft retraining
+   * plan" turns into a job. */
+  protected readonly planModels: Signal<{ name: string; tickets: number }[]> = computed(() =>
+    Object.entries(this.runDrift()?.open_tickets ?? {})
+      .map(([name, tickets]) => ({ name, tickets }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  protected readonly planBusy = signal(false);
+  protected readonly planError = signal<string | null>(null);
+  protected readonly planMessage = signal<string | null>(null);
+
+  protected readonly canQueueCorrections: Signal<boolean> = computed(
+    () => this.selectedCorrections().length > 0 && !this.monitoringBusy(),
+  );
 
   // Agent 2 review + human-in-the-loop conflict resolution, once a run has finished.
   protected readonly ipcClasses = IPC_CLASSES;
@@ -196,6 +230,7 @@ export class Work implements OnDestroy {
           this.resetReviews();
         } else {
           void this.refreshCases();
+          void this.refreshDrift();
         }
       });
     });
@@ -247,7 +282,7 @@ export class Work implements OnDestroy {
    * first so it never shows a stale queue, and selecting the first pending case. */
   async openConsole(): Promise<void> {
     this.consoleOpen.set(true);
-    await this.refreshCases();
+    await Promise.all([this.refreshCases(), this.refreshDrift()]);
     if (this.selectedCase() === null) {
       const first = this.reviewCases().find((c) => c.decision === null) ?? this.reviewCases()[0];
       if (first) {
@@ -271,6 +306,95 @@ export class Work implements OnDestroy {
       this.reviewError.set(null);
     } catch (error) {
       this.reviewError.set(error instanceof Error ? error.message : 'Could not load review cases.');
+    }
+  }
+
+  /** Refetches the server's drift numbers and corrections for the run - the Drift & Retraining
+   * tab follows every decision the operator saves in the Explanation Review. */
+  async refreshDrift(): Promise<void> {
+    const runId = this.runId();
+    if (runId === null) {
+      return;
+    }
+    this.driftLoading.set(true);
+    try {
+      this.runDrift.set(await this.workService.getRunDrift(runId));
+      this.driftError.set(null);
+    } catch (error) {
+      this.driftError.set(error instanceof Error ? error.message : 'Could not load the drift numbers.');
+    } finally {
+      this.driftLoading.set(false);
+    }
+  }
+
+  async showDriftTab(): Promise<void> {
+    this.consoleTab.set('drift');
+    await this.refreshDrift();
+  }
+
+  isCorrectionSelected(sampleId: string): boolean {
+    return !this.skippedCorrectionIds().has(sampleId);
+  }
+
+  toggleCorrection(sampleId: string): void {
+    this.skippedCorrectionIds.update((ids) => {
+      const next = new Set(ids);
+      if (!next.delete(sampleId)) {
+        next.add(sampleId);
+      }
+      return next;
+    });
+  }
+
+  /** Queues a retraining ticket for each selected correction. The server builds the tickets from
+   * the stored sample and decision, so only the ids go over the wire. */
+  async queueCorrections(): Promise<void> {
+    const runId = this.runId();
+    if (runId === null || !this.canQueueCorrections()) {
+      return;
+    }
+    const sampleIds = this.selectedCorrections().map((c) => c.sample_id);
+    this.monitoringBusy.set(true);
+    this.monitoringError.set(null);
+    this.monitoringMessage.set(null);
+    try {
+      const out = await this.workService.queueCorrections({ run_id: runId, sample_ids: sampleIds });
+      const queued = out.created.length;
+      this.monitoringMessage.set(
+        `Queued ${queued} correction${queued === 1 ? '' : 's'} for retraining` +
+          (out.already_queued.length > 0 ? ` (${out.already_queued.length} already queued)` : '') +
+          '.',
+      );
+      await this.refreshDrift();
+    } catch (error) {
+      this.monitoringError.set(
+        error instanceof Error ? error.message : 'Could not queue the corrections.',
+      );
+    } finally {
+      this.monitoringBusy.set(false);
+    }
+  }
+
+  /** Drafts a retraining plan for a model from its open tickets. The plan is a job awaiting an
+   * Admin's approval in the Models tab - nothing is retrained from here. */
+  async draftPlan(modelName: string): Promise<void> {
+    if (this.planBusy()) {
+      return;
+    }
+    this.planBusy.set(true);
+    this.planError.set(null);
+    this.planMessage.set(null);
+    try {
+      const plan = await this.workService.draftRetrainingPlan(modelName);
+      this.planMessage.set(
+        `Plan drafted for ${plan.model_name}: ${plan.sample_count} sample${plan.sample_count === 1 ? '' : 's'}, ` +
+          `${plan.status.replace('_', ' ')}. An Admin approves it in the Models tab.`,
+      );
+      await this.refreshDrift();
+    } catch (error) {
+      this.planError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
+    } finally {
+      this.planBusy.set(false);
     }
   }
 
@@ -324,7 +448,7 @@ export class Work implements OnDestroy {
         operator_notes: this.operatorNotes().trim() || null,
       });
       this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
-      await this.refreshCases();
+      await Promise.all([this.refreshCases(), this.refreshDrift()]);
     } catch (error) {
       this.reviewError.set(error instanceof Error ? error.message : 'Could not save the decision.');
     } finally {
@@ -382,7 +506,17 @@ export class Work implements OnDestroy {
     this.selectedCaseId.set(null);
     this.reviewError.set(null);
     this.reviewMessage.set(null);
+    this.runDrift.set(null);
+    this.driftError.set(null);
+    this.planError.set(null);
+    this.planMessage.set(null);
+    this.skippedCorrectionIds.set(new Set());
     this.revokeImages();
+  }
+
+  /** 0.5 -> "50%"; "—" when there is nothing to measure. */
+  percent(value: number | null): string {
+    return value === null ? '—' : `${Math.round(value * 100)}%`;
   }
 
   confidencePercent(sample: OrchestratorInferenceResult): number | null {
@@ -412,9 +546,11 @@ export class Work implements OnDestroy {
     this.monitoringError.set(null);
     this.monitoringMessage.set(null);
     try {
+      const runId = this.runId();
       await this.workService.reportDrift({
         model_name: this.driftModelName(),
         description: this.driftDescription().trim(),
+        ...(runId !== null ? { run_id: runId } : {}),
         samples: this.results(),
       });
       this.driftDescription.set('');
@@ -435,7 +571,9 @@ export class Work implements OnDestroy {
     this.monitoringError.set(null);
     this.monitoringMessage.set(null);
     try {
+      const runId = this.runId();
       const tickets = await this.workService.flagForRetraining({
+        ...(runId !== null ? { run_id: runId } : {}),
         tickets: this.selectedSamples().map((sample) => ({ sample, reason })),
       });
       this.monitoringMessage.set(

@@ -51,6 +51,7 @@ async def test_draft_collects_open_tickets_into_a_pending_job(
             "case_id": ticket.case_id,
             "case_number": ticket.case_number,
             "sample_ref": None,
+            "run_id": None,
             "ticket_id": ticket.id,
             "observed_label": "MissingPart",
             "expected_label": "Golden",

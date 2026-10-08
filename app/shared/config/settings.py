@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     # Kill switch, same pattern as the others.
     monitoring_agent_enabled: bool = True
 
+    # Sample agent (app/chat/agents/sample_agent/) - read-only lookups of what the Work tab
+    # stored in Qdrant about a dataset sample (get_sample, list_review_cases). Kill switch, same
+    # pattern as the others.
+    sample_lookup_agent_enabled: bool = True
+
     # Chat guardrails (app/chat/guardrails/) - a NeMo Guardrails input rail run on the raw user
     # message before it reaches any chat LLM call, checking for
     # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single

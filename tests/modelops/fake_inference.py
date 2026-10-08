@@ -92,6 +92,7 @@ class FakeInference:
                 "status": "queued",
                 "progress": 0.0,
                 "sample_count": len(body["samples"]),
+                "samples": body["samples"],  # as sent, so tests can check what the service was told
                 "created_at": datetime.now(UTC).isoformat(),
                 "started_at": None,
                 "finished_at": None,

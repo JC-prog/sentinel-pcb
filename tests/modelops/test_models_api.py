@@ -377,6 +377,33 @@ async def test_only_a_pending_job_can_be_approved_and_only_an_approved_one_resen
     assert authenticated_client.post(_job_url("nope", "approve")).status_code == 404
 
 
+async def test_approving_a_job_of_work_tab_tickets_names_each_sample_by_run_and_sample(
+    authenticated_client: TestClient, fake: FakeInference, db_async_session: AsyncSession
+) -> None:
+    """Work-tab tickets have no Case behind them, but the inference service wants a case_id string
+    for every sample - so it is told "<run>:<sample>" (a sample id alone restarts every run)."""
+
+    qa = await _qa(db_async_session)
+    for sample_ref, run_id in (("S000001", "run-a"), ("S000004", "run-a"), ("S000001", None)):
+        ticket = await make_workflow_ticket(db_async_session, qa, sample_ref=sample_ref)
+        ticket.run_id = run_id
+    await make_ticket(db_async_session, qa)  # and a chat one in the same job
+    await db_async_session.commit()
+    job = await job_repo.draft_job(
+        db_async_session, model_name=MODEL, created_by_user_id=qa.id, rationale="mixed"
+    )
+
+    response = authenticated_client.post(_job_url(job.id, "approve"))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "queued" and response.json()["error"] is None
+    (remote,) = fake.jobs.values()
+    sent = sorted(s["case_id"] for s in remote["samples"])
+    assert len(sent) == 4 and all(isinstance(c, str) and c for c in sent)
+    assert {"run-a:S000001", "run-a:S000004", "S000001"} <= set(sent)  # Work-tab refs
+    assert any(c not in {"run-a:S000001", "run-a:S000004", "S000001"} for c in sent)  # the chat Case id
+
+
 async def test_a_job_the_service_rejects_stays_approved_with_the_reason(
     authenticated_client: TestClient, fake: FakeInference, db_async_session: AsyncSession
 ) -> None:

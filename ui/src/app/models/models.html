@@ -450,6 +450,11 @@
                     <tr class="border-t border-slate-200 dark:border-slate-800">
                       <td class="py-1 pr-3 font-mono">
                         {{ sample.case_number ?? sample.case_id ?? sample.sample_ref ?? '—' }}
+                        @if (sample.run_id) {
+                          <span class="text-slate-500 dark:text-slate-400" data-testid="sample-run">
+                            · run {{ sample.run_id.slice(0, 8) }}
+                          </span>
+                        }
                       </td>
                       <td class="py-1 pr-3">{{ sample.observed_label ?? '–' }}</td>
                       <td class="py-1">{{ sample.expected_label ?? '–' }}</td>
