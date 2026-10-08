@@ -62,7 +62,7 @@ reference; sections 3-8 explain each row.
 | See how the models did in a Work-tab run | nothing | "How did the models do in the last run, and what did the operator correct?" | `get_run_drift` | No |
 | Check whether a model is drifting (saved cases) | nothing | "Is the pcb_text_defect model drifting?" | `get_drift_summary` | No |
 | File a drift report | nothing | "Report that - lots of false Golden calls since Monday." | `report_model_drift` | Yes |
-| Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
+| Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
 
 **Provider.** The chat settings let you pick the **Local LLM (Ollama)** or **OpenAI** as the model
@@ -252,11 +252,23 @@ how many corrections are waiting to be queued). It shows:
 Below that, a **Manual** section keeps the older forms: *Report drift* for a model, and *Flag
 selected samples for retraining* from the results table.
 
-### 8.4 Where the tickets go
+### 8.4 From tickets to a plan to an approved job
 
-Queued corrections become open retraining tickets. Back in chat, *"Draft a retraining plan for
-pcb_text_defect"* drafts them into a job; an Admin then sees it under **Models -> Retraining queue**
-(status *pending approval*) and approves it.
+**Queueing creates tickets, not a job.** The Models tab's **Retraining queue** lists *jobs*, so right
+after you queue it still says "No retraining jobs yet" and shows the tickets as **"N unplanned"**.
+A *plan* is what turns a model's open tickets into a job:
+
+1. In the **Drift & Retraining** tab, scroll to **Retraining plan**. Each model with tickets waiting
+   is listed ("pcb_text_defect - 2 tickets waiting"). Click **Draft retraining plan**.
+   *(Alternative: in chat, "Draft a retraining plan for pcb_text_defect.")*
+2. The tab confirms "Plan drafted for pcb_text_defect: 2 samples, pending approval. An Admin approves
+   it in the Models tab." The tickets move from *unplanned* to *in a plan*.
+3. An **Admin** opens **Models -> Retraining queue**, finds the job (status *pending approval*), uses
+   **Show flagged cases** to see what it contains, and clicks **Approve**. That sends it to the
+   inference service (whose trainer is currently a stub that simulates the job).
+
+QA can draft a plan but only an Admin can approve it. Samples from the Work tab reach the inference
+service as `<run id>:<sample id>`.
 
 ---
 
@@ -282,8 +294,9 @@ versions and job progress from the service when reachable.
    **Accept AI**, note *"text is wrong on the part"*, **Confirm Decision**.
 3. **Drift & Retraining:** the correction appears (`Golden -> wrong part`); click **Queue 1 for retraining**.
 4. **Chat:** *"How did the models do in the last run?"* - the assistant reports the correction.
-   *"Draft a retraining plan for pcb_text_defect."* - a plan awaiting approval.
-5. **Models (Admin):** the job is in the **Retraining queue**; **Approve** it.
+5. **Drift & Retraining:** under **Retraining plan** click **Draft retraining plan** (or ask chat:
+   *"Draft a retraining plan for pcb_text_defect."*) - a plan awaiting approval.
+6. **Models (Admin):** the job is now in the **Retraining queue**; **Approve** it.
 
 ---
 
@@ -292,7 +305,8 @@ versions and job progress from the service when reachable.
 | Symptom | Likely cause |
 | --- | --- |
 | Inspect result is always *Review required*, no defect shown | Region confidence is below the 0.70 threshold. Lower `ADC_REGION_CONFIDENCE_THRESHOLD` (and restart the backend) - see [`DEMO.md`](DEMO.md#before-you-start). |
-| Work-tab corrections say *No model recorded* | Those samples stopped at the first stage. Re-run with a lower **feature threshold**. |
+| Work-tab corrections say *No model recorded* (Model column: "no model reached") | Those samples stopped at the first stage. Re-run with a lower **feature threshold** (e.g. 0.3) - an existing run can't be changed. |
+| Retraining queue says "No retraining jobs yet" after queueing | Queueing only creates tickets ("N unplanned"). Click **Draft retraining plan** (Drift & Retraining tab) or ask chat for a plan; then the job appears. |
 | "Run could not be read" in Drift & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
 | "inference service ..." errors | The inference service (port 8001) isn't running or `INFERENCE_BASE_URL` is blank. `start-dev` sets it. |
 | Assistant says a tool isn't available | Your role doesn't allow it, or its kill switch is off. |

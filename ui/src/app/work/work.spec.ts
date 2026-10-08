@@ -79,6 +79,7 @@ function fakeWorkService(): {
   saveReviewDecision: ReturnType<typeof vi.fn>;
   getRunDrift: ReturnType<typeof vi.fn>;
   queueCorrections: ReturnType<typeof vi.fn>;
+  draftRetrainingPlan: ReturnType<typeof vi.fn>;
   reviewTick: ReturnType<typeof signal<number>>;
 } {
   const log = signal<OrchestratorLogEntry[]>([]);
@@ -113,6 +114,14 @@ function fakeWorkService(): {
 
   const getRunDrift = vi.fn().mockResolvedValue(runDrift());
   const queueCorrections = vi.fn().mockResolvedValue({ created: [], already_queued: [] });
+  const draftRetrainingPlan = vi.fn().mockResolvedValue({
+    job_id: 'j1',
+    model_name: 'pcb_body_defect',
+    status: 'pending_approval',
+    base_version: 'JcProg/body@v2',
+    sample_count: 2,
+    drift_reports_linked: 0,
+  });
 
   const service = {
     status: signal(IDLE_STATUS),
@@ -133,6 +142,7 @@ function fakeWorkService(): {
     saveReviewDecision,
     getRunDrift,
     queueCorrections,
+    draftRetrainingPlan,
   } as unknown as WorkService;
 
   return {
@@ -148,6 +158,7 @@ function fakeWorkService(): {
     saveReviewDecision,
     getRunDrift,
     queueCorrections,
+    draftRetrainingPlan,
     reviewTick,
   };
 }
@@ -992,6 +1003,68 @@ describe('Work', () => {
         await fixture.componentInstance.refreshDrift();
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('[data-testid="drift-error"]')?.textContent).toContain('boom');
+      });
+
+      function planButtons(): HTMLButtonElement[] {
+        return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="draft-plan"]'));
+      }
+
+      it('says no plan can be drafted until corrections are queued', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(fixture.nativeElement.querySelector('[data-testid="no-plan-models"]')).not.toBeNull();
+        expect(planButtons()).toHaveLength(0);
+      });
+
+      it('offers a plan for each model with tickets waiting, and drafts it on click', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ queued: true })], {
+            open_tickets: { pcb_body_defect: 2, pcb_text_defect: 1 },
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const rows = Array.from(
+          fixture.nativeElement.querySelectorAll('[data-plan-model]') as NodeListOf<HTMLElement>,
+        );
+        expect(rows.map((r) => r.getAttribute('data-plan-model'))).toEqual(['pcb_body_defect', 'pcb_text_defect']);
+        expect(rows[0].textContent).toContain('2 tickets waiting');
+        expect(rows[1].textContent).toContain('1 ticket waiting');
+
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ queued: true })], { open_tickets: { pcb_text_defect: 1 } }));
+        planButtons()[0].click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(fake.draftRetrainingPlan).toHaveBeenCalledWith('pcb_body_defect');
+        expect(fixture.nativeElement.querySelector('[data-testid="plan-message"]')?.textContent).toContain(
+          'Plan drafted for pcb_body_defect: 2 samples, pending approval. An Admin approves it in the Models tab.',
+        );
+        // the drift numbers were refetched, so the planned model is no longer offered
+        expect(
+          (fixture.nativeElement.querySelectorAll('[data-plan-model]') as NodeListOf<HTMLElement>).length,
+        ).toBe(1);
+      });
+
+      it('shows why a plan could not be drafted', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ queued: true })], { open_tickets: { pcb_body_defect: 1 } }),
+        );
+        fake.draftRetrainingPlan.mockRejectedValue(new Error('cannot tell which version of pcb_body_defect to retrain from'));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        planButtons()[0].click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(fixture.nativeElement.querySelector('[data-testid="plan-error"]')?.textContent).toContain(
+          'cannot tell which version',
+        );
+        expect(fixture.nativeElement.querySelector('[data-testid="plan-message"]')).toBeNull();
       });
 
       it('sends the run id with a manual drift report and manual flags', async () => {

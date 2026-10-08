@@ -11,6 +11,7 @@ import {
   WorkflowRetrainingTicketsRequest,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
+  WorkflowRetrainingPlanOut,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
   WorkflowReviewDecisionOut,
@@ -88,6 +89,10 @@ export class WorkService {
 
   queueCorrections(request: WorkflowQueueCorrectionsRequest): Promise<WorkflowQueueCorrectionsOut> {
     return this.client.queueCorrections(request);
+  }
+
+  draftRetrainingPlan(modelName: string): Promise<WorkflowRetrainingPlanOut> {
+    return this.client.draftRetrainingPlan(modelName);
   }
 
   getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {

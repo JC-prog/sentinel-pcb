@@ -194,6 +194,31 @@ describe('WorkOrchestratorClient', () => {
     );
   });
 
+  it('posts the model to draft a retraining plan for, and surfaces a refusal', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ job_id: 'j1', status: 'pending_approval', sample_count: 2 }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ detail: 'no open retraining tickets for pcb_body_defect' }),
+      } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new WorkOrchestratorClient(authService);
+
+    expect((await client.draftRetrainingPlan('pcb_body_defect')).job_id).toBe('j1');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/orchestrator/monitoring/retraining-plan');
+    expect(JSON.parse(init.body)).toEqual({ model_name: 'pcb_body_defect' });
+
+    await expect(client.draftRetrainingPlan('pcb_body_defect')).rejects.toThrow(
+      'no open retraining tickets for pcb_body_defect',
+    );
+  });
+
   it('fetches the review cases of a run', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

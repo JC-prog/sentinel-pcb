@@ -24,7 +24,8 @@ the app see [`USER_GUIDE.md`](USER_GUIDE.md); for the system as a whole see
  Operator queues corrections:  POST .../monitoring/run-retraining-tickets
    │ saved:  retraining_tickets (run_id + sample_ref)                   (Postgres)
    ▼
- Chat: draft_retraining_plan  ──►  retraining_jobs (pending_approval)   (Postgres)
+ Draft a plan: Work tab button (POST .../monitoring/retraining-plan)
+   or chat draft_retraining_plan  ──►  retraining_jobs (pending_approval)   (Postgres)
    ▼
  Admin approves in the Models tab ──► inference service job (stub trainer)
 ```
@@ -111,6 +112,7 @@ All routes need a logged-in **QA or Admin**; the review/decision routes are behi
 | `GET /api/orchestrator/reviews/image?run_id=&sample_id=&kind=golden\|defect` | The crop, looked up server-side (never a client-supplied path). |
 | `GET /api/orchestrator/monitoring/run-drift?run_id=` | Per-model stats and the corrections, with each correction's `queued` flag. 404 unknown run; with Qdrant down `available:false` and a message (fail-open). |
 | `POST /api/orchestrator/monitoring/run-retraining-tickets` `{run_id, sample_ids}` | Queue one ticket per selected correction, **built server-side** from the stored sample and decision. All-or-nothing on the selection: a sample with no correction, or no model recorded, rejects the whole request (422). Already-queued samples are skipped and reported (`already_queued`). 503 if the store is unreachable. |
+| `POST /api/orchestrator/monitoring/retraining-plan` `{model_name, rationale?}` | Turn every **open** ticket for the model (Work-tab and chat alike) into a `retraining_job` in `pending_approval`, linking the model's open drift reports - the same job chat's `draft_retraining_plan` makes. 409 if there are no open tickets or the base version can't be determined. Approving stays an Admin action in the Models tab. |
 | `POST /api/orchestrator/monitoring/drift-report` | File a drift report. With `run_id` it snapshots the server's numbers for the model; without, it records only the browser-sent evidence. |
 | `POST /api/orchestrator/monitoring/retraining-tickets` | The older "manual" path: tickets from browser-sent sample dicts; with `run_id`, a sample already ticketed for the run is skipped. |
 
@@ -195,10 +197,10 @@ The Work tab's own thresholds (default 0.70) are per-run inputs in the UI, not s
 
 - **Uploaded images are on local disk.** A run and its decisions survive a restart (Qdrant), but the
   golden/defect images do not survive a redeploy, and this blocks multi-task deployment.
-- **Work-tab tickets have no `case_id`.** `retraining_jobs.samples` carries `sample_ref` and `run_id`, but
-  `app/modelops/services/operations.py` sends the inference service only `case_id` and the labels, so
-  how the (stub) trainer identifies those samples is not defined yet. Real retraining needs a way to
-  fetch the flagged images.
+- **Work-tab tickets have no `case_id`.** The inference service requires a string `case_id` per
+  sample, so `operations._sample_ref` sends `<run_id>:<sample_ref>` for them (a chat ticket sends its
+  real case id). The stub trainer ignores it; real retraining will need a way to fetch the flagged
+  images, which live in the backend's upload store.
 - **Drift is two views.** Chat's `get_drift_summary` counts saved Cases; the Work tab and `get_run_drift`
   count a run's samples. Since inspections no longer create cases automatically, the Case-based
   numbers cover only inspections users chose to keep.

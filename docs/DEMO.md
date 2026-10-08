@@ -247,20 +247,23 @@ truth."
 
 ---
 
-## Act 8 - Close the loop: plan -> approve (2 min)  - **Chat -> Models**
+## Act 8 - Close the loop: plan -> approve (2 min)  - **Work or Chat -> Models**
 
-In chat:
+Queueing in Act 6 created *tickets*; the Models tab's Retraining queue lists *jobs*, so it still says
+"No retraining jobs yet" (and "2 unplanned") - a good moment to explain the two steps. Now draft the
+plan, either way:
 
-> **Draft a retraining plan for pcb_text_defect.**
-
-*Expect:* "I've drafted a retraining plan... status **pending approval**. An Admin will need to review
-and approve it in the Models tab." (tool: *Retraining plan*)
+- **Work tab:** in **Drift & Retraining -> Retraining plan**, click **Draft retraining plan** next to
+  `pcb_text_defect - 2 tickets waiting`. *Expect:* "Plan drafted for pcb_text_defect: 2 samples,
+  pending approval. An Admin approves it in the Models tab."
+- **or Chat:** type **Draft a retraining plan for pcb_text_defect.** *Expect:* "I've drafted a
+  retraining plan... status **pending approval**..." (tool: *Retraining plan*)
 
 Switch to **Models -> Retraining queue** (as Admin): the job shows **2 samples**, status *pending
 approval*. Click **Show flagged cases** to see `S000001` and `S000004` with their run and
 observed -> expected labels. Click **Approve**.
 
-*Say:* "Chat can draft but never approve; only an Admin in the Models tab can. The inference service's
+*Say:* "Anyone on the QA side can draft a plan; only an Admin in the Models tab can approve it. The inference service's
 trainer here is a stub - it simulates the job - so this shows the control flow, not a real retrain."
 
 Optional extras if time allows:
@@ -295,6 +298,7 @@ Optional extras if time allows:
 | Verification fails / images not found | Choose the **folder** `Sample_data_2/Sample_data_2` as the Image Folder (not a parent folder). |
 | Drift tab says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
 | Assistant doesn't call a tool | Rephrase closer to the prompts above; with a local model, be explicit ("Yes, confirm it."). A hosted model follows more reliably. |
-| *"No live version recorded"* when drafting a plan | Open the **Models** tab once - it syncs versions from the inference service - then ask again. |
+| *"cannot tell which version ... to retrain from"* when drafting a plan | Open the **Models** tab once - it syncs versions from the inference service - then try again. |
+| Retraining queue is empty after queueing | Expected: queueing makes *tickets*. Draft the plan (Drift & Retraining tab, or chat) and the job appears. |
 | Models tab "inference unreachable" | Start the inference service (port 8001). |
 | Weird leftovers from rehearsal | Use **Clear Log** in the Work tab; start a **new chat** for each act you want clean. Old cases/tickets from rehearsal stay in the database (they are harmless). |

@@ -25,6 +25,8 @@ from app.workflow.services.schemas import (
     WorkflowDriftReportRequest,
     WorkflowQueueCorrectionsOut,
     WorkflowQueueCorrectionsRequest,
+    WorkflowRetrainingPlanOut,
+    WorkflowRetrainingPlanRequest,
     WorkflowRetrainingTicketOut,
     WorkflowRetrainingTicketsRequest,
     WorkflowReviewCaseOut,
@@ -204,6 +206,23 @@ async def orchestrator_queue_corrections(
         ) from exc
     except (monitoring.NotACorrection, UnresolvableSample) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/api/orchestrator/monitoring/retraining-plan")
+async def orchestrator_draft_retraining_plan(
+    request: WorkflowRetrainingPlanRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> WorkflowRetrainingPlanOut:
+    """Drafts a retraining plan (a job pending Admin approval) from the model's open tickets - the
+    same job chat's draft_retraining_plan makes. Approving it stays an Admin action in the Models
+    tab; nothing is sent for retraining from here."""
+
+    _require_orchestrator_and_modelops_enabled(user)
+    try:
+        return await monitoring.draft_retraining_plan(session, request=request, user=user)
+    except monitoring.PlanRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _require_review_enabled(user: User) -> None:

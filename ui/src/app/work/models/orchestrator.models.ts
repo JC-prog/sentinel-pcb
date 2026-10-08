@@ -175,6 +175,18 @@ export interface WorkflowRunDrift {
   totals: { samples: number; review_required: number; decided: number; corrected: number };
   models: WorkflowModelDrift[];
   corrections: WorkflowCorrection[];
+  /** Open (not yet planned) retraining tickets per model - what a plan drafted now would contain. */
+  open_tickets?: Record<string, number>;
+}
+
+/** A drafted retraining plan: a job awaiting an Admin's approval in the Models tab. */
+export interface WorkflowRetrainingPlanOut {
+  job_id: string;
+  model_name: string;
+  status: string;
+  base_version: string;
+  sample_count: number;
+  drift_reports_linked: number;
 }
 
 export interface WorkflowQueueCorrectionsRequest {

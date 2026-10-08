@@ -92,6 +92,17 @@ export class Work implements OnDestroy {
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
     this.pendingCorrections().filter((c) => !this.skippedCorrectionIds().has(c.sample_id)),
   );
+  /** Models with queued tickets that no plan covers yet, with how many - what "Draft retraining
+   * plan" turns into a job. */
+  protected readonly planModels: Signal<{ name: string; tickets: number }[]> = computed(() =>
+    Object.entries(this.runDrift()?.open_tickets ?? {})
+      .map(([name, tickets]) => ({ name, tickets }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  protected readonly planBusy = signal(false);
+  protected readonly planError = signal<string | null>(null);
+  protected readonly planMessage = signal<string | null>(null);
+
   protected readonly canQueueCorrections: Signal<boolean> = computed(
     () => this.selectedCorrections().length > 0 && !this.monitoringBusy(),
   );
@@ -364,6 +375,29 @@ export class Work implements OnDestroy {
     }
   }
 
+  /** Drafts a retraining plan for a model from its open tickets. The plan is a job awaiting an
+   * Admin's approval in the Models tab - nothing is retrained from here. */
+  async draftPlan(modelName: string): Promise<void> {
+    if (this.planBusy()) {
+      return;
+    }
+    this.planBusy.set(true);
+    this.planError.set(null);
+    this.planMessage.set(null);
+    try {
+      const plan = await this.workService.draftRetrainingPlan(modelName);
+      this.planMessage.set(
+        `Plan drafted for ${plan.model_name}: ${plan.sample_count} sample${plan.sample_count === 1 ? '' : 's'}, ` +
+          `${plan.status.replace('_', ' ')}. An Admin approves it in the Models tab.`,
+      );
+      await this.refreshDrift();
+    } catch (error) {
+      this.planError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
+    } finally {
+      this.planBusy.set(false);
+    }
+  }
+
   /** Opens one case in the console's detail pane, pre-filling the form from a saved decision. */
   async selectCase(sampleId: string): Promise<void> {
     const reviewCase = this.reviewCases().find((c) => c.sample_id === sampleId);
@@ -474,6 +508,8 @@ export class Work implements OnDestroy {
     this.reviewMessage.set(null);
     this.runDrift.set(null);
     this.driftError.set(null);
+    this.planError.set(null);
+    this.planMessage.set(null);
     this.skippedCorrectionIds.set(new Set());
     this.revokeImages();
   }

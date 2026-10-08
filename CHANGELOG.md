@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Drift & Retraining tab has a **Retraining plan** section. Queued corrections wait as
+  tickets (shown as "unplanned" in the Models tab); **Draft retraining plan** turns a model's open
+  tickets into a retraining job awaiting Admin approval, so the whole flow works without leaving the
+  Work tab. New `POST /api/orchestrator/monitoring/retraining-plan`; `run-drift` also returns
+  `open_tickets` per model.
 - Docs: a rewritten user guide (every chat prompt and UI action and what it triggers, verified
   against the running app), `docs/DEMO.md` (a rehearsed demo script with the sample data and
   thresholds to use) and `docs/REVIEW_DRIFT_RETRAINING.md` (the Qdrant schema, the review -> drift ->
@@ -82,6 +87,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ORCHESTRATOR_AGENT_ENABLED` and `EXPLAINABILITY_REVIEW_AGENT_ENABLED`, never a chat tool. Agent 2's
   inputs are kept server-side per run, so a backend restart requires rerunning the dataset to review
   its samples. See `app/workflow/INTEGRATION_NOTES.md`.
+
+### Fixed
+
+- Approving a retraining job made of Work-tab tickets failed: the inference service requires a string
+  `case_id` per sample and these tickets have none. They are now sent as `<run_id>:<sample_id>`.
 
 ### Changed
 

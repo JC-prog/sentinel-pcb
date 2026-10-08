@@ -12,14 +12,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.config.settings import settings
-from app.shared.db.models import DriftReport, RetrainingTicket
+from app.shared.db.models import DriftReport, RetrainingJob, RetrainingTicket
 from app.workflow.services import run_store
+from tests.modelops.fake_inference import FakeInference, install
 
 DRIFT_URL = "/api/orchestrator/monitoring/run-drift"
 QUEUE_URL = "/api/orchestrator/monitoring/run-retraining-tickets"
 DECISION_URL = "/api/orchestrator/reviews/decision"
 REPORT_URL = "/api/orchestrator/monitoring/drift-report"
 FLAG_URL = "/api/orchestrator/monitoring/retraining-tickets"
+PLAN_URL = "/api/orchestrator/monitoring/retraining-plan"
 
 RUN = "run-a"
 
@@ -291,3 +293,93 @@ async def test_the_manual_flag_form_does_not_double_flag_a_queued_sample(
     assert response.status_code == 200, response.text
     assert [t["sample_ref"] for t in response.json()] == ["S2"]
     assert sorted(t.sample_ref or "" for t in await _tickets(db_async_session)) == ["S1", "S2"]
+
+
+# --- drafting the plan from the Work tab, and approving it --------------------------------------
+
+
+@pytest.fixture
+def fake(monkeypatch: pytest.MonkeyPatch) -> FakeInference:
+    fake = FakeInference()
+    install(monkeypatch, fake)
+    return fake
+
+
+async def test_the_drift_numbers_say_how_many_tickets_are_waiting_for_a_plan(
+    authenticated_client: TestClient, run_store_repo: Any
+) -> None:
+    _store_run(run_store_repo, _routed("S1"), _routed("S2"))
+    assert _drift(authenticated_client)["open_tickets"] == {}
+
+    _decide(authenticated_client, "S1", "Tombstone")
+    _decide(authenticated_client, "S2", "Shift")
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1", "S2"]})
+
+    assert _drift(authenticated_client)["open_tickets"] == {"pcb_body_defect": 2}
+
+
+async def test_a_plan_drafted_from_the_work_tab_is_a_job_awaiting_approval(
+    authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
+) -> None:
+    _store_run(run_store_repo, _routed("S1"), _routed("S2"))
+    _decide(authenticated_client, "S1", "Tombstone")
+    _decide(authenticated_client, "S2", "Shift")
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1", "S2"]})
+
+    response = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["model_name"], body["status"], body["sample_count"]) == (
+        "pcb_body_defect",
+        "pending_approval",
+        2,
+    )
+    assert body["base_version"] == "JcProg/body@v2"  # from the tickets - no live version needed
+    (job,) = (await db_async_session.scalars(select(RetrainingJob))).all()
+    assert job.id == body["job_id"]
+    assert {(s["sample_ref"], s["run_id"]) for s in job.samples} == {("S1", RUN), ("S2", RUN)}
+    # the tickets are now part of a plan, so none are waiting any more
+    assert _drift(authenticated_client)["open_tickets"] == {}
+    again = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
+    assert again.status_code == 409 and "no open retraining tickets" in again.json()["detail"]
+
+
+def test_a_plan_needs_tickets_and_both_kill_switches(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nothing = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
+    assert nothing.status_code == 409 and "queue some corrections first" in nothing.json()["detail"]
+    assert authenticated_client.post(PLAN_URL, json={"model_name": ""}).status_code == 422
+
+    monkeypatch.setattr(settings, "modelops_enabled", False)
+    assert authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"}).status_code == 503
+
+
+def test_the_plan_route_requires_login(client: TestClient) -> None:
+    assert client.post(PLAN_URL, json={"model_name": "pcb_body_defect"}).status_code == 401
+
+
+async def test_the_whole_chain_from_a_decision_to_an_approved_job(
+    authenticated_client: TestClient, run_store_repo: Any, fake: FakeInference
+) -> None:
+    """Decision -> queued correction -> plan from the Work tab -> an Admin approves it in the Models
+    tab -> the inference service is sent the Work-tab samples (named by run and sample)."""
+
+    _store_run(run_store_repo, _routed("S000001"))
+    _decide(authenticated_client, "S000001", "Tombstone", notes="pad lifted")
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S000001"]})
+    plan = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"}).json()
+
+    queue = authenticated_client.get("/api/models/retraining/queue").json()
+    assert [j["id"] for j in queue["jobs"]] == [plan["job_id"]]  # now visible in the Models tab
+
+    approved = authenticated_client.post(f"/api/models/retraining/jobs/{plan['job_id']}/approve")
+
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "queued" and approved.json()["error"] is None
+    (remote,) = fake.jobs.values()
+    assert [s["case_id"] for s in remote["samples"]] == [f"{RUN}:S000001"]
+    assert [(s["observed_label"], s["expected_label"]) for s in remote["samples"]] == [
+        ("MissingPart", "Tombstone")
+    ]

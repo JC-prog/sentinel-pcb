@@ -16,6 +16,7 @@ import {
   WorkflowReviewDecisionOut,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
+  WorkflowRetrainingPlanOut,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
   WorkflowReviewDecisionRequest,
@@ -217,6 +218,10 @@ export class WorkOrchestratorClient {
     request: WorkflowQueueCorrectionsRequest,
   ): Promise<WorkflowQueueCorrectionsOut> {
     return this.post('/api/orchestrator/monitoring/run-retraining-tickets', request);
+  }
+
+  async draftRetrainingPlan(modelName: string): Promise<WorkflowRetrainingPlanOut> {
+    return this.post('/api/orchestrator/monitoring/retraining-plan', { model_name: modelName });
   }
 
   async getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {

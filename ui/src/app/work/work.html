@@ -722,6 +722,55 @@
                   >
                     Queue {{ selectedCorrections().length }} for retraining
                   </button>
+
+                  <div data-testid="retraining-plan" class="mt-5 rounded border border-slate-200 p-3 dark:border-slate-700">
+                    <h3 class="mb-1 text-xs font-semibold">Retraining plan</h3>
+                    <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                      Queued corrections wait as tickets. Drafting a plan turns a model's tickets into a
+                      retraining job; an Admin then approves it in the Models tab.
+                    </p>
+                    @if (planError()) {
+                      <p
+                        role="alert"
+                        data-testid="plan-error"
+                        class="mb-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                      >
+                        {{ planError() }}
+                      </p>
+                    }
+                    @if (planMessage()) {
+                      <p
+                        role="status"
+                        data-testid="plan-message"
+                        class="mb-2 rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      >
+                        {{ planMessage() }}
+                      </p>
+                    }
+                    @if (planModels().length === 0) {
+                      <p data-testid="no-plan-models" class="text-sm text-slate-500 dark:text-slate-400">
+                        No tickets are waiting for a plan - queue some corrections first.
+                      </p>
+                    } @else {
+                      @for (entry of planModels(); track entry.name) {
+                        <div class="mb-1 flex items-center justify-between gap-2" [attr.data-plan-model]="entry.name">
+                          <span class="text-sm">
+                            <span class="font-mono">{{ entry.name }}</span>
+                            - {{ entry.tickets }} ticket{{ entry.tickets === 1 ? '' : 's' }} waiting
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="draft-plan"
+                            [disabled]="planBusy()"
+                            (click)="draftPlan(entry.name)"
+                            class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            Draft retraining plan
+                          </button>
+                        </div>
+                      }
+                    }
+                  </div>
                 }
               </section>
             }

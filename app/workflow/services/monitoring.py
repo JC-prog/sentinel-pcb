@@ -28,7 +28,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.db import User
+from app.shared.db.models import DriftReportStatus, RetrainingTicketStatus
 from app.shared.modelops import drift as drift_repo
+from app.shared.modelops import jobs as job_repo
 from app.shared.modelops import run_drift
 from app.shared.modelops import tickets as ticket_repo
 from app.workflow.services import run_store
@@ -39,6 +41,8 @@ from app.workflow.services.schemas import (
     WorkflowModelDriftOut,
     WorkflowQueueCorrectionsOut,
     WorkflowQueueCorrectionsRequest,
+    WorkflowRetrainingPlanOut,
+    WorkflowRetrainingPlanRequest,
     WorkflowRetrainingTicketOut,
     WorkflowRetrainingTicketsRequest,
     WorkflowRunDriftOut,
@@ -62,6 +66,10 @@ class NotACorrection(Exception):
     def __init__(self, sample_ids: list[str]) -> None:
         super().__init__(f"no operator correction recorded for sample(s): {', '.join(sample_ids)}")
         self.sample_ids = sample_ids
+
+
+class PlanRefused(Exception):
+    """A retraining plan that cannot be drafted, with the reason the operator should hear."""
 
 
 class UnresolvableSample(Exception):
@@ -125,6 +133,11 @@ async def _stored_run(run_id: str) -> tuple[list[dict[str, Any]], list[dict[str,
         raise StoreUnavailable(str(exc)) from exc
 
 
+async def _open_tickets_by_model(session: AsyncSession) -> dict[str, int]:
+    counts = await ticket_repo.count_tickets(session, status=RetrainingTicketStatus.OPEN)
+    return {model: n for model, n in counts.items() if model}
+
+
 async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRunDriftOut:
     """The Drift & Retraining tab's numbers for a run, computed from what Qdrant stored (the
     samples and the operator's decisions), not from anything the browser sends. Fail-open: with
@@ -140,6 +153,7 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
             totals={"samples": 0, "review_required": 0, "decided": 0, "corrected": 0},
             models=[],
             corrections=[],
+            open_tickets=await _open_tickets_by_model(session),
         )
     summary = run_drift.summarize_run(points, reviews)
     queued = await ticket_repo.sample_refs_for_run(session, run_id)
@@ -152,6 +166,49 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
             WorkflowCorrectionOut(**c, queued=c["sample_id"] in queued)
             for c in summary["corrections"]
         ],
+        open_tickets=await _open_tickets_by_model(session),
+    )
+
+
+async def draft_retraining_plan(
+    session: AsyncSession, *, request: WorkflowRetrainingPlanRequest, user: User
+) -> WorkflowRetrainingPlanOut:
+    """Turns every open retraining ticket for a model - queued corrections and chat relabels alike -
+    into a retraining job awaiting an Admin's approval (the same job chat's draft_retraining_plan
+    makes). Nothing is retrained or promoted here: approving is an Admin action in the Models tab."""
+
+    model_name = request.model_name.strip()
+    open_reports = await drift_repo.list_drift_reports(
+        session, model_name=model_name, status=DriftReportStatus.OPEN
+    )
+    rationale = (request.rationale or "").strip() or (
+        f"Retrain {model_name} on samples the operator corrected in the Review Console."
+        + (f" {len(open_reports)} open drift report(s) point at it." if open_reports else "")
+    )
+    try:
+        job = await job_repo.draft_job(
+            session,
+            model_name=model_name,
+            created_by_user_id=user.id,
+            rationale=rationale,
+            drift_report_ids=[r.id for r in open_reports],
+        )
+    except job_repo.NothingToRetrain as exc:
+        raise PlanRefused(
+            f"no open retraining tickets for {model_name} - queue some corrections first"
+        ) from exc
+    except job_repo.BaseVersionUnknown as exc:
+        raise PlanRefused(
+            f"cannot tell which version of {model_name} to retrain from - open the Models tab so "
+            "it syncs versions from the inference service, then try again"
+        ) from exc
+    return WorkflowRetrainingPlanOut(
+        job_id=job.id,
+        model_name=job.model_name,
+        status=job.status,
+        base_version=job.base_version,
+        sample_count=len(job.samples),
+        drift_reports_linked=len(open_reports),
     )
 
 

@@ -119,6 +119,25 @@ class WorkflowRunDriftOut(BaseModel):
     totals: dict[str, int]
     models: list[WorkflowModelDriftOut]
     corrections: list[WorkflowCorrectionOut]
+    # Open (not yet planned) retraining tickets per model, whatever their origin - what a plan drafted
+    # now would contain. Models with none are left out.
+    open_tickets: dict[str, int] = Field(default_factory=dict)
+
+
+class WorkflowRetrainingPlanRequest(BaseModel):
+    model_name: str = Field(min_length=1)
+    rationale: str | None = None
+
+
+class WorkflowRetrainingPlanOut(BaseModel):
+    """A drafted plan: a retraining job awaiting an Admin's approval in the Models tab."""
+
+    job_id: str
+    model_name: str
+    status: str
+    base_version: str
+    sample_count: int
+    drift_reports_linked: int
 
 
 class WorkflowQueueCorrectionsRequest(BaseModel):

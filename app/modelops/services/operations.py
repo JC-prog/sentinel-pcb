@@ -7,6 +7,7 @@ spend compute or change which model is live exist only behind these Admin-only r
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,10 +72,22 @@ async def submit(session: AsyncSession, job: RetrainingJob) -> RetrainingJob:
     return await _send(session, job)
 
 
+def _sample_ref(sample: dict[str, Any]) -> str:
+    """What the inference service is told identifies a flagged sample. It wants a string `case_id`;
+    a chat ticket has one, a Work-tab ticket points at a dataset sample instead - "<run>:<sample>",
+    since a sample id alone restarts every run."""
+
+    if sample.get("case_id"):
+        return str(sample["case_id"])
+    sample_ref = str(sample.get("sample_ref") or sample.get("ticket_id") or "unknown")
+    run_id = sample.get("run_id")
+    return f"{run_id}:{sample_ref}" if run_id else sample_ref
+
+
 async def _send(session: AsyncSession, job: RetrainingJob) -> RetrainingJob:
     samples = [
         inference.JobSample(
-            case_id=s["case_id"],
+            case_id=_sample_ref(s),
             observed_label=s.get("observed_label"),
             expected_label=s.get("expected_label"),
         )
