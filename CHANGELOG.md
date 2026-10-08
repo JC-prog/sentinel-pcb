@@ -95,6 +95,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Agent 2 review pipeline (`app/workflow/.../review_graph.py`) updated from the upstream `pcb_agentic_inspector`: tombstone precedent, telemetry read from the local cache with more field names and an explicit ICT flag, vision images downscaled to 384px with shorter prompts and a longer timeout, and revised cross-modal contradiction rules. Our config-path and no-repo-crawl fixes are kept. Adds `tests/test_agent_graph.py`.
 - Defect-label comparison (Agent 1 vs Agent 2 conflicts and run corrections) now treats the AOI
   datasets' misspelling `SolderInsuffcient` as `solder insufficient`, as Agent 1's own pipeline
   already did; before, those samples showed false conflicts and false corrections.
