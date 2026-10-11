@@ -221,9 +221,10 @@ async def run_drift_overview(session: AsyncSession, run_id: str | None) -> dict[
         raise SampleRefused(exc.message) from exc
 
     summary = run_drift.summarize_run(points, reviews)
-    queued = await ticket_repo.sample_refs_for_run(session, run.run_id)
+    tickets = await ticket_repo.sample_refs_for_run(session, run.run_id)
     corrections = [
-        {**c, "queued": c["sample_id"] in queued} for c in summary["corrections"]
+        {**c, "queued": c["sample_id"] in tickets, "ticket_status": tickets.get(c["sample_id"])}
+        for c in summary["corrections"]
     ]
     waiting = [c for c in corrections if not c["queued"] and c["queueable"]]
     models_with_tickets = sorted({c["model_name"] for c in corrections if c["queued"]})
@@ -231,7 +232,9 @@ async def run_drift_overview(session: AsyncSession, run_id: str | None) -> dict[
         "run_id": run.run_id,
         "run_saved_at": run.saved_at_utc,
         "totals": summary["totals"],
+        "drift_rate": summary["drift_rate"],
         "models": summary["models"],
+        "decisions": summary["decisions"],
         "corrections": corrections[:MAX_CASES],
         "corrections_shown": min(len(corrections), MAX_CASES),
         "corrections_total": len(corrections),
@@ -241,11 +244,18 @@ async def run_drift_overview(session: AsyncSession, run_id: str | None) -> dict[
 
 
 def _drift_instruction(waiting: int, models_with_tickets: list[str | None]) -> str:
-    parts = ["Report the numbers as given; they cover only this run's samples."]
+    parts = [
+        (
+            "Report the numbers as given; they cover only this run's samples. The operator's final "
+            "decision is the correct label; drift_rate is, of the samples the model classified, the "
+            "share it got wrong (relabelled). Samples it couldn't decide on (no_prediction - no defect "
+            "model ran) are not drift; drift_rate is null when it classified none."
+        )
+    ]
     if waiting:
         parts.append(
-            f"{waiting} operator correction(s) are not queued for retraining yet - only the "
-            "operator can queue them, in the Review Console's Drift & Retraining tab; you cannot."
+            f"{waiting} sample(s) the model didn't get right are not in the training data yet - only "
+            "the operator can add them, in the Review Console's Drift & Retraining tab; you cannot."
         )
     if models_with_tickets:
         names = ", ".join(str(m) for m in models_with_tickets)

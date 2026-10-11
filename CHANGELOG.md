@@ -9,6 +9,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Drift & Retraining tab is rebuilt around one idea - the operator's final decision in
+  the Explanation Review is the correct label. It shows how often the model was wrong in the run
+  (drift: of the samples the model classified, the share it got wrong - samples it couldn't decide on,
+  where no defect model ran, are counted separately and are not drift), per model, with a breakdown of
+  the final decisions and the model's commonest mistakes; then **Add N to training data** adds the
+  samples the model got wrong or couldn't decide - with the operator's label, for the defect model
+  they belong to (the region model's guess, routed like Agent 1 does, when no defect model ran) - and
+  puts them in a retraining plan in one step, with each sample's training-data status. Drafting a plan
+  syncs model versions from the inference service when none are recorded yet. The manual tools
+  (report drift, flag samples) are removed from the tab.
 - Work tab: the Drift & Retraining tab has a **Retraining plan** section. Queued corrections wait as
   tickets (shown as "unplanned" in the Models tab); **Draft retraining plan** turns a model's open
   tickets into a retraining job awaiting Admin approval, so the whole flow works without leaving the

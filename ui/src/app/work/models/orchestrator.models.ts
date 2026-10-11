@@ -102,34 +102,6 @@ export interface OrchestratorRunResult {
   [key: string]: unknown;
 }
 
-export interface WorkflowDriftReportRequest {
-  model_name: string;
-  description: string;
-  model_version?: string | null;
-  /** The run being reported on - the server then snapshots its own numbers for the model. */
-  run_id?: string | null;
-  samples: OrchestratorInferenceResult[];
-}
-
-export interface WorkflowDriftReportOut {
-  id: string;
-  model_name: string;
-  model_version: string | null;
-  status: string;
-}
-
-export interface WorkflowRetrainingTicketItem {
-  sample: OrchestratorInferenceResult;
-  reason: string;
-  correct_label?: string | null;
-}
-
-export interface WorkflowRetrainingTicketsRequest {
-  /** With a run id, a sample already flagged for that run is skipped instead of flagged twice. */
-  run_id?: string | null;
-  tickets: WorkflowRetrainingTicketItem[];
-}
-
 export interface WorkflowRetrainingTicketOut {
   id: string;
   sample_ref: string | null;
@@ -145,7 +117,12 @@ export interface WorkflowModelDrift {
   model_version: string | null;
   samples: number;
   review_required: number;
+  /** Reviewed samples, split by how the operator's final decision compares with the model. */
   decided: number;
+  confirmed: number;
+  relabelled: number;
+  no_prediction: number;
+  /** Reviewed samples the model did not get right (relabelled + no_prediction) and their share. */
   corrected: number;
   correction_rate: number | null;
   agent2_disagreed: number;
@@ -153,18 +130,40 @@ export interface WorkflowModelDrift {
   mean_confidence: number | null;
 }
 
-/** A sample where the operator's final result differs from Agent 1's label. `queueable` is false
- * when no model was recorded to file a retraining ticket against; `queued` when one exists. */
+/** A reviewed sample the model did not get right: the operator's final decision (`final_result`,
+ * their relabel) differs from the model's prediction (`outcome` "relabelled"), or the model gave
+ * none (`outcome` "no_prediction"). Only a relabelled one with a model can be added to training
+ * data (`queueable`); `ticket_status` says where it stands once added. */
 export interface WorkflowCorrection {
   sample_id: string;
+  /** The defect model the sample belongs to - the one that classified it, or the one its region
+   * guess routes to (`model_source`). */
   model_name: string | null;
   model_version: string | null;
+  model_source?: 'classified' | 'region_guess' | null;
+  /** The region model's answer - its best guess even when below the threshold. */
+  region_guess?: { label: string; confidence: number | null } | null;
+  /** The model's prediction; null when no defect model ran (it couldn't decide). */
   agent1_label: string | null;
+  /** The AOI machine's own call. */
+  machine_label: string | null;
+  agent2_label: string | null;
   final_result: string;
   selected_source: string | null;
   operator_notes: string | null;
+  outcome: 'relabelled' | 'no_prediction';
   queueable: boolean;
   queued: boolean;
+  /** open: in the training data, no plan yet; acknowledged: in a retraining plan; resolved: retrained. */
+  ticket_status?: 'open' | 'acknowledged' | 'resolved' | null;
+}
+
+/** What the operator did in the Explanation Review: decisions per kind and how many of each
+ * overruled the model, the flagged samples still waiting, and the model's commonest misses. */
+export interface WorkflowDecisionStats {
+  by_source: Record<string, { chosen: number; overruled_model: number }>;
+  pending: number;
+  top_overruled: { model_label: string; chosen_label: string; count: number }[];
 }
 
 export interface WorkflowRunDrift {
@@ -172,9 +171,20 @@ export interface WorkflowRunDrift {
   /** False when the stored run could not be read; `message` says so. */
   available: boolean;
   message?: string | null;
-  totals: { samples: number; review_required: number; decided: number; corrected: number };
+  totals: {
+    samples: number;
+    review_required: number;
+    decided: number;
+    confirmed: number;
+    relabelled: number;
+    no_prediction: number;
+    corrected: number;
+  };
+  /** Share of reviewed samples the model did not get right; null before anything is reviewed. */
+  drift_rate?: number | null;
   models: WorkflowModelDrift[];
   corrections: WorkflowCorrection[];
+  decisions: WorkflowDecisionStats;
   /** Open (not yet planned) retraining tickets per model - what a plan drafted now would contain. */
   open_tickets?: Record<string, number>;
 }

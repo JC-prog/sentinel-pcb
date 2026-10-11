@@ -26,12 +26,14 @@ PLAN_URL = "/api/orchestrator/monitoring/retraining-plan"
 RUN = "run-a"
 
 
-def _sample(sample_id: str) -> dict[str, Any]:
+def _sample(sample_id: str, machine_defect: str = "MissingPart_1") -> dict[str, Any]:
+    """`machine_defect` is the AOI machine's own label; by default it equals the model's call."""
+
     return {
         "sample_id": sample_id,
         "board": "Board1",
         "component": "U51",
-        "machine_defect": "WrongPart_13",
+        "machine_defect": machine_defect,
         "defect_image": f"/abs/{sample_id}.png",
         "golden_image": f"/abs/{sample_id}_g.png",
         "failed_inspections": {},
@@ -52,23 +54,31 @@ def _routed(sample_id: str, label: str = "MissingPart", confidence: float = 0.6)
     }
 
 
-def _stage_one_only(sample_id: str) -> dict[str, Any]:
+def _stage_one_only(sample_id: str, region: str = "Text") -> dict[str, Any]:
+    """A sample the region model wasn't confident about, so no defect model ran."""
+
     return {
         "sample_id": sample_id,
         "final_decision": "REVIEW_REQUIRED",
         "status": "FEATURE_CLASSIFICATION_UNCERTAIN",
-        "details": {"feature_classification": {"prediction": "Text", "confidence": 0.3}},
+        "details": {"feature_classification": {"prediction": region, "confidence": 0.3}},
     }
 
 
-def _store_run(repo: Any, *inference: dict[str, Any], run_id: str = RUN) -> None:
+def _store_run(
+    repo: Any,
+    *inference: dict[str, Any],
+    run_id: str = RUN,
+    machine: dict[str, str] | None = None,
+) -> None:
     ids = [i["sample_id"] for i in inference]
+    machine = machine or {}
     repo.save_run(
         run_id,
         {
             "status": "REVIEW_REQUIRED",
-            "prepared_samples": [_sample(i) for i in ids],
-            "verified_samples": [_sample(i) for i in ids],
+            "prepared_samples": [_sample(i, machine.get(i, "MissingPart_1")) for i in ids],
+            "verified_samples": [_sample(i, machine.get(i, "MissingPart_1")) for i in ids],
             "inference_results": list(inference),
         },
     )
@@ -116,6 +126,107 @@ def test_the_routes_need_both_kill_switches(
     assert queued.status_code == 503
 
 
+async def test_a_relabel_is_what_was_saved_whichever_button_was_pressed(
+    authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
+) -> None:
+    """The final decision is the label. Accept Machine saving the model's own call is the model being
+    right, even when the dataset's machine label differs; what the operator saved is all that counts."""
+
+    _store_run(
+        run_store_repo,
+        _routed("S1", label="MissingPart"),
+        _routed("S2", label="MissingPart"),
+        machine={"S1": "WrongPart_13", "S2": "WrongPart_13"},
+    )
+    _decide(authenticated_client, "S1", "missing part", source="MACHINE")  # = the model's call
+    _decide(authenticated_client, "S2", "wrong part", source="MACHINE")  # differs from the model
+
+    drift = _drift(authenticated_client)
+
+    assert drift["totals"]["confirmed"] == 1 and drift["totals"]["relabelled"] == 1
+    (correction,) = drift["corrections"]
+    assert (correction["sample_id"], correction["final_result"]) == ("S2", "wrong part")
+    assert correction["outcome"] == "relabelled" and correction["queueable"] is True
+
+    queued = authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S2"]})
+    assert queued.status_code == 200, queued.text
+    (ticket,) = await _tickets(db_async_session)
+    assert (ticket.observed_label, ticket.correct_label) == ("MissingPart", "wrong part")
+
+
+async def test_a_sample_the_model_couldnt_decide_is_not_drift_and_goes_to_its_region_guess_model(
+    authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
+) -> None:
+    """The screenshot case: the region model was unsure, so no defect model ran. Not drift - but the
+    operator's label is added to the training data of the model the region guess routes to."""
+
+    _store_run(run_store_repo, _stage_one_only("S1"), _routed("S2"))
+    _decide(authenticated_client, "S1", "SolderInsufficient", source="MACHINE")
+    _decide(authenticated_client, "S2", "missing part", source="MACHINE")  # model right
+
+    drift = _drift(authenticated_client)
+
+    assert drift["totals"]["no_prediction"] == 1 and drift["totals"]["confirmed"] == 1
+    assert drift["drift_rate"] == 0.0  # 0 wrong of the 1 the model classified
+    (correction,) = drift["corrections"]
+    assert (correction["outcome"], correction["model_source"]) == ("no_prediction", "region_guess")
+    assert correction["model_name"] == "pcb_text_defect" and correction["queueable"] is True
+    assert correction["region_guess"] == {"label": "Text", "confidence": 0.3}
+
+    added = authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1"]})
+    assert added.status_code == 200, added.text
+    (ticket,) = await _tickets(db_async_session)
+    assert (ticket.model_name, ticket.model_version) == ("pcb_text_defect", None)
+    assert (ticket.observed_label, ticket.correct_label) == (None, "SolderInsufficient")
+    assert "couldn't decide (region guess Text, 30%)" in ticket.reason
+
+
+def test_only_samples_the_model_couldnt_decide_leave_the_drift_undefined(
+    authenticated_client: TestClient, run_store_repo: Any
+) -> None:
+    _store_run(run_store_repo, _stage_one_only("S1"), _stage_one_only("S2"))
+    _decide(authenticated_client, "S1", "SolderInsufficient", source="MACHINE")
+    _decide(authenticated_client, "S2", "missing part", source="AI")
+
+    drift = _drift(authenticated_client)
+
+    assert drift["drift_rate"] is None
+    assert drift["totals"]["no_prediction"] == 2 and drift["totals"]["corrected"] == 0
+
+
+def test_the_tab_reports_what_the_operator_did_in_the_explanation_review(
+    authenticated_client: TestClient, run_store_repo: Any
+) -> None:
+    """The statistics block is driven by the decisions saved through the real review route."""
+
+    _store_run(
+        run_store_repo,
+        _routed("S1", label="MissingPart"),
+        _routed("S2", label="MissingPart"),
+        _routed("S3", label="MissingPart"),
+        _routed("S4", label="MissingPart"),
+    )
+    empty = _drift(authenticated_client)["decisions"]
+    assert empty["pending"] == 4 and empty["top_overruled"] == []
+    assert empty["by_source"]["MACHINE"] == {"chosen": 0, "overruled_model": 0}
+
+    _decide(authenticated_client, "S1", "wrong part", source="MACHINE")  # relabelled
+    _decide(authenticated_client, "S2", "missing part", source="MACHINE")  # model right
+    _decide(authenticated_client, "S3", "wrong part", source="AI")  # relabelled
+    # S4 is left for later
+
+    stats = _drift(authenticated_client)["decisions"]
+
+    assert stats["by_source"]["MACHINE"] == {"chosen": 2, "overruled_model": 1}
+    assert stats["by_source"]["AI"] == {"chosen": 1, "overruled_model": 1}
+    assert stats["by_source"]["MANUAL"] == {"chosen": 0, "overruled_model": 0}
+    assert stats["pending"] == 1
+    assert stats["top_overruled"] == [{"model_label": "missing part", "chosen_label": "wrong part", "count": 2}]
+
+    _decide(authenticated_client, "S4", "wrong part", source="MANUAL")
+    assert _drift(authenticated_client)["decisions"]["pending"] == 0
+
+
 def test_an_unknown_run_is_a_404(authenticated_client: TestClient) -> None:
     assert authenticated_client.get(DRIFT_URL, params={"run_id": "nope"}).status_code == 404
     queued = authenticated_client.post(QUEUE_URL, json={"run_id": "nope", "sample_ids": ["S1"]})
@@ -129,14 +240,16 @@ def test_the_tab_follows_each_decision_the_operator_saves(
 
     before = _drift(authenticated_client)
     assert before["available"] is True
-    assert before["totals"] == {"samples": 3, "review_required": 3, "decided": 0, "corrected": 0}
+    assert before["totals"] == {"samples": 3, "review_required": 3, "decided": 0, "confirmed": 0, "relabelled": 0, "no_prediction": 0, "corrected": 0}
+    assert before["drift_rate"] is None
     assert before["corrections"] == []
 
-    _decide(authenticated_client, "S1", "missing part", source="MACHINE")  # agrees with Agent 1
-    _decide(authenticated_client, "S2", "Tombstone", notes="bare pads")  # corrects it
+    _decide(authenticated_client, "S1", "missing part", source="MACHINE")  # the model was right
+    _decide(authenticated_client, "S2", "Tombstone", notes="bare pads")  # relabelled
 
     after = _drift(authenticated_client)
-    assert after["totals"] == {"samples": 3, "review_required": 3, "decided": 2, "corrected": 1}
+    assert after["totals"] == {"samples": 3, "review_required": 3, "decided": 2, "confirmed": 1, "relabelled": 1, "no_prediction": 0, "corrected": 1}
+    assert after["drift_rate"] == 0.5
     (model,) = after["models"]
     assert (model["model_name"], model["model_version"]) == ("pcb_body_defect", "JcProg/body@v2")
     assert (model["decided"], model["corrected"], model["correction_rate"]) == (2, 1, 0.5)
@@ -145,12 +258,18 @@ def test_the_tab_follows_each_decision_the_operator_saves(
         "sample_id": "S2",
         "model_name": "pcb_body_defect",
         "model_version": "JcProg/body@v2",
+        "model_source": "classified",
+        "region_guess": {"label": "Body", "confidence": 0.95},
         "agent1_label": "MissingPart",
+        "machine_label": "MissingPart_1",
+        "agent2_label": None,
         "final_result": "Tombstone",
         "selected_source": "MANUAL",
         "operator_notes": "bare pads",
+        "outcome": "relabelled",
         "queueable": True,
         "queued": False,
+        "ticket_status": None,
     }
 
     # relabelling again replaces the decision, and the tab follows that too
@@ -173,8 +292,10 @@ async def test_queueing_a_correction_files_a_ticket_built_from_the_stored_decisi
     assert (ticket.run_id, ticket.sample_ref, ticket.case_id) == (RUN, "S2", None)
     assert (ticket.model_name, ticket.model_version) == ("pcb_body_defect", "JcProg/body@v2")
     assert (ticket.observed_label, ticket.correct_label) == ("MissingPart", "Tombstone")
-    assert "MissingPart -> Tombstone" in ticket.reason and "bare pads" in ticket.reason
-    assert _drift(authenticated_client)["corrections"][0]["queued"] is True
+    assert "the model said MissingPart; the correct label is Tombstone" in ticket.reason
+    assert "bare pads" in ticket.reason
+    added = _drift(authenticated_client)["corrections"][0]
+    assert added["queued"] is True and added["ticket_status"] == "open"  # in the training data, no plan yet
 
 
 async def test_queueing_twice_files_nothing_twice(
@@ -209,10 +330,10 @@ async def test_a_selection_with_a_sample_that_was_not_corrected_is_rejected_whol
     assert await _tickets(db_async_session) == []  # S1 was valid, but nothing is half-filed
 
 
-async def test_a_correction_with_no_model_recorded_cannot_be_queued(
+async def test_a_sample_with_no_model_to_route_to_cannot_be_added(
     authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
 ) -> None:
-    _store_run(run_store_repo, _routed("S1"), _stage_one_only("S2"))
+    _store_run(run_store_repo, _routed("S1"), _stage_one_only("S2", region="Gap"))  # no route
     _decide(authenticated_client, "S1", "Tombstone")
     _decide(authenticated_client, "S2", "Tombstone")
 
@@ -349,7 +470,7 @@ def test_a_plan_needs_tickets_and_both_kill_switches(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     nothing = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
-    assert nothing.status_code == 409 and "queue some corrections first" in nothing.json()["detail"]
+    assert nothing.status_code == 409 and "add some samples to the training data first" in nothing.json()["detail"]
     assert authenticated_client.post(PLAN_URL, json={"model_name": ""}).status_code == 422
 
     monkeypatch.setattr(settings, "modelops_enabled", False)
@@ -383,3 +504,33 @@ async def test_the_whole_chain_from_a_decision_to_an_approved_job(
     assert [(s["observed_label"], s["expected_label"]) for s in remote["samples"]] == [
         ("MissingPart", "Tombstone")
     ]
+
+
+async def test_a_plan_for_region_guess_samples_syncs_model_versions_on_a_fresh_database(
+    authenticated_client: TestClient, run_store_repo: Any, fake: FakeInference
+) -> None:
+    """Region-guess tickets name no version and nobody has opened the Models tab yet, so no live
+    version is recorded: drafting the plan asks the inference service itself."""
+
+    _store_run(run_store_repo, _stage_one_only("S1", region="Body"))
+    _decide(authenticated_client, "S1", "Tombstone", source="MACHINE")
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1"]})
+
+    plan = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
+
+    assert plan.status_code == 200, plan.text
+    assert plan.json()["base_version"] == "JcProg/body@v1"  # what the (fake) service is serving
+
+
+def test_a_plan_says_so_when_the_inference_service_cannot_be_asked(
+    authenticated_client: TestClient, run_store_repo: Any, fake: FakeInference
+) -> None:
+    fake.down = True
+    _store_run(run_store_repo, _stage_one_only("S1", region="Body"))
+    _decide(authenticated_client, "S1", "Tombstone", source="MACHINE")
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1"]})
+
+    plan = authenticated_client.post(PLAN_URL, json={"model_name": "pcb_body_defect"})
+
+    assert plan.status_code == 409
+    assert "inference service could not be reached" in plan.json()["detail"]

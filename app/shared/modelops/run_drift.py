@@ -1,11 +1,28 @@
-"""Drift and operator corrections for one Work-tab run, computed from what the run stored.
+"""How often the model was wrong in one Work-tab run, judged by the operator's final decisions.
 
-A run's samples carry the model's calls (Agent 1) and, once reviewed, Agent 2's verdict and the
-operator's final decision. Where the operator's final result differs from Agent 1's label, the
-operator *corrected* the model - the signal drift watches and the raw material for retraining
-tickets. The Work tab (workflow) reads those payloads from Qdrant through its own writer and chat
-through its own read-only reader; both hand them here, so the maths lives once, in shared, with no
-I/O. Inputs are the stored payload dicts, exactly as app/workflow/services/run_store.py wrote them:
+In the Review Console's Explanation Review the operator makes the **final decision** for each flagged
+sample - *Accept Machine*, *Accept AI* or *Manual*. Whichever they pick, the saved final result *is*
+the sample's correct label. This module compares it with what the **model** (the defect classifier)
+predicted, sample by sample:
+
+  confirmed      the model predicted the operator's label - the model was right
+  relabelled     the model predicted something else - the model was wrong
+  no_prediction  the model couldn't decide: the region model was below its confidence threshold, so
+                 no defect model ran
+
+*Drift* for the run is the share of the samples the model classified (confirmed + relabelled) that it
+got wrong. A "couldn't decide" sample is not drift - the model never answered - and is counted on its
+own; with nothing classified, drift is undefined (None) rather than 0% or 100%.
+
+Every reviewed sample the model didn't get right can be added to training data with the operator's
+label, for the defect model it belongs to: the one Agent 1 routed it to when it ran, otherwise the one
+the region model's best guess routes to (REGION_TO_DEFECT_MODEL - the same routing Agent 1 uses).
+
+The decisions are read exactly as stored - this never changes what the Review Console saves, nor
+anything about Agent 1 or Agent 2. The Work tab (workflow) reads the payloads from Qdrant through its
+own writer and chat through its own read-only reader; both hand them here, so the maths lives once,
+in shared, with no I/O. Inputs are the stored payload dicts, exactly as
+app/workflow/services/run_store.py wrote them:
 
   points   `adc_inspection_results` payloads: {sample_id, sample, inference, final_decision}
   reviews  `adc_agent2_reviews` payloads:     {sample_id, result: {output}, human_decision, ...}
@@ -14,7 +31,7 @@ Cases (chat's table) are a different population and are measured by app/chat/ser
 """
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -117,27 +134,102 @@ def _agent2_label(review: dict[str, Any] | None) -> str | None:
     return str(label) if label else None
 
 
+def model_prediction(point: dict[str, Any]) -> str | None:
+    """The defect model's prediction, or None when the sample never reached a defect model."""
+
+    stage = _stage(point.get("inference") or {}, "defect_classification")
+    prediction = stage.get("prediction") if stage else None
+    return str(prediction) if prediction else None
+
+
+# Agent 1's own routing (src/agent1_orchestrator/inference/router.py ROUTES +
+# services/model_lifecycle.py service names), re-stated because shared may not import workflow;
+# tests/shared/test_run_drift.py checks the two agree.
+REGION_TO_DEFECT_MODEL = {
+    "Body": "pcb_body_defect",
+    "Lead": "pcb_lead_defect",
+    "Text": "pcb_text_defect",
+}
+
+CLASSIFIED = "classified"
+REGION_GUESS = "region_guess"
+
+
+def region_guess(point: dict[str, Any]) -> dict[str, Any] | None:
+    """The region model's answer - its best guess even when it was below the threshold."""
+
+    stage = _stage(point.get("inference") or {}, "feature_classification")
+    label = stage.get("prediction") if stage else None
+    if not label:
+        return None
+    confidence = stage.get("confidence") if stage else None
+    return {
+        "label": str(label),
+        "confidence": round(float(confidence), 4) if isinstance(confidence, int | float) else None,
+    }
+
+
+def training_target(point: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(the defect model a sample belongs to, how that was decided): the model Agent 1 routed it to
+    ("classified"), else the one its region guess routes to ("region_guess"), else (None, None)."""
+
+    routed = sample_model_name(point)
+    if routed is not None:
+        return routed, CLASSIFIED
+    guess = region_guess(point)
+    target = REGION_TO_DEFECT_MODEL.get(guess["label"]) if guess else None
+    return (target, REGION_GUESS) if target else (None, None)
+
+
+CONFIRMED = "confirmed"
+RELABELLED = "relabelled"
+NO_PREDICTION = "no_prediction"
+
+
+def outcome_of(point: dict[str, Any], decision: dict[str, Any]) -> str:
+    """confirmed / relabelled / no_prediction - see the module docstring."""
+
+    prediction = model_prediction(point)
+    if prediction is None:
+        return NO_PREDICTION
+    if normalize_defect(prediction) == normalize_defect(str(decision["final_result"])):
+        return CONFIRMED
+    return RELABELLED
+
+
 def correction_of(point: dict[str, Any], review: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The operator's correction of this sample, or None when there is no decision or the operator
-    agreed with Agent 1. `queueable` is False when no model was recorded to file a ticket against."""
+    """A reviewed sample the model didn't get right (wrong, or couldn't decide) with the operator's
+    label, or None when there is no decision or the model predicted that label. `model_name` is the
+    defect model the sample belongs to (`model_source` says how that was decided); `queueable` - can
+    it be added to training data - when there is one. `model_version` only when that model actually
+    ran on the sample."""
 
     decision = _human_decision(review)
     if decision is None:
         return None
-    label = agent1_label(point)
-    if normalize_defect(decision["final_result"]) == normalize_defect(label):
+    outcome = outcome_of(point, decision)
+    if outcome == CONFIRMED:
         return None
-    model_name = sample_model_name(point)
+    target, source = training_target(point)
     return {
         "sample_id": str(point.get("sample_id")),
-        "model_name": model_name,
-        "model_version": sample_model_version(point),
-        "agent1_label": label,
+        "model_name": target,
+        "model_version": sample_model_version(point) if source == CLASSIFIED else None,
+        "model_source": source,
+        "region_guess": region_guess(point),
+        "agent1_label": model_prediction(point),
+        "machine_label": (point.get("sample") or {}).get("machine_defect"),
+        "agent2_label": _agent2_label(review),
         "final_result": str(decision["final_result"]),
         "selected_source": decision.get("selected_source"),
         "operator_notes": decision.get("operator_notes"),
-        "queueable": model_name is not None,
+        "outcome": outcome,
+        "queueable": target is not None,
     }
+
+
+def _rate(part: int, whole: int) -> float | None:
+    return round(part / whole, 3) if whole else None
 
 
 @dataclass
@@ -147,46 +239,79 @@ class _ModelStats:
     samples: int = 0
     review_required: int = 0
     decided: int = 0
-    corrected: int = 0
+    confirmed: int = 0
+    relabelled: int = 0
+    no_prediction: int = 0
     agent2_disagreed: int = 0
     with_confidence: int = 0
     low_confidence: int = 0
     confidence_sum: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        def rate(part: int, whole: int) -> float | None:
-            return round(part / whole, 3) if whole else None
-
         return {
             "model_name": self.model_name,
             "model_version": self.model_version,
             "samples": self.samples,
             "review_required": self.review_required,
             "decided": self.decided,
-            "corrected": self.corrected,
-            "correction_rate": rate(self.corrected, self.decided),
+            "confirmed": self.confirmed,
+            "relabelled": self.relabelled,
+            "no_prediction": self.no_prediction,
+            # drift: of the samples the model classified, the ones it got wrong
+            "corrected": self.relabelled,
+            "correction_rate": _rate(self.relabelled, self.confirmed + self.relabelled),
             "agent2_disagreed": self.agent2_disagreed,
-            "low_confidence_rate": rate(self.low_confidence, self.with_confidence),
+            "low_confidence_rate": _rate(self.low_confidence, self.with_confidence),
             "mean_confidence": (
                 round(self.confidence_sum / self.with_confidence, 3) if self.with_confidence else None
             ),
         }
 
 
+SOURCES = ("MACHINE", "AI", "MANUAL")
+_TOP_OVERRULED = 5
+
+
+def _decision_stats(
+    decided_by_source: dict[str, list[bool]], mistakes: Counter[tuple[str, str]], pending: int
+) -> dict[str, Any]:
+    """What the operator did in the Explanation Review: how many final decisions of each kind and
+    how many of those the model got wrong (couldn't-decide samples are not counted as wrong), what is
+    still pending, and the model's commonest wrong predictions (model said -> operator's label)."""
+
+    by_source: dict[str, dict[str, int]] = {}
+    for source in (*SOURCES, *sorted(set(decided_by_source) - set(SOURCES))):
+        outcomes = decided_by_source.get(source, [])
+        by_source[source] = {"chosen": len(outcomes), "overruled_model": sum(outcomes)}
+    top = sorted(mistakes.items(), key=lambda item: (-item[1], item[0]))[:_TOP_OVERRULED]
+    return {
+        "by_source": by_source,
+        "pending": pending,
+        "top_overruled": [
+            {"model_label": model_label, "chosen_label": chosen_label, "count": count}
+            for (model_label, chosen_label), count in top
+        ],
+    }
+
+
 def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -> dict[str, Any]:
-    """Per-model drift numbers and the operator's corrections for one run."""
+    """Per-model drift for one run (grouped by the defect model each sample belongs to), the
+    samples the model didn't get right, and a breakdown of the operator's final decisions."""
 
     by_sample = {str(r.get("sample_id")): r for r in reviews}
     groups: dict[str | None, _ModelStats] = defaultdict(lambda: _ModelStats(None))
     corrections: list[dict[str, Any]] = []
+    decided_by_source: dict[str, list[bool]] = defaultdict(list)
+    mistakes: Counter[tuple[str, str]] = Counter()
     threshold = settings.adc_defect_confidence_threshold
 
     for point in sorted(points, key=lambda p: str(p.get("sample_id"))):
         review = by_sample.get(str(point.get("sample_id")))
-        name = sample_model_name(point)
+        name, source = training_target(point)
         stats = groups[name]
         stats.model_name = name
-        stats.model_version = stats.model_version or sample_model_version(point)
+        if source == CLASSIFIED:
+            stats.model_version = stats.model_version or sample_model_version(point)
         stats.samples += 1
         if point.get("final_decision") == REVIEW_REQUIRED:
             stats.review_required += 1
@@ -199,21 +324,44 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
         agent2 = _agent2_label(review)
         if agent2 is not None and normalize_defect(agent2) != normalize_defect(agent1_label(point)):
             stats.agent2_disagreed += 1
-        if _human_decision(review) is not None:
-            stats.decided += 1
+
+        decision = _human_decision(review)
+        if decision is None:
+            continue
+        stats.decided += 1
+        outcome = outcome_of(point, decision)
+        if outcome == CONFIRMED:
+            stats.confirmed += 1
+        elif outcome == RELABELLED:
+            stats.relabelled += 1
+            said = normalize_defect(model_prediction(point))
+            mistakes[(said, normalize_defect(str(decision["final_result"])))] += 1
+        else:
+            stats.no_prediction += 1
+        decided_by_source[str(decision.get("selected_source") or "UNKNOWN")].append(
+            outcome == RELABELLED
+        )
         correction = correction_of(point, review)
         if correction is not None:
-            stats.corrected += 1
             corrections.append(correction)
 
     models = sorted(groups.values(), key=lambda s: (s.model_name is None, s.model_name or ""))
+    totals = {
+        "samples": sum(m.samples for m in models),
+        "review_required": sum(m.review_required for m in models),
+        "decided": sum(m.decided for m in models),
+        "confirmed": sum(m.confirmed for m in models),
+        "relabelled": sum(m.relabelled for m in models),
+        "no_prediction": sum(m.no_prediction for m in models),
+    }
+    totals["corrected"] = totals["relabelled"]
     return {
-        "totals": {
-            "samples": sum(m.samples for m in models),
-            "review_required": sum(m.review_required for m in models),
-            "decided": sum(m.decided for m in models),
-            "corrected": sum(m.corrected for m in models),
-        },
+        "totals": totals,
+        # of the samples the model classified, the share it got wrong; None if it classified none
+        "drift_rate": _rate(totals["relabelled"], totals["confirmed"] + totals["relabelled"]),
         "models": [m.to_dict() for m in models],
         "corrections": corrections,
+        "decisions": _decision_stats(
+            decided_by_source, mistakes, max(totals["review_required"] - totals["decided"], 0)
+        ),
     }

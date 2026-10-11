@@ -366,9 +366,7 @@ def _routed(sample_id: str, label: str = "MissingPart") -> dict[str, Any]:
 async def _run_with_one_correction(client: AsyncQdrantClient) -> Any:
     repo = _repo()
     repo.save_run("run-a", _state([_routed("S1"), _routed("S2")]))
-    repo.save_decision(
-        "run-a", "S1", {"selected_source": "MACHINE", "final_result": "missing part"}
-    )
+    repo.save_decision("run-a", "S1", {"selected_source": "AI", "final_result": "missing part"})
     repo.save_decision(
         "run-a",
         "S2",
@@ -388,7 +386,8 @@ async def test_get_run_drift_reports_the_operators_corrections_and_who_still_nee
     result = await call(GET_RUN_DRIFT, ctx)
 
     assert result["run_id"] == "run-a"
-    assert result["totals"] == {"samples": 2, "review_required": 2, "decided": 2, "corrected": 1}
+    assert result["totals"] == {"samples": 2, "review_required": 2, "decided": 2, "confirmed": 1, "relabelled": 1, "no_prediction": 0, "corrected": 1}
+    assert result["drift_rate"] == 0.5
     (model,) = result["models"]
     assert (model["model_name"], model["corrected"], model["correction_rate"]) == (
         "pcb_body_defect",
@@ -401,6 +400,10 @@ async def test_get_run_drift_reports_the_operators_corrections_and_who_still_nee
         "MissingPart",
         "Tombstone",
     )
+    # how the operator's decisions split, for "what did the operator do?" questions
+    assert result["decisions"]["by_source"]["AI"] == {"chosen": 1, "overruled_model": 0}
+    assert result["decisions"]["by_source"]["MANUAL"] == {"chosen": 1, "overruled_model": 1}
+    assert result["decisions"]["pending"] == 0
     assert correction["queued"] is False and result["corrections_not_queued"] == 1
     assert "Drift & Retraining tab" in result["instruction"]
     assert "draft_retraining_plan" not in result["instruction"]  # nothing queued yet

@@ -5,6 +5,7 @@ import {
   OrchestratorRunMode,
   WorkflowDecisionSource,
   WorkflowCorrection,
+  WorkflowDecisionStats,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
@@ -66,21 +67,17 @@ export class Work implements OnDestroy {
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
 
-  // Reporting drift / flagging samples for retraining, once a run has finished.
-  protected readonly selectedSampleIds = signal<ReadonlySet<string>>(new Set());
-  protected readonly driftModelName = signal('');
-  protected readonly driftDescription = signal('');
-  protected readonly retrainingReason = signal('');
+  // Adding relabelled samples to the training data, from the Drift & Retraining tab.
   protected readonly monitoringBusy = signal(false);
   protected readonly monitoringError = signal<string | null>(null);
   protected readonly monitoringMessage = signal<string | null>(null);
 
-  // The Drift & Retraining tab's view of the run - per-model numbers and the operator's corrections,
-  // computed on the server from the stored decisions and refetched whenever one is saved.
+  // The Drift & Retraining tab's view of the run: how much the model drifted, judged by the operator's
+  // final decisions (their relabels), computed on the server and refetched whenever one is saved.
   protected readonly runDrift = signal<WorkflowRunDrift | null>(null);
   protected readonly driftLoading = signal(false);
   protected readonly driftError = signal<string | null>(null);
-  /** Corrections the operator unticked: every queueable, not-yet-queued one starts selected. */
+  /** Relabelled samples the operator unticked: every one that can still be added starts selected. */
   protected readonly skippedCorrectionIds = signal<ReadonlySet<string>>(new Set());
 
   protected readonly corrections: Signal<WorkflowCorrection[]> = computed(
@@ -92,13 +89,33 @@ export class Work implements OnDestroy {
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
     this.pendingCorrections().filter((c) => !this.skippedCorrectionIds().has(c.sample_id)),
   );
-  /** Models with queued tickets that no plan covers yet, with how many - what "Draft retraining
-   * plan" turns into a job. */
+  /** Models with samples in the training data that no retraining plan covers yet, with how many -
+   * normally empty, since adding samples also creates the plan; left over if that step failed. */
   protected readonly planModels: Signal<{ name: string; tickets: number }[]> = computed(() =>
     Object.entries(this.runDrift()?.open_tickets ?? {})
       .map(([name, tickets]) => ({ name, tickets }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
+  /** The operator's decisions in the Explanation Review, one row per kind, with each kind's share of
+   * all decisions made (for the bar) and how many of them overruled the model. */
+  protected readonly decisionRows: Signal<
+    { source: string; label: string; chosen: number; overruled: number; share: number }[]
+  > = computed(() => {
+    const stats: WorkflowDecisionStats | undefined = this.runDrift()?.decisions;
+    if (!stats) {
+      return [];
+    }
+    const labels: Record<string, string> = { MACHINE: 'Accept Machine', AI: 'Accept AI', MANUAL: 'Manual' };
+    const total = Object.values(stats.by_source).reduce((sum, entry) => sum + entry.chosen, 0);
+    return Object.entries(stats.by_source).map(([source, entry]) => ({
+      source,
+      label: labels[source] ?? source,
+      chosen: entry.chosen,
+      overruled: entry.overruled_model,
+      share: total === 0 ? 0 : Math.round((entry.chosen / total) * 100),
+    }));
+  });
+
   protected readonly planBusy = signal(false);
   protected readonly planError = signal<string | null>(null);
   protected readonly planMessage = signal<string | null>(null);
@@ -147,20 +164,6 @@ export class Work implements OnDestroy {
     () => this.workService.result()?.results ?? [],
   );
 
-  /** Distinct real model names (routing.service_model, not the routing key) actually seen in this
-   * run's results - what the "Report drift" model picker offers. A sample that never reached
-   * stage 2 (e.g. FEATURE_CLASSIFICATION_UNCERTAIN) contributes nothing here. */
-  protected readonly modelsInResults: Signal<string[]> = computed(() => {
-    const names = new Set<string>();
-    for (const sample of this.results()) {
-      const name = sample.routing?.service_model;
-      if (name) {
-        names.add(name);
-      }
-    }
-    return [...names].sort();
-  });
-
   protected readonly runId: Signal<string | null> = computed(
     () => this.workService.result()?.run_id ?? null,
   );
@@ -199,19 +202,6 @@ export class Work implements OnDestroy {
 
   protected readonly reviewedCount: Signal<number> = computed(
     () => this.reviewCases().filter((reviewCase) => reviewCase.decision !== null).length,
-  );
-
-  protected readonly selectedSamples: Signal<OrchestratorInferenceResult[]> = computed(() => {
-    const ids = this.selectedSampleIds();
-    return this.results().filter((sample) => ids.has(sample.sample_id));
-  });
-
-  protected readonly canReportDrift: Signal<boolean> = computed(
-    () => this.driftModelName() !== '' && this.driftDescription().trim() !== '' && !this.monitoringBusy(),
-  );
-
-  protected readonly canFlagSelected: Signal<boolean> = computed(
-    () => this.selectedSampleIds().size > 0 && this.retrainingReason().trim() !== '' && !this.monitoringBusy(),
   );
 
   // Mirrors ui.py's one-time `os.getenv("OPENAI_API_KEY")` check next to its "Use real LLM
@@ -269,7 +259,6 @@ export class Work implements OnDestroy {
   clearLog(): void {
     this.workService.clearLog();
     this.resetReviews();
-    this.selectedSampleIds.set(new Set());
     this.monitoringError.set(null);
     this.monitoringMessage.set(null);
   }
@@ -346,32 +335,80 @@ export class Work implements OnDestroy {
     });
   }
 
-  /** Queues a retraining ticket for each selected correction. The server builds the tickets from
-   * the stored sample and decision, so only the ids go over the wire. */
-  async queueCorrections(): Promise<void> {
+  /** Adds the ticked relabelled samples to the training data: one retraining ticket each (built on
+   * the server from the stored sample and final decision - only the ids go over the wire), then a
+   * retraining plan for each model involved, so an Admin can approve it in the Models tab. */
+  async addToTrainingData(): Promise<void> {
     const runId = this.runId();
     if (runId === null || !this.canQueueCorrections()) {
       return;
     }
-    const sampleIds = this.selectedCorrections().map((c) => c.sample_id);
+    const selected = this.selectedCorrections();
+    const models = [...new Set(selected.map((c) => c.model_name).filter((m): m is string => m !== null))];
     this.monitoringBusy.set(true);
     this.monitoringError.set(null);
     this.monitoringMessage.set(null);
     try {
-      const out = await this.workService.queueCorrections({ run_id: runId, sample_ids: sampleIds });
-      const queued = out.created.length;
+      const out = await this.workService.queueCorrections({
+        run_id: runId,
+        sample_ids: selected.map((c) => c.sample_id),
+      });
+      const added = out.created.length;
+      const planned: string[] = [];
+      const unplanned: string[] = [];
+      for (const model of models) {
+        try {
+          await this.workService.draftRetrainingPlan(model);
+          planned.push(model);
+        } catch {
+          unplanned.push(model);
+        }
+      }
       this.monitoringMessage.set(
-        `Queued ${queued} correction${queued === 1 ? '' : 's'} for retraining` +
-          (out.already_queued.length > 0 ? ` (${out.already_queued.length} already queued)` : '') +
-          '.',
+        `Added ${added} sample${added === 1 ? '' : 's'} to the training data.` +
+          (planned.length > 0
+            ? ` Retraining plan for ${planned.join(', ')} is waiting for an Admin in the Models tab.`
+            : '') +
+          (unplanned.length > 0 ? ` No plan could be created for ${unplanned.join(', ')} yet - try below.` : ''),
       );
       await this.refreshDrift();
     } catch (error) {
       this.monitoringError.set(
-        error instanceof Error ? error.message : 'Could not queue the corrections.',
+        error instanceof Error ? error.message : 'Could not add the samples to the training data.',
       );
     } finally {
       this.monitoringBusy.set(false);
+    }
+  }
+
+  /** What the model said for a sample it didn't get right: its prediction, or that it couldn't
+   * decide with the region model's best guess. */
+  modelSaid(correction: WorkflowCorrection): string {
+    if (correction.agent1_label !== null) {
+      return correction.agent1_label;
+    }
+    const guess = correction.region_guess;
+    if (!guess) {
+      return "couldn't decide";
+    }
+    const confidence = guess.confidence === null ? '' : ` ${Math.round(guess.confidence * 100)}%`;
+    return `couldn't decide (region: ${guess.label}${confidence})`;
+  }
+
+  /** Where a sample the model didn't get right stands with the training data. */
+  trainingStatus(correction: WorkflowCorrection): string {
+    if (!correction.queueable && !correction.queued) {
+      return "Can't add - no model to route to";
+    }
+    switch (correction.ticket_status) {
+      case 'open':
+        return 'In training data - no plan yet';
+      case 'acknowledged':
+        return 'In a retraining plan';
+      case 'resolved':
+        return 'Retrained';
+      default:
+        return 'Not added yet';
     }
   }
 
@@ -517,77 +554,6 @@ export class Work implements OnDestroy {
   /** 0.5 -> "50%"; "—" when there is nothing to measure. */
   percent(value: number | null): string {
     return value === null ? '—' : `${Math.round(value * 100)}%`;
-  }
-
-  confidencePercent(sample: OrchestratorInferenceResult): number | null {
-    const confidence = sample.defect_classification?.confidence;
-    return confidence === undefined ? null : Math.round(confidence * 100);
-  }
-
-  isSampleSelected(sampleId: string): boolean {
-    return this.selectedSampleIds().has(sampleId);
-  }
-
-  toggleSample(sampleId: string): void {
-    this.selectedSampleIds.update((ids) => {
-      const next = new Set(ids);
-      if (!next.delete(sampleId)) {
-        next.add(sampleId);
-      }
-      return next;
-    });
-  }
-
-  async reportDrift(): Promise<void> {
-    if (!this.canReportDrift()) {
-      return;
-    }
-    this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
-    try {
-      const runId = this.runId();
-      await this.workService.reportDrift({
-        model_name: this.driftModelName(),
-        description: this.driftDescription().trim(),
-        ...(runId !== null ? { run_id: runId } : {}),
-        samples: this.results(),
-      });
-      this.driftDescription.set('');
-      this.monitoringMessage.set(`Drift report filed for ${this.driftModelName()}.`);
-    } catch (error) {
-      this.monitoringError.set(error instanceof Error ? error.message : 'Could not file the drift report.');
-    } finally {
-      this.monitoringBusy.set(false);
-    }
-  }
-
-  async flagSelectedForRetraining(): Promise<void> {
-    if (!this.canFlagSelected()) {
-      return;
-    }
-    const reason = this.retrainingReason().trim();
-    this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
-    try {
-      const runId = this.runId();
-      const tickets = await this.workService.flagForRetraining({
-        ...(runId !== null ? { run_id: runId } : {}),
-        tickets: this.selectedSamples().map((sample) => ({ sample, reason })),
-      });
-      this.monitoringMessage.set(
-        `Flagged ${tickets.length} sample${tickets.length === 1 ? '' : 's'} for retraining.`,
-      );
-      this.selectedSampleIds.set(new Set());
-      this.retrainingReason.set('');
-    } catch (error) {
-      this.monitoringError.set(
-        error instanceof Error ? error.message : 'Could not flag the selected samples.',
-      );
-    } finally {
-      this.monitoringBusy.set(false);
-    }
   }
 
   downloadResult(): void {

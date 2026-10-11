@@ -27,15 +27,18 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.shared import inference
 from app.shared.db import User
 from app.shared.db.models import DriftReportStatus, RetrainingTicketStatus
 from app.shared.modelops import drift as drift_repo
 from app.shared.modelops import jobs as job_repo
 from app.shared.modelops import run_drift
 from app.shared.modelops import tickets as ticket_repo
+from app.shared.modelops import versions as version_repo
 from app.workflow.services import run_store
 from app.workflow.services.schemas import (
     WorkflowCorrectionOut,
+    WorkflowDecisionStatsOut,
     WorkflowDriftReportOut,
     WorkflowDriftReportRequest,
     WorkflowModelDriftOut,
@@ -64,7 +67,11 @@ class NotACorrection(Exception):
     carries their sample ids."""
 
     def __init__(self, sample_ids: list[str]) -> None:
-        super().__init__(f"no operator correction recorded for sample(s): {', '.join(sample_ids)}")
+        super().__init__(
+            "nothing to add for sample(s) "
+            f"{', '.join(sample_ids)}: not reviewed yet, or the model already predicted the final "
+            "decision"
+        )
         self.sample_ids = sample_ids
 
 
@@ -150,22 +157,29 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
             run_id=run_id,
             available=False,
             message="The stored run could not be read right now - try again shortly.",
-            totals={"samples": 0, "review_required": 0, "decided": 0, "corrected": 0},
+            totals=run_drift.summarize_run([], [])["totals"],
             models=[],
             corrections=[],
+            decisions=WorkflowDecisionStatsOut(**run_drift.summarize_run([], [])["decisions"]),
             open_tickets=await _open_tickets_by_model(session),
         )
     summary = run_drift.summarize_run(points, reviews)
-    queued = await ticket_repo.sample_refs_for_run(session, run_id)
+    tickets = await ticket_repo.sample_refs_for_run(session, run_id)
     return WorkflowRunDriftOut(
         run_id=run_id,
         available=True,
         totals=summary["totals"],
+        drift_rate=summary["drift_rate"],
         models=[WorkflowModelDriftOut(**m) for m in summary["models"]],
         corrections=[
-            WorkflowCorrectionOut(**c, queued=c["sample_id"] in queued)
+            WorkflowCorrectionOut(
+                **c,
+                queued=c["sample_id"] in tickets,
+                ticket_status=tickets.get(c["sample_id"]),
+            )
             for c in summary["corrections"]
         ],
+        decisions=WorkflowDecisionStatsOut(**summary["decisions"]),
         open_tickets=await _open_tickets_by_model(session),
     )
 
@@ -185,22 +199,34 @@ async def draft_retraining_plan(
         f"Retrain {model_name} on samples the operator corrected in the Review Console."
         + (f" {len(open_reports)} open drift report(s) point at it." if open_reports else "")
     )
-    try:
-        job = await job_repo.draft_job(
+    async def draft() -> Any:
+        return await job_repo.draft_job(
             session,
             model_name=model_name,
             created_by_user_id=user.id,
             rationale=rationale,
             drift_report_ids=[r.id for r in open_reports],
         )
+
+    try:
+        try:
+            job = await draft()
+        except job_repo.BaseVersionUnknown:
+            # No live version recorded yet (nobody has opened the Models tab on this database) and
+            # the tickets name none - e.g. samples routed by their region guess. Ask the inference
+            # service what it is serving, the same sync the Models tab does, and try once more.
+            if not await _sync_model_versions(session):
+                raise
+            job = await draft()
     except job_repo.NothingToRetrain as exc:
         raise PlanRefused(
-            f"no open retraining tickets for {model_name} - queue some corrections first"
+            f"no open retraining tickets for {model_name} - add some samples to the training data "
+            "first"
         ) from exc
     except job_repo.BaseVersionUnknown as exc:
         raise PlanRefused(
-            f"cannot tell which version of {model_name} to retrain from - open the Models tab so "
-            "it syncs versions from the inference service, then try again"
+            f"cannot tell which version of {model_name} to retrain from - the inference service "
+            "could not be reached to ask; start it and try again"
         ) from exc
     return WorkflowRetrainingPlanOut(
         job_id=job.id,
@@ -212,10 +238,33 @@ async def draft_retraining_plan(
     )
 
 
+async def _sync_model_versions(session: AsyncSession) -> bool:
+    """Records the versions the inference service is serving (what the Models tab does when it
+    opens). False when the service can't be reached."""
+
+    try:
+        infos = await inference.list_models()
+    except (inference.InferenceNotConfigured, inference.InferenceError) as exc:
+        logger.warning("could not sync model versions for a retraining plan: %s", exc)
+        return False
+    await version_repo.sync_versions(session, infos)
+    return True
+
+
 def _correction_reason(run_id: str, correction: dict[str, Any]) -> str:
+    guess = correction.get("region_guess") or {}
+    if correction.get("agent1_label") is None:
+        confidence = guess.get("confidence")
+        said = (
+            f"the model couldn't decide (region guess {guess.get('label')}"
+            + (f", {round(confidence * 100)}%" if isinstance(confidence, int | float) else "")
+            + ")"
+        )
+    else:
+        said = f"the model said {correction['agent1_label']}"
     reason = (
-        f"Operator corrected Agent 1 in run {run_id[:8]}: {correction['agent1_label']} -> "
-        f"{correction['final_result']} (decision: {correction['selected_source']})"
+        f"Labelled by the operator in run {run_id[:8]}: {said}; the correct label is "
+        f"{correction['final_result']} ({correction['selected_source']})"
     )
     notes = correction.get("operator_notes")
     return f"{reason}. Notes: {notes}" if notes else reason
@@ -224,10 +273,12 @@ def _correction_reason(run_id: str, correction: dict[str, Any]) -> str:
 async def queue_corrections(
     session: AsyncSession, *, request: WorkflowQueueCorrectionsRequest, user: User
 ) -> WorkflowQueueCorrectionsOut:
-    """Files a retraining ticket for each selected sample the operator corrected, built from the
-    stored sample and decision (never from the browser). All-or-nothing on what is selected: a
-    sample with no correction, or no model recorded, rejects the whole request. A sample already
-    queued for this run is skipped, so asking twice files nothing twice."""
+    """Adds each selected sample to the training data - one retraining ticket with the operator's
+    label, for the defect model it belongs to (the one that classified it, or the one its region
+    guess routes to) - built from the stored sample and decision, never from the browser.
+    All-or-nothing on what is selected: a sample the model got right (or not reviewed), or one with no
+    model to route to, rejects the whole request. A sample already added for this run is skipped, so
+    asking twice adds nothing twice."""
 
     points, reviews = await _stored_run(request.run_id)
     point_by_id = {str(p.get("sample_id")): p for p in points}
@@ -342,7 +393,7 @@ async def flag_samples_for_retraining(
     if unresolvable:
         raise UnresolvableSample(unresolvable)
 
-    already_flagged: set[str] = set()
+    already_flagged: dict[str, str] = {}
     if request.run_id:
         already_flagged = await ticket_repo.sample_refs_for_run(session, request.run_id)
 

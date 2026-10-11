@@ -30,11 +30,17 @@ function correction(overrides: Partial<WorkflowCorrection> = {}): WorkflowCorrec
     model_name: 'pcb_body_defect',
     model_version: 'JcProg/body@v2',
     agent1_label: 'MissingPart',
+    machine_label: 'WrongPart_13',
+    agent2_label: 'tombstone',
     final_result: 'tombstone',
     selected_source: 'MANUAL',
     operator_notes: 'bare pads',
+    outcome: 'relabelled',
+    model_source: 'classified',
+    region_guess: { label: 'Body', confidence: 0.95 },
     queueable: true,
     queued: false,
+    ticket_status: null,
     ...overrides,
   };
 }
@@ -46,7 +52,16 @@ function runDrift(
   return {
     run_id: 'run-1',
     available: true,
-    totals: { samples: 2, review_required: 2, decided: corrections.length, corrected: corrections.length },
+    totals: {
+      samples: 2,
+      review_required: 2,
+      decided: corrections.length,
+      confirmed: 0,
+      relabelled: corrections.length,
+      no_prediction: 0,
+      corrected: corrections.length,
+    },
+    drift_rate: corrections.length > 0 ? 1 : null,
     models: [
       {
         model_name: 'pcb_body_defect',
@@ -54,6 +69,9 @@ function runDrift(
         samples: 2,
         review_required: 2,
         decided: corrections.length,
+        confirmed: 0,
+        relabelled: corrections.length,
+        no_prediction: 0,
         corrected: corrections.length,
         correction_rate: corrections.length > 0 ? 0.5 : null,
         agent2_disagreed: 1,
@@ -62,6 +80,17 @@ function runDrift(
       },
     ],
     corrections,
+    decisions: {
+      by_source: {
+        MACHINE: { chosen: 0, overruled_model: 0 },
+        AI: { chosen: 0, overruled_model: 0 },
+        MANUAL: { chosen: corrections.length, overruled_model: corrections.length },
+      },
+      pending: Math.max(2 - corrections.length, 0),
+      top_overruled: corrections.length
+        ? [{ model_label: 'missing part', chosen_label: 'tombstone', count: corrections.length }]
+        : [],
+    },
     ...overrides,
   };
 }
@@ -72,8 +101,6 @@ function fakeWorkService(): {
   result: ReturnType<typeof signal<OrchestratorRunResult | null>>;
   run: ReturnType<typeof vi.fn>;
   clearLog: ReturnType<typeof vi.fn>;
-  reportDrift: ReturnType<typeof vi.fn>;
-  flagForRetraining: ReturnType<typeof vi.fn>;
   getReviewCases: ReturnType<typeof vi.fn>;
   getReviewImageUrl: ReturnType<typeof vi.fn>;
   saveReviewDecision: ReturnType<typeof vi.fn>;
@@ -89,16 +116,6 @@ function fakeWorkService(): {
     log.set([]);
     result.set(null);
   });
-  const reportDrift = vi.fn().mockResolvedValue({
-    id: 'r1',
-    model_name: 'pcb_body_defect',
-    model_version: null,
-    status: 'open',
-  });
-  const flagForRetraining = vi
-    .fn()
-    .mockResolvedValue([{ id: 't1', sample_ref: 'S1', model_name: 'pcb_body_defect', status: 'open' }]);
-
   const reviewTick = signal(0);
   const getReviewCases = vi.fn().mockResolvedValue([]);
   const getReviewImageUrl = vi
@@ -134,8 +151,6 @@ function fakeWorkService(): {
     uploadImageRootFiles: vi.fn().mockResolvedValue('root-1'),
     run,
     clearLog,
-    reportDrift,
-    flagForRetraining,
     reviewTick,
     getReviewCases,
     getReviewImageUrl,
@@ -151,8 +166,6 @@ function fakeWorkService(): {
     result,
     run,
     clearLog,
-    reportDrift,
-    flagForRetraining,
     getReviewCases,
     getReviewImageUrl,
     saveReviewDecision,
@@ -298,185 +311,6 @@ describe('Work', () => {
     ) as HTMLButtonElement;
 
     expect(downloadButton.textContent).toContain('Download result.json');
-  });
-
-  describe('per-sample results, drift reports and retraining tickets', () => {
-    // Drift reporting and retraining flags live in the Review Console's "Drift & Retraining" tab.
-    function showDriftTab(): void {
-      const buttons = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>);
-      buttons.find((btn) => btn.textContent?.includes('Open Review Console'))?.click();
-      fixture.detectChanges();
-      (fixture.nativeElement.querySelector('[data-testid="tab-drift"]') as HTMLButtonElement).click();
-      fixture.detectChanges();
-    }
-
-    function checkboxes(): HTMLInputElement[] {
-      // Scoped to the results section - the form above it also has checkboxes ("Use real LLM
-      // Planner", "Fallback to deterministic planner").
-      return Array.from(
-        fixture.nativeElement.querySelectorAll(
-          '[data-testid="results-section"] input[type="checkbox"]',
-        ),
-      );
-    }
-
-    function findButton(label: string): HTMLButtonElement {
-      return Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-        (btn as HTMLButtonElement).textContent?.trim().startsWith(label),
-      ) as HTMLButtonElement;
-    }
-
-    // The drift/retraining form fields are protected component state, driven through ngModel -
-    // interact via the DOM like the rest of this file does (e.g. onDatasetFileChange), not by
-    // poking the signals directly.
-    function setSelect(name: string, value: string): void {
-      const select = fixture.nativeElement.querySelector(`select[name="${name}"]`) as HTMLSelectElement;
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    }
-
-    function setTextarea(name: string, value: string): void {
-      const textarea = fixture.nativeElement.querySelector(
-        `textarea[name="${name}"]`,
-      ) as HTMLTextAreaElement;
-      textarea.value = value;
-      textarea.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
-    }
-
-    function checkedCount(): number {
-      return checkboxes().filter((cb) => cb.checked).length;
-    }
-
-    it('shows no results panel before a run has produced any samples', () => {
-      expect(checkboxes()).toHaveLength(0);
-    });
-
-    it('renders one row per sample with the real model name, not the routing key', () => {
-      fake.result.set(runResult([sample({ sample_id: 'S1' }), sample({ sample_id: 'S2' })]));
-      showDriftTab();
-
-      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-      expect(checkboxes()).toHaveLength(2);
-      expect(text).toContain('S1');
-      expect(text).toContain('S2');
-      expect(text).toContain('pcb_body_defect');
-      expect(text).not.toContain('>body<'); // the raw routing key never leaks into the row
-    });
-
-    it('keeps the drift tools inside the Review Console tab, not on the page', () => {
-      fake.result.set(runResult([sample()]));
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).toBeNull();
-
-      showDriftTab();
-      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).not.toBeNull();
-
-      (fixture.nativeElement.querySelector('[data-testid="tab-review"]') as HTMLButtonElement).click();
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="results-section"]')).toBeNull();
-    });
-
-    it('a sample that never reached routing shows placeholders, not an error', () => {
-      fake.result.set(runResult([sample({ routing: undefined, defect_classification: undefined })]));
-      showDriftTab();
-
-      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-      expect(text).toContain('—');
-    });
-
-    it('the model picker only offers models actually seen in the results', () => {
-      fake.result.set(
-        runResult([
-          sample({ sample_id: 'S1', routing: { selected_model: 'body', service_model: 'pcb_body_defect' } }),
-          sample({ sample_id: 'S2', routing: { selected_model: 'lead', service_model: 'pcb_lead_defect' } }),
-          sample({ sample_id: 'S3', routing: undefined }),
-        ]),
-      );
-      showDriftTab();
-
-      const options = Array.from(fixture.nativeElement.querySelectorAll('option'))
-        .map((o) => (o as HTMLOptionElement).value)
-        .filter((v) => v !== '');
-      expect(options).toEqual(['pcb_body_defect', 'pcb_lead_defect']);
-    });
-
-    it('reports drift for the chosen model with every sample as evidence, once a model and description are given', async () => {
-      fake.result.set(runResult([sample()]));
-      showDriftTab();
-
-      expect(findButton('Report drift').disabled).toBe(true);
-
-      setSelect('driftModelName', 'pcb_body_defect');
-      setTextarea('driftDescription', 'elevated review rate');
-      expect(findButton('Report drift').disabled).toBe(false);
-
-      await fixture.componentInstance.reportDrift();
-
-      expect(fake.reportDrift).toHaveBeenCalledWith({
-        model_name: 'pcb_body_defect',
-        description: 'elevated review rate',
-        samples: [sample()],
-      });
-    });
-
-    it('flag-for-retraining is disabled until a sample is selected and a reason is given', () => {
-      fake.result.set(runResult([sample()]));
-      showDriftTab();
-
-      expect(findButton('Flag for retraining').disabled).toBe(true);
-
-      checkboxes()[0].click();
-      fixture.detectChanges();
-      expect(findButton('Flag for retraining').disabled).toBe(true); // still no reason
-
-      setTextarea('retrainingReason', 'false positive');
-      expect(findButton('Flag for retraining').disabled).toBe(false);
-    });
-
-    it('flags only the selected samples, then clears the selection on success', async () => {
-      fake.result.set(runResult([sample({ sample_id: 'S1' }), sample({ sample_id: 'S2' })]));
-      showDriftTab();
-      checkboxes()[1].click(); // S2
-      setTextarea('retrainingReason', 'false positive');
-
-      await fixture.componentInstance.flagSelectedForRetraining();
-      fixture.detectChanges();
-
-      expect(fake.flagForRetraining).toHaveBeenCalledWith({
-        tickets: [{ sample: sample({ sample_id: 'S2' }), reason: 'false positive' }],
-      });
-      expect(checkedCount()).toBe(0);
-    });
-
-    it('shows the server error when flagging is rejected, without clearing the selection', async () => {
-      fake.flagForRetraining.mockRejectedValue(new Error('no resolvable model for sample(s): S1'));
-      fake.result.set(runResult([sample()]));
-      showDriftTab();
-      checkboxes()[0].click();
-      setTextarea('retrainingReason', 'x');
-
-      await fixture.componentInstance.flagSelectedForRetraining();
-      fixture.detectChanges();
-
-      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-      expect(text).toContain('no resolvable model for sample(s): S1');
-      expect(checkedCount()).toBe(1);
-    });
-
-    it('clearing the log also clears the sample selection', () => {
-      fake.result.set(runResult([sample()]));
-      showDriftTab();
-      checkboxes()[0].click();
-      fixture.detectChanges();
-      expect(checkedCount()).toBe(1);
-
-      fixture.componentInstance.clearLog();
-      fixture.detectChanges();
-
-      expect(checkedCount()).toBe(0);
-    });
   });
 
   describe('Review Console', () => {
@@ -860,11 +694,7 @@ describe('Work', () => {
       expect(popup()).toBeNull();
     });
 
-    describe('Drift & Retraining follows the Explanation Review', () => {
-      function driftText(): string {
-        return (fixture.nativeElement.querySelector('[data-testid="run-drift"]') as HTMLElement | null)?.textContent ?? '';
-      }
-
+    describe('Drift & Retraining: drift from the final decisions, and adding relabels to training data', () => {
       async function openDriftTab(): Promise<void> {
         await openConsole();
         (fixture.nativeElement.querySelector('[data-testid="tab-drift"]') as HTMLButtonElement).click();
@@ -872,121 +702,252 @@ describe('Work', () => {
         fixture.detectChanges();
       }
 
-      function queueButton(): HTMLButtonElement {
-        return fixture.nativeElement.querySelector('[data-testid="queue-corrections"]') as HTMLButtonElement;
+      const tidy = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      const byTestId = (id: string): Element | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+      const allByTestId = (id: string): string[] =>
+        Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${id}"]`) as NodeListOf<Element>).map(tidy);
+
+      function addButton(): HTMLButtonElement {
+        return byTestId('add-to-training') as HTMLButtonElement;
       }
 
-      function correctionBoxes(): HTMLInputElement[] {
-        return Array.from(
-          fixture.nativeElement.querySelectorAll('[data-testid="corrections"] input[type="checkbox"]'),
+      function boxes(): HTMLInputElement[] {
+        return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="corrections"] input[type="checkbox"]'));
+      }
+
+      async function settle(): Promise<void> {
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
+      it('headlines how much the model drifted in the run, and what that is made of', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S2' }), correction({ sample_id: 'S3', outcome: 'no_prediction', model_name: null, agent1_label: null, queueable: false })], {
+            totals: { samples: 6, review_required: 6, decided: 4, confirmed: 2, relabelled: 1, no_prediction: 1, corrected: 1 },
+            drift_rate: 0.333,
+          }),
         );
-      }
-
-      it('shows the server\'s per-model numbers for the run', async () => {
-        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
         await showRun([reviewCase()]);
         await openDriftTab();
 
         expect(fake.getRunDrift).toHaveBeenCalledWith('run-1');
+        expect(tidy(byTestId('drift-rate'))).toBe('33%');
+        expect(tidy(byTestId('drift-of'))).toBe('1 of 3 it classified'); // the couldn't-decide one is not counted
+        expect(tidy(byTestId('kpi-confirmed'))).toBe('2');
+        expect(tidy(byTestId('kpi-relabelled'))).toBe('1');
+        expect(tidy(byTestId('kpi-no-answer'))).toBe('1');
         const row = fixture.nativeElement.querySelector('[data-model="pcb_body_defect"]') as HTMLElement;
-        expect(row.textContent).toContain('pcb_body_defect');
-        expect(row.querySelector('[data-testid="corrected"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-          '1 (50%)',
-        );
-        expect(row.textContent).toContain('70%'); // mean confidence
+        expect(tidy(row.querySelector('[data-testid="corrected"]'))).toBe('50%');
+        // a sample the model couldn't decide is explained, not left as a bare number
+        expect(tidy(byTestId('no-model-note'))).toContain('not counted as drift');
       });
 
-      it('lists the operator\'s corrections, pre-selected, and says when there are none', async () => {
+      it('says nothing is reviewed yet instead of showing a 0% drift', async () => {
         fake.getRunDrift.mockResolvedValue(runDrift([]));
         await showRun([reviewCase()]);
         await openDriftTab();
-        expect(fixture.nativeElement.querySelector('[data-testid="no-corrections"]')).not.toBeNull();
-        expect(queueButton().disabled).toBe(true);
 
-        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
-        await fixture.componentInstance.refreshDrift();
-        fixture.detectChanges();
-
-        expect(driftText()).toContain('MissingPart → tombstone');
-        expect(correctionBoxes()).toHaveLength(2);
-        expect(correctionBoxes().every((box) => box.checked)).toBe(true);
-        expect(queueButton().textContent).toContain('Queue 2 for retraining');
-        expect(queueButton().disabled).toBe(false);
+        expect(tidy(byTestId('drift-rate'))).toBe('—');
+        expect(tidy(byTestId('drift-of'))).toBe('nothing reviewed yet');
+        expect(tidy(byTestId('activity-empty'))).toContain('No decisions yet');
+        expect(tidy(byTestId('no-corrections'))).toBe('Nothing reviewed yet.');
+        expect(addButton().disabled).toBe(true);
       });
 
-      it('refetches the drift numbers after the operator saves a decision', async () => {
+      it('shows how the final decisions split and the model\'s commonest mistakes', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })], {
+            decisions: {
+              by_source: {
+                MACHINE: { chosen: 3, overruled_model: 1 },
+                AI: { chosen: 1, overruled_model: 1 },
+                MANUAL: { chosen: 0, overruled_model: 0 },
+              },
+              pending: 7,
+              top_overruled: [{ model_label: 'missing part', chosen_label: 'wrong part', count: 2 }],
+            },
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const machine = fixture.nativeElement.querySelector('[data-activity="MACHINE"]') as HTMLElement;
+        expect(tidy(machine)).toContain('Accept Machine');
+        expect(tidy(machine.querySelector('[data-testid="activity-chosen"]'))).toBe('3');
+        expect(tidy(machine)).toContain('(75%)');
+        expect(tidy(machine.querySelector('[data-testid="activity-overruled"]'))).toBe('1 where the model was wrong');
+        expect(tidy(byTestId('kpi-pending'))).toBe('7');
+        expect(allByTestId('top-overruled')[0]).toContain('model said missing part → correct label wrong part');
+      });
+
+      it('lists each relabelled sample with what the model said and your label, ticked to add', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(allByTestId('said-model')).toEqual(['MissingPart', 'MissingPart']);
+        expect(allByTestId('chose')).toEqual(['tombstone (MANUAL)', 'tombstone (MANUAL)']);
+        expect(allByTestId('correction-status')).toEqual(['Not added yet', 'Not added yet']);
+        expect(boxes().every((box) => box.checked)).toBe(true);
+        expect(tidy(addButton())).toBe('Add 2 to training data');
+        expect(tidy(byTestId('corrections-badge'))).toBe('2 to add');
+      });
+
+      it('refetches the drift after the operator saves a final decision', async () => {
         await showRun([reviewCase()]);
         await openCase();
         fake.getRunDrift.mockClear();
         fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
 
         submit().click();
-        await fixture.whenStable();
-        fixture.detectChanges();
+        await settle();
 
         expect(fake.getRunDrift).toHaveBeenCalledWith('run-1');
-        expect(fixture.nativeElement.querySelector('[data-testid="corrections-badge"]')?.textContent).toContain(
-          '1 to queue',
-        );
+        expect(tidy(byTestId('corrections-badge'))).toBe('1 to add');
       });
 
-      it('queues only the ticked corrections and sends ids, not sample data', async () => {
-        fake.getRunDrift.mockResolvedValue(
-          runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]),
-        );
+      it('adds the ticked samples to the training data and puts them in a retraining plan', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
         fake.queueCorrections.mockResolvedValue({
-          created: [{ id: 't1', sample_ref: 'S2', model_name: 'pcb_body_defect', status: 'open' }],
+          created: [{ id: 't2', sample_ref: 'S2', model_name: 'pcb_body_defect', status: 'open' }],
           already_queued: [],
         });
         await showRun([reviewCase()]);
         await openDriftTab();
-        correctionBoxes()[0].click(); // untick S1
+        boxes()[0].click(); // untick S1
         fixture.detectChanges();
-        expect(queueButton().textContent).toContain('Queue 1 for retraining');
+        expect(tidy(addButton())).toBe('Add 1 to training data');
 
-        fake.getRunDrift.mockResolvedValue(
-          runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2', queued: true })]),
-        );
-        queueButton().click();
-        await fixture.whenStable();
-        fixture.detectChanges();
-
-        expect(fake.queueCorrections).toHaveBeenCalledWith({ run_id: 'run-1', sample_ids: ['S2'] });
-        expect(text()).toContain('Queued 1 correction for retraining.');
-        const statuses = Array.from(
-          fixture.nativeElement.querySelectorAll('[data-testid="correction-status"]') as NodeListOf<HTMLElement>,
-        ).map((cell) => cell.textContent?.trim());
-        expect(statuses).toEqual(['Ready', 'Queued']);
-      });
-
-      it('cannot queue a correction that is already queued or has no model recorded', async () => {
         fake.getRunDrift.mockResolvedValue(
           runDrift([
-            correction({ sample_id: 'S1', queued: true }),
-            correction({ sample_id: 'S2', queueable: false, model_name: null }),
+            correction({ sample_id: 'S1' }),
+            correction({ sample_id: 'S2', queued: true, ticket_status: 'acknowledged' }),
+          ]),
+        );
+        addButton().click();
+        await settle();
+
+        // only ids go to the server - it builds the training sample from what it stored
+        expect(fake.queueCorrections).toHaveBeenCalledWith({ run_id: 'run-1', sample_ids: ['S2'] });
+        expect(fake.draftRetrainingPlan).toHaveBeenCalledWith('pcb_body_defect');
+        expect(fixture.nativeElement.textContent).toContain(
+          'Added 1 sample to the training data. Retraining plan for pcb_body_defect is waiting for an Admin in the Models tab.',
+        );
+        expect(allByTestId('correction-status')).toEqual(['Not added yet', 'In a retraining plan']);
+      });
+
+      it('cannot add a sample with no model to route to, or one already added', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', queued: true, ticket_status: 'open' }),
+            correction({
+              sample_id: 'S2',
+              outcome: 'no_prediction',
+              model_name: null,
+              model_source: null,
+              region_guess: { label: 'Gap', confidence: 0.4 },
+              agent1_label: null,
+              queueable: false,
+            }),
           ]),
         );
         await showRun([reviewCase()]);
         await openDriftTab();
 
-        expect(correctionBoxes().every((box) => box.disabled && !box.checked)).toBe(true);
-        expect(queueButton().disabled).toBe(true);
-        expect(driftText()).toContain('No model recorded');
-        expect(fixture.nativeElement.querySelector('[data-testid="corrections-badge"]')).toBeNull();
+        expect(boxes().every((box) => box.disabled && !box.checked)).toBe(true);
+        expect(addButton().disabled).toBe(true);
+        expect(allByTestId('said-model')[1]).toBe("couldn't decide (region: Gap 40%)");
+        expect(allByTestId('correction-status')).toEqual([
+          'In training data - no plan yet',
+          "Can't add - no model to route to",
+        ]);
+        expect(byTestId('corrections-badge')).toBeNull();
       });
 
-      it('shows the server error when queueing is rejected, keeping the selection', async () => {
-        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
-        fake.queueCorrections.mockRejectedValue(new Error('no model recorded for sample(s): S1'));
+      it('a run where the model couldn\'t decide anything has no drift, and the labels can still be added', async () => {
+        const undecided = (id: string, label: string): WorkflowCorrection =>
+          correction({
+            sample_id: id,
+            outcome: 'no_prediction',
+            agent1_label: null,
+            model_name: 'pcb_text_defect',
+            model_version: null,
+            model_source: 'region_guess',
+            region_guess: { label: 'Text', confidence: 0.5 },
+            final_result: label,
+            selected_source: 'MACHINE',
+          });
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([undecided('S1', 'solder insufficient'), undecided('S2', 'polarity1')], {
+            totals: { samples: 11, review_required: 11, decided: 2, confirmed: 0, relabelled: 0, no_prediction: 2, corrected: 0 },
+            drift_rate: null,
+          }),
+        );
         await showRun([reviewCase()]);
         await openDriftTab();
 
-        queueButton().click();
-        await fixture.whenStable();
-        fixture.detectChanges();
+        // not "100% drift": the model never answered
+        expect(tidy(byTestId('drift-rate'))).toBe('—');
+        expect(tidy(byTestId('drift-of'))).toBe('the model classified none of the reviewed samples');
+        expect(tidy(byTestId('kpi-no-answer'))).toBe('2');
+        expect(allByTestId('said-model')).toEqual(["couldn't decide (region: Text 50%)", "couldn't decide (region: Text 50%)"]);
+        expect(allByTestId('target-model')).toEqual(['pcb_text_defect (region guess)', 'pcb_text_defect (region guess)']);
+        expect(boxes().every((box) => box.checked && !box.disabled)).toBe(true);
+        expect(tidy(addButton())).toBe('Add 2 to training data');
+      });
 
-        expect(text()).toContain('no model recorded for sample(s): S1');
-        expect(queueButton().disabled).toBe(false);
+      it('shows the server error when adding is rejected, keeping the selection', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        fake.queueCorrections.mockRejectedValue(new Error('nothing to add for sample(s) S1'));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        addButton().click();
+        await settle();
+
+        expect(fixture.nativeElement.textContent).toContain('nothing to add for sample(s) S1');
+        expect(fake.draftRetrainingPlan).not.toHaveBeenCalled();
+        expect(addButton().disabled).toBe(false);
+      });
+
+      it('offers to create the plan when samples are in the training data without one', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        fake.queueCorrections.mockResolvedValue({
+          created: [{ id: 't1', sample_ref: 'S1', model_name: 'pcb_body_defect', status: 'open' }],
+          already_queued: [],
+        });
+        fake.draftRetrainingPlan.mockRejectedValueOnce(new Error('cannot tell which version'));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ queued: true, ticket_status: 'open' })], { open_tickets: { pcb_body_defect: 1 } }),
+        );
+        addButton().click();
+        await settle();
+
+        expect(fixture.nativeElement.textContent).toContain('No plan could be created for pcb_body_defect yet');
+        const leftover = fixture.nativeElement.querySelector('[data-plan-model="pcb_body_defect"]') as HTMLElement;
+        expect(tidy(leftover)).toContain('1 sample in the training data but not in a retraining plan yet');
+
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ queued: true, ticket_status: 'acknowledged' })]));
+        (byTestId('draft-plan') as HTMLButtonElement).click();
+        await settle();
+
+        expect(fake.draftRetrainingPlan).toHaveBeenLastCalledWith('pcb_body_defect');
+        expect(tidy(byTestId('plan-message'))).toContain('Plan drafted for pcb_body_defect');
+        expect(fixture.nativeElement.querySelector('[data-plan-model]')).toBeNull();
+      });
+
+      it('has no manual tools any more', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const text = fixture.nativeElement.textContent as string;
+        expect(byTestId('manual-tools')).toBeNull();
+        expect(text).not.toContain('Report drift');
+        expect(text).not.toContain('Flag for retraining');
       });
 
       it('says so when the stored run cannot be read, and when loading fails', async () => {
@@ -995,92 +956,12 @@ describe('Work', () => {
         );
         await showRun([reviewCase()]);
         await openDriftTab();
-        expect(fixture.nativeElement.querySelector('[data-testid="drift-unavailable"]')?.textContent).toContain(
-          'could not be read',
-        );
+        expect(tidy(byTestId('drift-unavailable'))).toContain('could not be read');
 
         fake.getRunDrift.mockRejectedValue(new Error('boom'));
         await fixture.componentInstance.refreshDrift();
         fixture.detectChanges();
-        expect(fixture.nativeElement.querySelector('[data-testid="drift-error"]')?.textContent).toContain('boom');
-      });
-
-      function planButtons(): HTMLButtonElement[] {
-        return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="draft-plan"]'));
-      }
-
-      it('says no plan can be drafted until corrections are queued', async () => {
-        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
-        await showRun([reviewCase()]);
-        await openDriftTab();
-
-        expect(fixture.nativeElement.querySelector('[data-testid="no-plan-models"]')).not.toBeNull();
-        expect(planButtons()).toHaveLength(0);
-      });
-
-      it('offers a plan for each model with tickets waiting, and drafts it on click', async () => {
-        fake.getRunDrift.mockResolvedValue(
-          runDrift([correction({ queued: true })], {
-            open_tickets: { pcb_body_defect: 2, pcb_text_defect: 1 },
-          }),
-        );
-        await showRun([reviewCase()]);
-        await openDriftTab();
-
-        const rows = Array.from(
-          fixture.nativeElement.querySelectorAll('[data-plan-model]') as NodeListOf<HTMLElement>,
-        );
-        expect(rows.map((r) => r.getAttribute('data-plan-model'))).toEqual(['pcb_body_defect', 'pcb_text_defect']);
-        expect(rows[0].textContent).toContain('2 tickets waiting');
-        expect(rows[1].textContent).toContain('1 ticket waiting');
-
-        fake.getRunDrift.mockResolvedValue(runDrift([correction({ queued: true })], { open_tickets: { pcb_text_defect: 1 } }));
-        planButtons()[0].click();
-        await fixture.whenStable();
-        fixture.detectChanges();
-
-        expect(fake.draftRetrainingPlan).toHaveBeenCalledWith('pcb_body_defect');
-        expect(fixture.nativeElement.querySelector('[data-testid="plan-message"]')?.textContent).toContain(
-          'Plan drafted for pcb_body_defect: 2 samples, pending approval. An Admin approves it in the Models tab.',
-        );
-        // the drift numbers were refetched, so the planned model is no longer offered
-        expect(
-          (fixture.nativeElement.querySelectorAll('[data-plan-model]') as NodeListOf<HTMLElement>).length,
-        ).toBe(1);
-      });
-
-      it('shows why a plan could not be drafted', async () => {
-        fake.getRunDrift.mockResolvedValue(
-          runDrift([correction({ queued: true })], { open_tickets: { pcb_body_defect: 1 } }),
-        );
-        fake.draftRetrainingPlan.mockRejectedValue(new Error('cannot tell which version of pcb_body_defect to retrain from'));
-        await showRun([reviewCase()]);
-        await openDriftTab();
-
-        planButtons()[0].click();
-        await fixture.whenStable();
-        fixture.detectChanges();
-
-        expect(fixture.nativeElement.querySelector('[data-testid="plan-error"]')?.textContent).toContain(
-          'cannot tell which version',
-        );
-        expect(fixture.nativeElement.querySelector('[data-testid="plan-message"]')).toBeNull();
-      });
-
-      it('sends the run id with a manual drift report and manual flags', async () => {
-        fake.getRunDrift.mockResolvedValue(runDrift([]));
-        await showRun([reviewCase()]);
-        await openDriftTab();
-
-        fixture.componentInstance['driftModelName'].set('pcb_body_defect');
-        fixture.componentInstance['driftDescription'].set('looks off');
-        await fixture.componentInstance.reportDrift();
-        expect(fake.reportDrift).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'run-1' }));
-
-        fixture.componentInstance['selectedSampleIds'].set(new Set(['S1']));
-        fixture.componentInstance['retrainingReason'].set('wrong');
-        await fixture.componentInstance.flagSelectedForRetraining();
-        expect(fake.flagForRetraining).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'run-1' }));
+        expect(tidy(byTestId('drift-error'))).toContain('boom');
       });
     });
   });

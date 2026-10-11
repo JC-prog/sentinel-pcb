@@ -187,12 +187,15 @@ Here that became:
 - **Drift & Retraining follows the decisions.** The console's second tab no longer trusts what the
   browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
   review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
-  drift plus the operator's *corrections* - a sample whose final decision differs from Agent 1's label
-  (normalised, so `WrongPart_13` == `wrong part`; Accept Machine is agreement) - with the pure
+  drift: the operator's final decision is the sample's label, and drift is - of the samples a defect
+  model classified - the share whose label it did not predict (normalised, so `WrongPart_13` ==
+  `wrong part`). Samples where no defect model ran ("couldn't decide") are counted separately, not as
+  drift, and are routed for training by the region model's guess, mirroring Agent 1's router. The
+  Review Console and what it saves are untouched. Computed with the pure
   `app/shared/modelops/run_drift.py`, which chat's `get_run_drift` tool shares (chat may not import
   workflow). The UI refetches after every saved decision. `POST .../run-retraining-tickets
   {run_id, sample_ids}` builds one `RetrainingTicket` per selected correction from the *stored*
-  sample and decision (model, version, observed = Agent 1's label, correct = the operator's), all or
+  sample and decision (model, version, observed = the model's prediction, correct = the operator's label), all or
   nothing; a sample with no correction or no routed model rejects the request, and one already
   queued is skipped (`retraining_tickets.run_id` + a partial unique index on `(run_id, sample_ref)`,
   because sample ids restart every run). Corrections are queued by the operator, never automatically.

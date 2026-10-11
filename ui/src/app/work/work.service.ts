@@ -5,10 +5,6 @@ import {
   OrchestratorRunResult,
   OrchestratorStatus,
   OrchestratorStatusEvent,
-  WorkflowDriftReportRequest,
-  WorkflowDriftReportOut,
-  WorkflowRetrainingTicketOut,
-  WorkflowRetrainingTicketsRequest,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
   WorkflowRetrainingPlanOut,
@@ -73,16 +69,6 @@ export class WorkService {
 
   // Thin passthroughs, like the uploads above - the component (work.ts) owns the busy/error UI
   // state for these, the same way it already does around the upload calls.
-  reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
-    return this.client.reportDrift(request);
-  }
-
-  flagForRetraining(
-    request: WorkflowRetrainingTicketsRequest,
-  ): Promise<WorkflowRetrainingTicketOut[]> {
-    return this.client.flagForRetraining(request);
-  }
-
   getRunDrift(runId: string): Promise<WorkflowRunDrift> {
     return this.client.getRunDrift(runId);
   }

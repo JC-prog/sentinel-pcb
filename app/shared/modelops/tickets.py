@@ -50,15 +50,17 @@ async def create_ticket(
     return ticket
 
 
-async def sample_refs_for_run(session: AsyncSession, run_id: str) -> set[str]:
-    """The samples of a Work-tab run that already have a ticket (whatever its status)."""
+async def sample_refs_for_run(session: AsyncSession, run_id: str) -> dict[str, str]:
+    """The samples of a Work-tab run that already have a ticket -> that ticket's status (open:
+    added to training data, not in a plan yet; acknowledged: in a retraining plan; resolved:
+    retrained)."""
 
-    result = await session.scalars(
-        select(RetrainingTicket.sample_ref).where(
+    rows = await session.execute(
+        select(RetrainingTicket.sample_ref, RetrainingTicket.status).where(
             RetrainingTicket.run_id == run_id, RetrainingTicket.sample_ref.is_not(None)
         )
     )
-    return {ref for ref in result if ref is not None}
+    return {ref: status for ref, status in rows.tuples() if ref is not None}
 
 
 async def list_open_tickets(session: AsyncSession, model_name: str) -> list[RetrainingTicket]:

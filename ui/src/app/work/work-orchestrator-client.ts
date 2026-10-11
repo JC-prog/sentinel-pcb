@@ -9,10 +9,6 @@ import {
   OrchestratorStatus,
   OrchestratorStatusEvent,
   OrchestratorUploadRecord,
-  WorkflowDriftReportRequest,
-  WorkflowDriftReportOut,
-  WorkflowRetrainingTicketOut,
-  WorkflowRetrainingTicketsRequest,
   WorkflowReviewDecisionOut,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
@@ -192,16 +188,6 @@ export class WorkOrchestratorClient {
 
       return () => controller.abort();
     });
-  }
-
-  async reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
-    return this.post('/api/orchestrator/monitoring/drift-report', request);
-  }
-
-  async flagForRetraining(
-    request: WorkflowRetrainingTicketsRequest,
-  ): Promise<WorkflowRetrainingTicketOut[]> {
-    return this.post('/api/orchestrator/monitoring/retraining-tickets', request);
   }
 
   async getRunDrift(runId: string): Promise<WorkflowRunDrift> {

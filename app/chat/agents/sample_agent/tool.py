@@ -65,8 +65,9 @@ async def get_run_drift(
 ) -> dict[str, Any]:
     """Shows how the models did in a Work-tab bulk run, per model: how many samples were reviewed,
     how often the operator corrected the model's label in the Review Console, how often Agent 2
-    disagreed with it, and its confidence - plus the list of operator corrections and which already
-    have a retraining ticket. Read-only. Use it for 'how is the model doing in the last run?' and
+    disagreed with it, and its confidence - plus how the operator's decisions split (Accept Machine /
+    Accept AI / Manual, and how many of each overruled the model), what is still pending, the model's
+    commonest misses, and the list of operator corrections with which already have a retraining ticket. Read-only. Use it for 'how is the model doing in the last run?' and
     'what did the operator correct?' (not get_drift_summary, which measures saved cases). Uses the
     latest run unless a run id is given."""
 
