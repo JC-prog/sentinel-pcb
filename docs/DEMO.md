@@ -3,6 +3,7 @@
 A step-by-step script for presenting SentinelChat (about 20 minutes): what to set up, exactly what to
 type and click, what you should see, and what to say. Companion to [`USER_GUIDE.md`](USER_GUIDE.md)
 (the full reference) and [`REVIEW_DRIFT_RETRAINING.md`](REVIEW_DRIFT_RETRAINING.md) (how it works).
+For a shorter, chat-only demo see [`CHAT-DEMO.md`](CHAT-DEMO.md).
 
 > **Rehearsed.** Every step below was run against the real stack on 2026-10-05 (local `gemma4:12b`
 > as the chat model). Numbers marked *(rehearsal)* came from that run - your run of the same data
