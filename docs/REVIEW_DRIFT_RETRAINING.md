@@ -19,7 +19,7 @@ the app see [`USER_GUIDE.md`](USER_GUIDE.md); for the system as a whole see
    │ saved:  adc_agent2_reviews.human_decision                          (Qdrant)
    ▼
  GET  .../monitoring/run-drift  ── shared/modelops/run_drift.py ──►  Drift & Retraining tab
-   │ corrections = final result != Agent 1's label
+   │ the final decision is the label; drift = wrong / classified (couldn't-decide shown apart)
    ▼
  Operator queues corrections:  POST .../monitoring/run-retraining-tickets
    │ saved:  retraining_tickets (run_id + sample_ref)                   (Postgres)
@@ -85,9 +85,30 @@ Pure functions over the stored payload dicts - no I/O - so the Work tab (`run_st
   baseline Agent 2 audits for a sample that stopped at stage 1).
 - **Normalisation** (`normalize_defect`): `WrongPart_13` -> `wrong part`, `Shift` -> `shifted`,
   `Golden` -> `no defect`, and the datasets' misspelling `SolderInsuffcient` -> `solder insufficient`.
-- **Correction**: a decided sample whose normalised `final_result` differs from the normalised Agent 1
-  label. *Accept Machine* is therefore agreement; *Accept AI* / *Manual* that differ are corrections.
-  `queueable` is false when no model was recorded.
+- **The label** is the operator's saved final decision (`human_decision.final_result`), whichever
+  button produced it. The Review Console and what it saves are not changed - and the dataset's machine
+  label plays no part.
+- **Outcome** of each reviewed sample, against the model's prediction (`defect_classification.prediction`):
+  `confirmed` (right), `relabelled` (wrong) or `no_prediction` ("couldn't decide": the region model
+  was below its threshold, so no defect model ran). **Drift** for the run (`drift_rate`) and per model
+  (`correction_rate`) = relabelled / (confirmed + relabelled); `None` when the model classified
+  nothing. Couldn't-decide samples are **not** drift.
+- **Training target** (`model_name`, `model_source`): the defect model Agent 1 routed the sample to
+  (`classified`), else the one its region guess routes to (`region_guess`) via `REGION_TO_DEFECT_MODEL`
+  (Body/Lead/Text -> pcb_body/lead/text_defect - re-stated from Agent 1's router; a test reads the
+  drop-in's files to keep them equal). Per-model stats are grouped by this target.
+- **Correction** = a reviewed sample that is not `confirmed`; addable to training data (`queueable`)
+  when it has a target. Its ticket learns `correct_label` = the operator's label; `observed_label` =
+  the model's prediction (None for couldn't-decide); `model_version` only when that model actually ran
+  (a region-guess ticket gets None - not the region model's version).
+- **Plans for region-guess tickets** need a base version from the live model: if none is recorded yet
+  (fresh database, Models tab never opened), `POST .../retraining-plan` syncs versions from the
+  inference service (`GET /models`, the same sync the Models tab does) and retries once.
+- **Decision statistics** (`decisions` in the summary): `by_source` - for each of `MACHINE` / `AI` / `MANUAL` how
+  many final decisions were made (`chosen`) and how many of those the model got wrong (`overruled_model`; couldn't-decide not included);
+  `pending` - flagged samples with no decision yet; `top_overruled` - the five commonest
+  (model label -> chosen label) misses with counts, labels normalised. It is what the tab's "Your
+  decisions in the Explanation Review" block shows and what chat's `get_run_drift` reports.
 - **Per-model stats** (grouped by `routing.service_model`; un-routed samples group under `null`):
   `samples`, `review_required`, `decided`, `corrected`, `correction_rate` (corrected/decided),
   `agent2_disagreed`, `low_confidence_rate` (defect confidence < `ADC_DEFECT_CONFIDENCE_THRESHOLD`),
@@ -117,8 +138,8 @@ All routes need a logged-in **QA or Admin**; the review/decision routes are behi
 | `POST /api/orchestrator/monitoring/retraining-tickets` | The older "manual" path: tickets from browser-sent sample dicts; with `run_id`, a sample already ticketed for the run is skipped. |
 
 Ticket content for a queued correction: `sample_ref` = sample id, `run_id`, `model_name`,
-`model_version` (defect, else feature, model version), `observed_label` = Agent 1's label,
-`correct_label` = the operator's `final_result`, and a server-written `reason` that includes the
+`model_version` (defect, else feature, model version), `observed_label` = the model's label,
+`correct_label` = the operator's final decision (their relabel), and a server-written `reason` that includes the
 decision type and the operator's notes. A concurrent double-click is resolved by the unique index
 (the loser is reported as already queued).
 

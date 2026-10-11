@@ -188,36 +188,40 @@ When they disagree, a human decides. In my rehearsal, 7 of 11 samples were disag
 
 ---
 
-## Act 5 - The human decision (3 min)  - **Work -> Review Console**
+## Act 5 - The human decision: relabel the data (3 min)  - **Work -> Review Console**
 
-Click **Open Review Console** (Explanation Review tab).
+Click **Open Review Console** (Explanation Review tab). *Say:* "The operator's final decision is the
+label - this is where the data gets relabelled."
 
-1. Select **S000001** (Agent 1: *no defect*, Agent 2: *wrong part*). Show the golden vs defect
-   images and Agent 2's explanation.
+1. Select **S000001** (model: *no defect*, Agent 2: *wrong part*). Show the golden vs defect images and
+   Agent 2's explanation.
 2. **User Final Decision -> Accept AI**, notes: `text is wrong on the part`, **Confirm Decision**.
    *Expect:* "Saved S000001: wrong part"; its status becomes *Reviewed*.
 3. Select **S000004** -> **Manual**, choose **Tombstone**, notes `pad lifted`, **Confirm Decision**.
-4. Select **S000003** (the agents agree) -> **Accept Machine** -> Confirm. *Say:* "Even when they agree
-   the operator makes the call; nothing is auto-approved."
+4. Select **S000003** -> **Accept Machine** -> Confirm. (The console's *Machine* value here is the
+   model's own *wrong part*.) *Say:* "Here I agree with the model - watch how the next tab counts it."
 
 ---
 
-## Act 6 - The Drift & Retraining tab follows your decisions (2 min)  - **Work -> Review Console**
+## Act 6 - How often was the model wrong, and add your labels to training data (2 min)  - **Review Console**
 
-Click the **Drift & Retraining** tab. *Expect (rehearsal):*
+Click the **Drift & Retraining** tab (badge **"2 to add"**). *Expect (rehearsal):*
 
-- the tab title shows a badge **"2 to queue"**;
-- a per-model table; `pcb_text_defect`: 9 samples, **Reviewed 3 / 11**, **Corrected 2 (67%)**,
-  Agent 2 disagreed 6;
-- **Operator corrections:** `S000001  Golden -> wrong part (AI)` and `S000004  Golden -> Tombstone
-  (MANUAL)`, both *Ready*.
+- **Drift (model wrong): 67%** - *2 of 3 it classified*; Model right **1** (S000003), Model wrong
+  **2**, Couldn't decide **0**, Not reviewed yet **8**; the `pcb_text_defect` row shows the same;
+- **Your final decisions:** Accept Machine 1, Accept AI 1, Manual 1, and the model's commonest mistakes
+  (model said *no defect* -> correct label *wrong part* / *tombstone*);
+- **Add your labels to the training data:** `S000001` (model said Golden, your label **wrong part**
+  (AI)) and `S000004` (model said Golden, your label **Tombstone** (MANUAL)), both *Not added yet* and
+  ticked.
 
-*Say:* "Every decision I just made updated this immediately - and these numbers are computed on the
-server from what's stored, not from the browser. A *correction* means my final answer differs from
-Agent 1's."
+*Say:* "My final decision is the correct label. Of the samples the model classified, it got two of three
+wrong - that's the drift. Those samples, with my labels, are exactly what it should learn from."
 
-Click **Queue 2 for retraining**. *Expect:* "Queued 2 corrections for retraining"; both rows show
-*Queued*; the badge disappears. Click it again (or Refresh): nothing is filed twice.
+Click **Add 2 to training data**. *Expect:* "Added 2 samples to the training data. Retraining plan for
+pcb_text_defect is waiting for an Admin in the Models tab."; both rows now read *In a retraining plan*;
+the badge disappears. Clicking again adds nothing twice. (For a run where the model couldn't decide
+anything, see the Variant in [`WORK-DEMO.md`](WORK-DEMO.md).)
 
 ---
 
@@ -236,7 +240,7 @@ explanation, and **the operator decision you just made**.* (tool: *Sample lookup
 
 > **How did the models do in the last run, and what did the operator correct?**
 
-*Per-model numbers matching the Drift & Retraining tab, and the two corrections - already queued.*
+*Per-model numbers matching the Drift & Retraining tab, and the two relabelled samples - already in a retraining plan.*
 (tool: *Run drift*)
 
 > **What do you know about sample S999999?**
@@ -248,28 +252,20 @@ truth."
 
 ---
 
-## Act 8 - Close the loop: plan -> approve (2 min)  - **Work or Chat -> Models**
+## Act 8 - Close the loop: an Admin approves (2 min)  - **Models**
 
-Queueing in Act 6 created *tickets*; the Models tab's Retraining queue lists *jobs*, so it still says
-"No retraining jobs yet" (and "2 unplanned") - a good moment to explain the two steps. Now draft the
-plan, either way:
+Switch to **Models -> Retraining queue** (as Admin): the job for `pcb_text_defect` shows **2
+samples**, status *pending approval*. Click **Show flagged cases** to see `S000001` and `S000004` with
+their run and observed -> expected labels. Click **Approve**.
 
-- **Work tab:** in **Drift & Retraining -> Retraining plan**, click **Draft retraining plan** next to
-  `pcb_text_defect - 2 tickets waiting`. *Expect:* "Plan drafted for pcb_text_defect: 2 samples,
-  pending approval. An Admin approves it in the Models tab."
-- **or Chat:** type **Draft a retraining plan for pcb_text_defect.** *Expect:* "I've drafted a
-  retraining plan... status **pending approval**..." (tool: *Retraining plan*)
-
-Switch to **Models -> Retraining queue** (as Admin): the job shows **2 samples**, status *pending
-approval*. Click **Show flagged cases** to see `S000001` and `S000004` with their run and
-observed -> expected labels. Click **Approve**.
-
-*Say:* "Anyone on the QA side can draft a plan; only an Admin in the Models tab can approve it. The inference service's
-trainer here is a stub - it simulates the job - so this shows the control flow, not a real retrain."
+*Say:* "Adding samples drafted the plan; only an Admin can approve it. The inference service's trainer
+here is a stub - it simulates the job - so this shows the control flow, not a real retrain." (In
+chat, *"Draft a retraining plan for pcb_text_defect"* does the plan step too, for samples already in
+the training data.)
 
 Optional extras if time allows:
 
-> **Is the pcb_text_defect model drifting?** *(over saved cases)*
+> **Is the pcb_text_defect model drifting?** *(over saved chat cases)*
 > **What is the model status?** *(Admin overview: live versions, open reports/tickets/queue)*
 > **Write me a poem about cats.** *(politely declined - it stays on topic)*
 
@@ -284,7 +280,7 @@ Optional extras if time allows:
 | *What stops the AI from inventing data?* | It can only report what tools return; unknown samples/cases return an error; tools it isn't allowed to call aren't even given to the model. |
 | *Why are some classifier results low confidence / odd?* | The bundled models are weak on this data. Low confidence is the trigger for human review - which is the point of the workflow. |
 | *What's Agent 1 vs Agent 2?* | Agent 1 = two-stage classifier (region -> defect). Agent 2 = an explainability review (precedents, telemetry, optional vision) that audits Agent 1. |
-| *What is a "correction"?* | The operator's final result differs from Agent 1's label (after normalising names like `WrongPart_13` -> `wrong part`). |
+| *What does "drift" mean here?* | The operator's final decision is the correct label. Drift for a run is, of the samples the model classified, the share where it didn't predict that label (names normalised, `WrongPart_13` -> `wrong part`). Samples it couldn't decide on are counted separately, not as drift. |
 | *Where is the data stored?* | Cases, users, tickets, plans: Postgres. Work-tab runs, Agent 2 reviews and decisions: Qdrant. Long-term chat memory: Qdrant. |
 | *Does retraining really run?* | The trainer is a stub that simulates a job; the approval flow and bookkeeping are real. |
 

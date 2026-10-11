@@ -233,42 +233,50 @@ Click **Open Review Console**. On the **Explanation Review** tab:
 
 Nothing is ever auto-approved - even when the two agents agree, the operator makes the call.
 
-### 8.3 Drift & Retraining - the tab follows your decisions
+### 8.3 Drift & Retraining - how often the model was wrong, and adding your labels to training data
 
-Every time you save a decision, the **Drift & Retraining** tab refreshes (a badge on the tab shows
-how many corrections are waiting to be queued). It shows:
+**Your final decision is the correct label.** Whatever you pick under *User Final Decision* - Accept
+Machine, Accept AI or Manual - the saved final result is the sample's label. The Drift & Retraining
+tab compares it with what the **model** (the defect classifier) predicted, and refreshes every time
+you save a decision (the tab shows a badge such as "2 to add"). Each reviewed sample is one of:
 
-- a per-model table - samples, **Reviewed** (decided / flagged), **Corrected** (and the rate),
-  **Agent 2 disagreed**, low-confidence rate, mean confidence. These numbers are computed on the
-  server from the stored run, not from the browser;
-- **Operator corrections** - every sample where your final result **differs from Agent 1's label**
-  (Accept Machine counts as agreement). Each row shows Agent 1 -> your label, your decision type,
-  your notes and a status: *Ready*, *Queued*, or *No model recorded* (the sample never reached a
-  defect model, so there is nothing to retrain);
-- **Queue N for retraining** - ticks the ready corrections by default; click to file one retraining
-  ticket per correction. Doing it twice files nothing twice. **Nothing is queued automatically** -
-  you decide.
+| | What it means |
+| --- | --- |
+| **Model right** | the model predicted your label |
+| **Model wrong** | the model predicted something else |
+| **Couldn't decide** | the region model was below its confidence threshold, so no defect model ran |
 
-Below that, a **Manual** section keeps the older forms: *Report drift* for a model, and *Flag
-selected samples for retraining* from the results table.
+**Drift (model wrong)** = of the samples the model classified (right + wrong), the share it got wrong.
+*Couldn't decide* samples are **not** drift - the model never answered - and are counted on their own;
+if the model classified none of the reviewed samples, drift shows "—". The tab, top to bottom:
 
-### 8.4 From tickets to a plan to an approved job
+- **How often was the model wrong in this run?** - the drift ("67% - 2 of 3 it classified"), the
+  counts above plus **Not reviewed yet**, and a per-model table (reviewed, right, wrong, couldn't
+  decide, drift). Computed on the server from the stored run, not from the browser.
+- **Your final decisions** - how they split between Accept Machine, Accept AI and Manual (bar, count,
+  share, and how many were cases where the model was wrong), and **the model's commonest mistakes**
+  ("model said *missing part* -> correct label *wrong part* x 2").
+- **Add your labels to the training data** - every sample the model got wrong or couldn't decide, with
+  the defect model it belongs to, what the model said, your label (and which decision you used), your
+  notes and its **training data** status. A *couldn't decide* sample goes to the model the region
+  model guessed (Body / Lead / Text -> the body / lead / text defect model), marked **(region guess)**.
+  The ones that can be added are ticked; **Add N to training data** adds them *and* puts them in a
+  retraining plan for each model, ready for an Admin. Adding twice adds nothing twice; nothing is
+  added automatically.
 
-**Queueing creates tickets, not a job.** The Models tab's **Retraining queue** lists *jobs*, so right
-after you queue it still says "No retraining jobs yet" and shows the tickets as **"N unplanned"**.
-A *plan* is what turns a model's open tickets into a job:
+Statuses: *Not added yet* -> *In a retraining plan* (waiting for an Admin) -> *Retrained*.
+*In training data - no plan yet* means the plan step did not go through (usually the inference service
+was down); a **Create retraining plan** button then appears below. *Can't add - no model to route to*:
+the region model's guess has no defect model (rare).
 
-1. In the **Drift & Retraining** tab, scroll to **Retraining plan**. Each model with tickets waiting
-   is listed ("pcb_text_defect - 2 tickets waiting"). Click **Draft retraining plan**.
-   *(Alternative: in chat, "Draft a retraining plan for pcb_text_defect.")*
-2. The tab confirms "Plan drafted for pcb_text_defect: 2 samples, pending approval. An Admin approves
-   it in the Models tab." The tickets move from *unplanned* to *in a plan*.
-3. An **Admin** opens **Models -> Retraining queue**, finds the job (status *pending approval*), uses
-   **Show flagged cases** to see what it contains, and clicks **Approve**. That sends it to the
-   inference service (whose trainer is currently a stub that simulates the job).
+### 8.4 After you add samples: the Admin approves the plan
 
-QA can draft a plan but only an Admin can approve it. Samples from the Work tab reach the inference
-service as `<run id>:<sample id>`.
+The plan appears under **Models -> Retraining queue** as *pending approval*. An **Admin** uses
+**Show flagged cases** to see what it contains (Work-tab samples show their run) and clicks
+**Approve**, which sends it to the inference service (whose trainer is currently a stub that
+simulates the job). QA can add samples and create plans; only an Admin can approve one. In chat,
+*"Draft a retraining plan for pcb_text_defect"* does the same plan step for any samples already in
+the training data (including chat relabels).
 
 ---
 
@@ -305,8 +313,8 @@ versions and job progress from the service when reachable.
 | Symptom | Likely cause |
 | --- | --- |
 | Inspect result is always *Review required*, no defect shown | Region confidence is below the 0.70 threshold. Lower `ADC_REGION_CONFIDENCE_THRESHOLD` (and restart the backend) - see [`DEMO.md`](DEMO.md#before-you-start). |
-| Work-tab corrections say *No model recorded* (Model column: "no model reached") | Those samples stopped at the first stage. Re-run with a lower **feature threshold** (e.g. 0.3) - an existing run can't be changed. |
-| Retraining queue says "No retraining jobs yet" after queueing | Queueing only creates tickets ("N unplanned"). Click **Draft retraining plan** (Drift & Retraining tab) or ask chat for a plan; then the job appears. |
+| Drift shows "—" and every sample *couldn't decide* | No defect model ran (region model below the 0.7 threshold). Your labels can still be added (by region guess); to measure the model, re-run with a lower **feature threshold** (e.g. 0.3). |
+| Retraining queue shows "N unplanned" but no job | Samples are in the training data without a plan. Click **Create retraining plan** in the Drift & Retraining tab, or ask chat for a plan. |
 | "Run could not be read" in Drift & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
 | "inference service ..." errors | The inference service (port 8001) isn't running or `INFERENCE_BASE_URL` is blank. `start-dev` sets it. |
 | Assistant says a tool isn't available | Your role doesn't allow it, or its kill switch is off. |
