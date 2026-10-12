@@ -30,16 +30,14 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "CORS_ALLOW_ORIGINS", value = jsonencode(["https://${aws_cloudfront_distribution.site.domain_name}"]) },
         # Internal ONNX classification service (inference.tf), resolved over Cloud Map private DNS.
         { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
-        # LiteLLM proxy (litellm.tf) - every OpenAI-compatible call goes here, not to api.openai.com.
-        # The real provider key lives only on the proxy; the backend authenticates with the
-        # master key (OPENAI_API_KEY secret below). /v1 suffix required by settings.openai_base_url.
-        { name = "OPENAI_BASE_URL", value = "http://${aws_service_discovery_service.litellm.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.litellm_container_port}/v1" },
+        # No OPENAI_BASE_URL override - OpenAI-compatible calls go straight to api.openai.com
+        # (settings.openai_base_url's default) using the OPENAI_API_KEY secret below.
         # No OLLAMA_BASE_URL override - there's no Ollama instance in this deployment. The Local
         # LLM option in Settings simply won't work in production until one is stood up separately.
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
-        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.litellm.arn}:LITELLM_MASTER_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
       ]
       logConfiguration = {
         logDriver = "awslogs"

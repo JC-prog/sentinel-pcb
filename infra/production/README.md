@@ -1,15 +1,14 @@
 # Production infrastructure (AWS, Terraform)
 
 Provisions: ECS Fargate running the backend behind an ALB, a second Fargate service running the
-ONNX classification service (`inference/`), a third running the LiteLLM proxy (`infra/litellm/`) - both
-reachable only from the backend over Cloud Map private DNS - RDS Postgres, an S3 bucket +
-CloudFront distribution serving the Angular UI, and an ECR repo per built image. Everything lives
+ONNX classification service (`inference/`) reachable only from the backend over Cloud Map private
+DNS, RDS Postgres, an S3 bucket + CloudFront distribution serving the Angular UI, and an ECR repo
+per built image. Everything lives
 in the account's **default VPC** in its public subnets - no NAT Gateway, no custom domain. See
 the PR description / commit messages for the reasoning behind these calls.
 
-The backend never calls `api.openai.com` directly - it calls the LiteLLM proxy
-(`OPENAI_BASE_URL`), which holds the only real provider key (in the `sentinelchat/litellm`
-secret). See `infra/litellm/README.md`.
+The backend calls `api.openai.com` directly with the key in the `sentinelchat/openai` secret
+(injected as `OPENAI_API_KEY`; `OPENAI_BASE_URL` is left at its default). There is no LLM gateway.
 
 **One CloudFront distribution serves both the UI and the API** (`/api/*` routes to the ALB) so
 everything ends up on one HTTPS domain - no mixed content, no CORS in production.
@@ -32,11 +31,15 @@ terraform init
 terraform apply   # needs var.openai_api_key - see below
 ```
 
-`var.openai_api_key` (the real key the LiteLLM proxy uses upstream) has no default. Put it in a
-git-ignored `*.auto.tfvars`, or export `TF_VAR_openai_api_key=sk-...` before `apply`. It is
-written only to the `sentinelchat/litellm` secret, never to an output or a plain env var. The
-proxy's config lives in `infra/litellm/config.prod.yaml` and is passed into the task definition, so
-changing models or routing is just another `terraform apply` - there's no LiteLLM image to build.
+`var.openai_api_key` (the OpenAI key the backend uses) has no default. Put it in a git-ignored
+`*.auto.tfvars`, or export `TF_VAR_openai_api_key=sk-...` before `apply`. It is written only to
+the `sentinelchat/openai` secret, never to an output or a plain env var.
+
+**Upgrading an existing deployment from the LiteLLM proxy:** `apply` removes the LiteLLM Fargate
+service, task definition, log group, security group, Cloud Map entry and the `sentinelchat/litellm`
+secret (Secrets Manager keeps it for its recovery window), and creates `sentinelchat/openai`. The
+backend task definition changes (no `OPENAI_BASE_URL`, a new secret reference), so ECS rolls the
+backend. Check the plan before applying.
 
 Then, to actually ship code:
 
@@ -83,13 +86,10 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   them. Move to S3 before scaling out.
 - **No Ollama in this deployment.** The Local LLM option in Settings won't work in production
   until an Ollama instance is stood up and `OLLAMA_BASE_URL` is pointed at it (see `ecs.tf`).
-  The OpenAI path works through the LiteLLM proxy.
-- **LiteLLM proxy is master-key-only.** No key database, so the backend and the shared team
-  proxy authenticate with the same `LITELLM_MASTER_KEY`. Add `database_url` to
-  `infra/litellm/config.prod.yaml` (point it at RDS) and mint scoped virtual keys via the proxy admin
-  API when there are multiple internal consumers or per-key budgets are needed. No app change.
-- **LiteLLM proxy has no autoscaling and `desired_count = 1`.** Same call as the inference
-  service.
+  The OpenAI path works.
+- **One shared OpenAI key, no per-consumer budgets.** The backend holds the key in its task
+  environment (via Secrets Manager). If spend limits, per-developer keys or a second consumer are
+  needed later, put a gateway back in front rather than distributing the key.
 - **No custom domain / ACM cert.** Everything's on CloudFront's and the ALB's default AWS
   domains. Add Route53 + ACM (cert must be in `us-east-1` for CloudFront) as a follow-up once a
   domain is chosen.

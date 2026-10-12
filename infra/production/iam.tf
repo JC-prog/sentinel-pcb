@@ -32,7 +32,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
       Action = ["secretsmanager:GetSecretValue"]
       Resource = [
         aws_secretsmanager_secret.db_password.arn, # backend: DATABASE_URL
-        aws_secretsmanager_secret.litellm.arn,     # backend: OPENAI_API_KEY; litellm: both keys
+        aws_secretsmanager_secret.openai.arn,      # backend: OPENAI_API_KEY
       ]
     }]
   })
