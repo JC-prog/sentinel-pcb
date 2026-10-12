@@ -6,10 +6,8 @@
         <span class="flex h-2 w-2 animate-pulse rounded-full bg-cyan-500" aria-hidden="true"></span>
       }
     </div>
+    <p role="status" data-testid="log-notice" class="order-last w-full min-h-4 text-xs text-slate-600 dark:text-slate-400">{{ logNotice() }}</p>
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      @if (logNotice()) {
-        <span role="status" data-testid="log-notice" class="text-slate-600 dark:text-slate-400">{{ logNotice() }}</span>
-      }
       <label class="flex items-center gap-1">
         <span class="text-slate-500 dark:text-slate-400">Show:</span>
         <select
@@ -43,15 +41,15 @@
       >
         Download log
       </button>
-      @if (resultJson()) {
-        <button
-          type="button"
-          (click)="downloadResult()"
-          class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-        >
-          Download {{ outputFilename() || 'result.json' }}
-        </button>
-      }
+      <button
+        type="button"
+        data-testid="download-result"
+        [disabled]="!resultJson()"
+        (click)="downloadResult()"
+        class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Download {{ outputFilename() || 'result.json' }}
+      </button>
     </div>
   </div>
   <div class="relative flex min-h-0 flex-1 flex-col">
@@ -82,7 +80,7 @@
         <p class="text-slate-500 dark:text-slate-400">No entries match this filter.</p>
       }
       @for (entry of visibleLog(); track hiddenLogCount() + $index) {
-        <p class="flex gap-2 whitespace-pre-wrap" [attr.data-kind]="entry.kind">
+        <p class="flex gap-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]" [attr.data-kind]="entry.kind">
           <span class="shrink-0 text-slate-600 dark:text-slate-400" data-testid="log-time">{{ logTime(entry.at) }}</span>
           @if (entry.kind === 'plan_step') {
             <span>
@@ -96,7 +94,7 @@
               }
             </span>
           } @else if (entry.kind === 'error') {
-            <span class="font-semibold text-red-700 dark:text-red-300">ERROR: {{ entry.message }}</span>
+            <span class="min-w-0 font-semibold text-red-700 dark:text-red-300">ERROR: {{ entry.message }}</span>
           } @else {
             <span>{{ entry.text }}</span>
           }

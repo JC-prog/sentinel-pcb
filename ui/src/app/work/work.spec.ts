@@ -354,6 +354,17 @@ describe('Work', () => {
     expect(downloadButton).toBeDefined();
   });
 
+  it('keeps Stop and the result download in place, disabled until there is something to act on', () => {
+    const stop = fixture.nativeElement.querySelector('[data-testid="stop-run"]') as HTMLButtonElement;
+    const download = fixture.nativeElement.querySelector('[data-testid="download-result"]') as HTMLButtonElement;
+    expect(stop.disabled).toBe(true);
+    expect(download.disabled).toBe(true);
+
+    fake.result.set(runResult([]));
+    fixture.detectChanges();
+    expect(download.disabled).toBe(false);
+  });
+
   describe('Execution log', () => {
     const pane = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="log-pane"]');
     const rows = (): HTMLElement[] => Array.from(pane().querySelectorAll('p[data-kind]'));

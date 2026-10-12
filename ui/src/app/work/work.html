@@ -114,67 +114,72 @@
       <app-work-alert kind="error" role="alert" data-testid="upload-error">{{ uploadError() }}</app-work-alert>
     }
 
-    <!-- Button bar -->
-    <div class="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        [disabled]="!canRun()"
-        (click)="prepare()"
-        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-      >
-        1. Prepare
-      </button>
-      <button
-        type="button"
-        [disabled]="!canRun()"
-        (click)="prepareAndVerify()"
-        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-      >
-        2. Prepare + Verify
-      </button>
-      <button
-        type="button"
-        [disabled]="!canRun()"
-        (click)="runFull()"
-        class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-      >
-        {{ uploading() ? 'Uploading…' : workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
-      </button>
-      @if (workService.running()) {
+    <!-- Button bar: the run steps on the left, the utilities on the right. Every control is always
+         rendered at a fixed size (Stop is disabled rather than added, the run label has a minimum
+         width), so a state change never moves the buttons around. -->
+    <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          [disabled]="!canRun()"
+          (click)="prepare()"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          1. Prepare
+        </button>
+        <button
+          type="button"
+          [disabled]="!canRun()"
+          (click)="prepareAndVerify()"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          2. Prepare + Verify
+        </button>
+        <button
+          type="button"
+          [disabled]="!canRun()"
+          (click)="runFull()"
+          class="min-w-[13rem] rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+        >
+          {{ uploading() ? 'Uploading…' : workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
+        </button>
         <button
           type="button"
           data-testid="stop-run"
+          [disabled]="!workService.running()"
           (click)="workService.cancel()"
-          class="rounded border border-rose-400 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950"
+          class="rounded border border-rose-400 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500 disabled:opacity-50 disabled:hover:bg-transparent dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950 dark:disabled:border-slate-700 dark:disabled:text-slate-400"
         >
           Stop
         </button>
-      }
-      <button
-        type="button"
-        data-testid="open-settings"
-        (click)="workSettings.open()"
-        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-      >
-        Settings
-      </button>
-      <button
-        type="button"
-        (click)="openConsole()"
-        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-      >
-        Open Review Console
-        @if (pendingCount() > 0) {
-          <span class="ml-1 rounded-full bg-amber-200 px-1.5 text-xs text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">{{ pendingCount() }}</span>
-        }
-      </button>
-      <button
-        type="button"
-        (click)="clearLog()"
-        class="ml-auto rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-      >
-        Clear Log
-      </button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-testid="open-settings"
+          (click)="workSettings.open()"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Settings
+        </button>
+        <button
+          type="button"
+          (click)="openConsole()"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Open Review Console
+          @if (pendingCount() > 0) {
+            <span class="ml-1 rounded-full bg-amber-200 px-1.5 text-xs text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">{{ pendingCount() }}</span>
+          }
+        </button>
+        <button
+          type="button"
+          (click)="clearLog()"
+          class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          Clear Log
+        </button>
+      </div>
     </div>
 
     <!-- Workflow Summary -->
