@@ -126,6 +126,10 @@ export class WorkService {
       return;
     }
     this._running.set(true);
+    // Every run starts from a clean slate: the previous run's lines and counters would otherwise
+    // sit in front of the new ones and read as one long run.
+    this._log.set([]);
+    this._status.set(INITIAL_STATUS);
     this._result.set(null);
 
     this.runSubscription = this.client

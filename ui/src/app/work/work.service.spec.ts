@@ -164,4 +164,23 @@ describe('WorkService', () => {
     service.cancel();
     expect(service.log()).toEqual([]);
   });
+
+  it('starts each run with an empty log and fresh counters', () => {
+    const first$ = new Subject<WorkResponderEvent>();
+    const client = fakeClient(first$);
+    const service = new WorkService(client);
+    service.run('prepare', 'dataset-1', 'xml-1', null, OPTIONS);
+    first$.next({ type: 'log', text: 'old line' });
+    first$.next({ type: 'status', status: { ...service.status(), status: 'READY', input_samples: 9 } });
+    first$.complete();
+
+    const second$ = new Subject<WorkResponderEvent>();
+    client.run = () => second$.asObservable();
+    service.run('prepare_verify', 'dataset-1', 'xml-1', null, OPTIONS);
+
+    expect(service.log()).toEqual([]);
+    expect(service.status().input_samples).toBe(0);
+    second$.next({ type: 'log', text: 'new line' });
+    expect(service.log().map((e) => (e.kind === 'log' ? e.text : ''))).toEqual(['new line']);
+  });
 });
