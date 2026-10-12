@@ -39,6 +39,9 @@ resource "aws_db_instance" "main" {
 # referenced by ARN in its "secrets" block, resolved by ECS itself at container start.
 resource "aws_secretsmanager_secret" "db_password" {
   name = "${var.project_name}/database-url"
+  # Delete immediately on destroy (default is a 30-day recovery window, during which the same name
+  # cannot be recreated) - this stack is meant to be torn down and brought back.
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_password" {

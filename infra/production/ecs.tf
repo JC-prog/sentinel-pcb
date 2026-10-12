@@ -35,6 +35,8 @@ resource "aws_ecs_task_definition" "backend" {
         # The UI and API are both served over HTTPS from the CloudFront domain (static_site.tf), so
         # the auth cookies must carry the Secure flag (settings.cookie_secure defaults to False).
         { name = "COOKIE_SECURE", value = "True" },
+        # Qdrant (qdrant.tf), resolved over Cloud Map private DNS like the inference service.
+        { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
@@ -72,7 +74,7 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener.http, aws_ecs_service.qdrant]
 }
 
 resource "aws_lb" "main" {

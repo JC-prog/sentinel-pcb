@@ -86,6 +86,13 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
 
 ## Known gaps (deliberate, not oversights)
 
+- **Nothing is persistent, on purpose.** This stack is meant to be brought up for a short time and
+  torn down. Uploads, review images and logs live on the backend task's disk, and Qdrant (`qdrant.tf`,
+  a third Fargate service on Cloud Map DNS) keeps Work-tab runs, Agent 2 reviews and chat memory on
+  its own ephemeral disk, so a task restart loses them. Postgres (RDS) is the only durable store, and
+  it goes with `terraform destroy` (no final snapshot). To keep data across restarts, give Qdrant and
+  the backend an EFS volume first - Qdrant does not officially support network filesystems, so for
+  real use prefer block storage or Qdrant Cloud.
 - **Chat image uploads are on local container disk** (`app/chat/uploads/service.py`), not S3. Fine at
   `desired_count = 1`; breaks if scaled to more than one task, since disk isn't shared between
   them. Move to S3 before scaling out.
@@ -102,3 +109,11 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   or a queue in front, once classification traffic justifies it.
 - **RDS is provisioned but unused.** No schema, no migrations, no app code touches it yet -
   that's the future multi-user/auth feature's job.
+
+## Tearing down
+
+`terraform destroy` removes everything, with these set so it does not get stuck: ECR repositories
+use `force_delete`, the UI bucket `force_destroy`, and the three secrets (`database-url`, `openai`,
+`jwt`) have no recovery window, so the same names can be created again immediately. Expect the
+CloudFront distribution to take 10-15 minutes to disable and delete. The remote state bucket from
+`bootstrap/` is separate and is not destroyed with this stack.

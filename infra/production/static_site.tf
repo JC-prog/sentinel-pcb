@@ -4,7 +4,8 @@
 # CloudFront's one HTTPS domain).
 
 resource "aws_s3_bucket" "ui" {
-  bucket = "${var.project_name}-ui-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.project_name}-ui-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true # the UI build is re-uploadable; a short-lived stack must tear down with objects in it
 }
 
 resource "aws_s3_bucket_public_access_block" "ui" {

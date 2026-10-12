@@ -13,6 +13,8 @@ resource "random_password" "jwt" {
 
 resource "aws_secretsmanager_secret" "jwt" {
   name = "${var.project_name}/jwt"
+  # No recovery window: a destroyed stack can be recreated straight away (see rds.tf).
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "jwt" {

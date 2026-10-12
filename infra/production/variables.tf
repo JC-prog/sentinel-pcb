@@ -91,3 +91,26 @@ variable "db_username" {
   type    = string
   default = "sentinelchat"
 }
+
+variable "qdrant_image_tag" {
+  description = "Tag of the public qdrant/qdrant image to run. Pinned, not latest - a floating tag could change the on-disk format under an existing EFS volume. Match the version you develop against."
+  type        = string
+  default     = "v1.19.1"
+}
+
+variable "qdrant_container_port" {
+  type    = number
+  default = 6333
+}
+
+variable "qdrant_task_cpu" {
+  description = "Fargate task vCPU units for Qdrant (512 = 0.5 vCPU)."
+  type        = number
+  default     = 512
+}
+
+variable "qdrant_task_memory" {
+  description = "Fargate task memory for Qdrant, in MiB. 512 vCPU units allows 1024-4096."
+  type        = number
+  default     = 1024
+}
