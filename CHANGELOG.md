@@ -10,7 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Chat: the Settings window lets you pick the model for the assistant's replies from the models the
-  server allows (`CHAT_MODELS`, default `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1`; the
+  server allows (`CHAT_MODELS`, default `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1`, `gpt-5-mini`, `gpt-5`; the
   `OPENAI_MODEL` default is always offered first). The choice is remembered in the browser and only
   changes the reply: memory extraction, the guardrails check and the agents keep their own models.
   `GET /api/chat/models` lists the options; an unknown model falls back to the default.

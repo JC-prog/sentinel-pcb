@@ -44,7 +44,14 @@ class Settings(BaseSettings):
     # The models a user may pick for the chat reply in Settings (CHAT_MODELS, a JSON array). Only
     # the supervisor's answer follows the choice; memory extraction, guardrails and the agents keep
     # their own models. openai_model is always offered, first, as the default.
-    chat_models: list[str] = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"]
+    chat_models: list[str] = [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-4.1-mini",
+        "gpt-4.1",
+        "gpt-5-mini",
+        "gpt-5",
+    ]
 
     # Base URL for every OpenAI-compatible call - chat (app.chat.services.providers.openai), memory
     # embeddings (app/chat/memory/embeddings.py) and the Explainability & Review Agent's SDK client
