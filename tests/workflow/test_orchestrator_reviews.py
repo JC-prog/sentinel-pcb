@@ -425,3 +425,40 @@ def test_a_region_correction_must_be_one_of_the_known_regions(authenticated_clie
         },
     )
     assert response.status_code == 422
+
+
+def test_review_cases_separate_the_folder_label_from_the_models_prediction() -> None:
+    sample = {**_sample("S1"), "machine_defect": "Shift_4"}
+    agent2_input = reviews.build_agent2_input(sample, _result("S1", prediction="MissingPart"))
+    stage_one_only = reviews.build_agent2_input(
+        {**_sample("S2"), "machine_defect": "WrongPart_13"},
+        {"sample_id": "S2", "details": {"feature_classification": {"prediction": "Text", "confidence": 0.3}}},
+    )
+
+    assert agent2_input["machine_defect"] == "Shift_4"
+    assert agent2_input["ai_prediction"] == "MissingPart"
+    assert stage_one_only["machine_defect"] == "WrongPart_13"
+    assert stage_one_only["ai_prediction"] is None
+
+
+def test_a_review_says_where_its_visual_evidence_and_measurements_came_from() -> None:
+    case = {
+        "preliminary_defect": "WrongPart",
+        "aoi_measurements": {"BodyInspection": {"status": "Failed", "Coplanarity": 0.2}},
+    }
+    canned = {"visual_evidence": "Visual inspection of Body crop for C1 confirms anomaly flagged by AOI."}
+    real = {
+        "visual_evidence": "The body is absent and the pads are bare.",
+        "visual_evidence_source": "vision_model",
+        "telemetry_data": {"telemetry_source": "measured"},
+        "retrieved_precedents": [{"ipc_clause": "IPC-A-610 8.3.1", "standard": "Missing", "rule": "Absent."}],
+    }
+
+    older = reviews._build_review("run-a", "S1", case, {**canned, "predicted_defect": "missing part"})
+    newer = reviews._build_review("run-a", "S1", case, {**real, "predicted_defect": "tombstone"})
+
+    assert older.visual_evidence_source == "fallback"
+    assert older.telemetry_available is False  # no height or ICT key on the AOI record
+    assert newer.visual_evidence_source == "vision_model"
+    assert newer.telemetry_available is True
+    assert [p.ipc_clause for p in newer.precedents] == ["IPC-A-610 8.3.1"]

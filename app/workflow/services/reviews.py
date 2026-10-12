@@ -23,6 +23,7 @@ import asyncio
 import importlib
 import logging
 import os
+import re
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -38,6 +39,7 @@ from app.shared.db.models import WorkflowReviewDecision
 from app.shared.modelops.run_drift import normalize_defect
 from app.workflow.services import run_store
 from app.workflow.services.schemas import (
+    WorkflowPrecedentOut,
     WorkflowReviewCaseOut,
     WorkflowReviewDecisionOut,
     WorkflowReviewDecisionRequest,
@@ -108,6 +110,8 @@ def build_agent2_input(sample: dict[str, Any], result: dict[str, Any]) -> dict[s
         "region_label": _feature_label(result),
         "region_confidence": _feature_confidence(result),
         "defect_model_ran": isinstance(defect, dict),
+        "machine_defect": sample.get("machine_defect"),
+        "ai_prediction": _agent1_label(result),
     }
 
 
@@ -176,6 +180,46 @@ def _execute_pipeline() -> Callable[[dict[str, Any]], dict[str, Any]]:
     return execute
 
 
+_CANNED_EVIDENCE = re.compile(r"^Visual inspection of .* confirms anomaly flagged by AOI\.$")
+_PHYSICAL_KEYS = (
+    "laser_profile_height_um",
+    "height_um",
+    "laser_height_um",
+    "Height",
+    "ict_status",
+)
+
+
+def _evidence_source(output: dict[str, Any]) -> str:
+    """Where the review's visual evidence came from. Reviews stored before the pipeline recorded it
+    are told apart by their text: the fixed sentence is the fallback."""
+
+    source = output.get("visual_evidence_source")
+    if source in {"vision_model", "fallback", "skipped"}:
+        return str(source)
+    text = str(output.get("visual_evidence") or "")
+    if "Visual inspection skipped" in text:
+        return "skipped"
+    return "fallback" if _CANNED_EVIDENCE.match(text.strip()) else "vision_model"
+
+
+def _telemetry_recorded(case: dict[str, Any], output: dict[str, Any]) -> bool:
+    telemetry = output.get("telemetry_data")
+    flag = telemetry.get("telemetry_source") if isinstance(telemetry, dict) else None
+    if flag in {"measured", "not_recorded"}:
+        return bool(flag == "measured")
+    # An older review: look at what the AOI record actually carried.
+    flat: dict[str, Any] = {}
+    measurements = case.get("aoi_measurements")
+    if isinstance(measurements, dict):
+        for key, value in measurements.items():
+            if isinstance(value, dict):
+                flat.update(value)
+            else:
+                flat[key] = value
+    return any(flat.get(key) is not None for key in _PHYSICAL_KEYS)
+
+
 def _build_review(
     run_id: str, sample_id: str, case: dict[str, Any], output: dict[str, Any]
 ) -> WorkflowReviewOut:
@@ -194,6 +238,17 @@ def _build_review(
         contradiction_detected=bool(output.get("contradiction_detected", False)),
         ipc_citations=[str(c) for c in output.get("ipc_citations") or []],
         visual_evidence=str(output.get("visual_evidence") or ""),
+        visual_evidence_source=_evidence_source(output),
+        telemetry_available=_telemetry_recorded(case, output),
+        precedents=[
+            WorkflowPrecedentOut(
+                ipc_clause=str(p.get("ipc_clause") or ""),
+                standard=str(p.get("standard") or ""),
+                rule=str(p.get("rule") or ""),
+            )
+            for p in output.get("retrieved_precedents") or []
+            if isinstance(p, dict)
+        ],
         errors=[str(e) for e in output.get("errors") or []],
     )
 
@@ -280,6 +335,12 @@ async def list_cases(session: AsyncSession, *, run_id: str) -> list[WorkflowRevi
                 region_label=case.get("region_label"),
                 region_confidence=case.get("region_confidence"),
                 defect_model_ran=bool(case.get("defect_model_ran", True)),
+                machine_verdict=(
+                    normalize_defect(case["machine_defect"]) if case.get("machine_defect") else None
+                ),
+                ai_verdict=(
+                    normalize_defect(case["ai_prediction"]) if case.get("ai_prediction") else None
+                ),
                 agent1_verdict=normalize_defect(case.get("preliminary_defect")),
                 agent1_confidence=float(case.get("confidence") or 0.0),
                 has_golden_image=image_path(run_id, sample_id, "golden") is not None,

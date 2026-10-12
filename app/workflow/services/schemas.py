@@ -209,6 +209,14 @@ class WorkflowReviewRunRequest(BaseModel):
     sample_id: str = Field(min_length=1)
 
 
+class WorkflowPrecedentOut(BaseModel):
+    """An IPC clause Agent 2 weighed for a sample."""
+
+    ipc_clause: str
+    standard: str
+    rule: str
+
+
 class WorkflowReviewOut(BaseModel):
     """One Agent 2 review of a REVIEW_REQUIRED sample, next to Agent 1's verdict. `conflict` is
     True when the two normalized verdicts differ (or Agent 2's own self-check failed) - the case the
@@ -225,6 +233,12 @@ class WorkflowReviewOut(BaseModel):
     contradiction_detected: bool
     ipc_citations: list[str]
     visual_evidence: str
+    # Where the visual evidence came from: "vision_model", "fallback" (a fixed sentence, the model was
+    # unavailable) or "skipped" (the crop could not be found).
+    visual_evidence_source: str = "fallback"
+    # Whether the AOI record carried a physical reading (laser height / ICT) the review could use.
+    telemetry_available: bool = False
+    precedents: list[WorkflowPrecedentOut] = Field(default_factory=list)
     errors: list[str]
 
 
@@ -269,6 +283,10 @@ class WorkflowReviewCaseOut(BaseModel):
     # False when the region model was too unsure and no defect model ran (agent1_verdict is then
     # the AOI machine's own call and agent1_confidence has no defect model behind it).
     defect_model_ran: bool = True
+    # Machine = the label from the uploaded folder; AI = Agent 1's defect model prediction (None when
+    # no defect model ran). `agent1_verdict` is the baseline Agent 2 audits: AI, else Machine.
+    machine_verdict: str | None = None
+    ai_verdict: str | None = None
     agent1_verdict: str
     agent1_confidence: float
     has_golden_image: bool
