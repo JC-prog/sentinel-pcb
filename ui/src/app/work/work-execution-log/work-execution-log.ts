@@ -51,21 +51,26 @@ export class WorkExecutionLog implements OnDestroy {
 
   protected readonly hasRun: Signal<boolean> = computed(() => this.workService.log().length > 0);
 
-  private readonly filteredLog = computed(() => {
+  // One computed builds the drawn slice and the hidden count together. The service appends to its
+  // array in place, so the filtered list can be the very same array as before; deriving the slice
+  // in a separate step would be skipped as "unchanged" and new lines would never be drawn.
+  private readonly view = computed(() => {
     const filter = this.logFilter();
     const entries = this.workService.log();
-    if (filter === 'all') {
-      return entries;
-    }
     // Errors are always worth seeing, so the plan-step view keeps them.
-    return entries.filter((entry) =>
-      filter === 'errors' ? entry.kind === 'error' : entry.kind !== 'log',
-    );
+    const filtered =
+      filter === 'all'
+        ? entries
+        : entries.filter((entry) =>
+            filter === 'errors' ? entry.kind === 'error' : entry.kind !== 'log',
+          );
+    return {
+      visible: filtered.slice(-LOG_RENDER_LIMIT),
+      hidden: Math.max(filtered.length - LOG_RENDER_LIMIT, 0),
+    };
   });
-  protected readonly visibleLog = computed(() => this.filteredLog().slice(-LOG_RENDER_LIMIT));
-  protected readonly hiddenLogCount: Signal<number> = computed(
-    () => this.filteredLog().length - this.visibleLog().length,
-  );
+  protected readonly visibleLog = computed(() => this.view().visible);
+  protected readonly hiddenLogCount: Signal<number> = computed(() => this.view().hidden);
   /** Lines that arrived while the operator was reading further up. */
   protected readonly unseenLogCount: Signal<number> = computed(() => {
     const pausedAt = this.logPausedAt();
