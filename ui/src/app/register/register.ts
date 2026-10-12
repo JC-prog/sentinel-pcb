@@ -14,7 +14,6 @@ export class Register {
   protected readonly email = signal('');
   protected readonly password = signal('');
   protected readonly employeeId = signal('');
-  protected readonly departmentShift = signal('');
   protected readonly role = signal<UserRole>('qa');
   protected readonly error = signal<string | null>(null);
   protected readonly submitting = signal(false);
@@ -36,7 +35,6 @@ export class Register {
         email: this.email(),
         password: this.password(),
         employeeId: this.employeeId(),
-        departmentShift: this.departmentShift(),
         role: this.role(),
       });
       await this.router.navigateByUrl('/');

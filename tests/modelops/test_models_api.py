@@ -59,7 +59,6 @@ async def _qa(session: AsyncSession) -> User:
         email="second-qa@example.com",
         password_hash="x",
         employee_id="EMP-003",
-        department_shift="QA Day Shift",
         role=UserRole.QA,
     )
     session.add(user)

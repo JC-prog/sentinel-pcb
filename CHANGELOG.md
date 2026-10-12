@@ -229,6 +229,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Registration no longer asks for a department or shift (`users.department_shift` is dropped, and the
+  API no longer takes or returns it). On an existing database:
+  `ALTER TABLE users DROP COLUMN department_shift;` (Alembic `b3d8f2a6c914` does the same). Until
+  then a database that still has the old NOT NULL column rejects new users.
 - LiteLLM proxy. The app now calls OpenAI directly with `OPENAI_API_KEY` (a real `sk-` key);
   `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and only needs setting for another
   OpenAI-compatible endpoint. Removed `infra/litellm/`, the `litellm` compose service and its

@@ -132,7 +132,6 @@ _REGISTER_PAYLOAD = {
     "email": "qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-001",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 
@@ -152,7 +151,6 @@ _OTHER_REGISTER_PAYLOAD = {
     "email": "other-qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-002",
-    "department_shift": "QA Night Shift",
     "role": "qa",
 }
 
@@ -181,7 +179,6 @@ _QA_REGISTER_PAYLOAD = {
     "email": "second-qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-003",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 

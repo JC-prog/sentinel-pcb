@@ -76,19 +76,6 @@
       name="employeeId"
     />
 
-    <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="department-shift">
-      Department / shift
-    </label>
-    <input
-      id="department-shift"
-      required
-      placeholder="e.g. QA Day Shift"
-      class="mb-4 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-700"
-      [ngModel]="departmentShift()"
-      (ngModelChange)="departmentShift.set($event)"
-      name="departmentShift"
-    />
-
     <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300" for="role">Role</label>
     <select
       id="role"

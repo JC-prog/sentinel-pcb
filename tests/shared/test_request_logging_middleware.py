@@ -48,7 +48,6 @@ _REGISTER_PAYLOAD = {
     "email": "body-test@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-BODY",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 

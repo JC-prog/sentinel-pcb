@@ -26,7 +26,6 @@ const ADMIN: AuthUser = {
   username: 'ada-admin',
   email: 'ada@example.com',
   employeeId: 'EMP-1',
-  departmentShift: 'Day',
   role: 'admin',
 };
 const QA: AuthUser = { ...ADMIN, id: 'u-qa', username: 'jane-qa', role: 'qa' };

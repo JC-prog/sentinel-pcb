@@ -16,7 +16,6 @@ const USER_BODY = {
   username: 'jane-qa',
   email: 'jane@example.com',
   employee_id: 'EMP-042',
-  department_shift: 'QA Day Shift',
   role: 'qa',
 };
 
@@ -76,7 +75,6 @@ describe('AuthService', () => {
         email: 'jane@example.com',
         password: 'correct-horse-battery-staple',
         employeeId: 'EMP-042',
-        departmentShift: 'QA Day Shift',
         role: 'qa',
       }),
     ).rejects.toThrow('username already registered');
@@ -106,7 +104,6 @@ describe('AuthService', () => {
         email: 'not-an-email',
         password: 'correct-horse-battery-staple',
         employeeId: 'EMP-042',
-        departmentShift: 'QA Day Shift',
         role: 'qa',
       }),
     ).rejects.toThrow('value is not a valid email address');

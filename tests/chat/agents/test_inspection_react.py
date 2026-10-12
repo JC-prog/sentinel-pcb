@@ -330,7 +330,6 @@ async def _user_and_conversation(session: AsyncSession) -> tuple[User, Conversat
         email="react-qa@example.com",
         password_hash="x",
         employee_id="EMP-REACT",
-        department_shift="Day",
         role=UserRole.QA,
     )
     session.add(user)

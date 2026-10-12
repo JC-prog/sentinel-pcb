@@ -17,7 +17,6 @@ const USER: AuthUser = {
   username: 'jane-qa',
   email: 'jane@example.com',
   employeeId: 'EMP-042',
-  departmentShift: 'QA Day Shift',
   role: 'qa',
 };
 

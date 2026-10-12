@@ -21,7 +21,6 @@ async def _setup(session: AsyncSession) -> tuple[User, Conversation]:
         email="drift@example.com",
         password_hash="x",
         employee_id="EMP-D1",
-        department_shift="Day",
         role=UserRole.QA,
     )
     session.add(user)
