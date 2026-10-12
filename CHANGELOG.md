@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Infra: an optional monthly AWS cost budget (`infra/production/budget.tf`). Set `budget_alert_email`
+  (and `monthly_budget_usd`, default 50) to get emails at 50% and 80% of actual spend and when the
+  forecast passes 100%; unset, nothing is created.
 - Chat: the Settings window lets you pick the model for the assistant's replies from the models the
   server allows (`CHAT_MODELS`, default `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1`, `gpt-5-mini`, `gpt-5`, `gpt-6-luna`, `gpt-6-sol`; the
   `OPENAI_MODEL` default is always offered first). The choice is remembered in the browser and only

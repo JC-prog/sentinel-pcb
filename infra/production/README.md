@@ -38,6 +38,13 @@ terraform apply   # needs var.openai_api_key - see below
 `*.auto.tfvars`, or export `TF_VAR_openai_api_key=sk-...` before `apply`. It is written only to
 the `sentinelchat/openai` secret, never to an output or a plain env var.
 
+**Cost alerts.** Set `budget_alert_email` (a git-ignored `*.auto.tfvars`, or `TF_VAR_budget_alert_email`)
+to create a monthly AWS budget (`budget.tf`) that emails at 50% and 80% of `monthly_budget_usd`
+(default 50) and when the month's forecast passes 100%. It is account-wide, off while the email is
+empty, and a nudge only: billing data lags by up to a day and nothing is stopped. AWS emails a
+subscription confirmation the first time; the alerts work without it. The stack runs about $5 a day
+if left up, so the limit trips in roughly ten days.
+
 **Upgrading an existing deployment from the LiteLLM proxy:** `apply` removes the LiteLLM Fargate
 service, task definition, log group, security group, Cloud Map entry and the `sentinelchat/litellm`
 secret (Secrets Manager keeps it for its recovery window), and creates `sentinelchat/openai`. The

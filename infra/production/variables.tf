@@ -114,3 +114,15 @@ variable "qdrant_task_memory" {
   type        = number
   default     = 1024
 }
+
+variable "budget_alert_email" {
+  description = "Email address for the monthly cost budget alerts (budget.tf). Empty (the default) creates no budget."
+  type        = string
+  default     = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS spend, in USD, the budget alerts are measured against. The stack costs about $5/day if left running, so 50 trips in roughly ten days."
+  type        = number
+  default     = 50
+}
