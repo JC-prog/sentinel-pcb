@@ -59,7 +59,6 @@ export class Work implements OnDestroy {
   protected readonly datasetFile = signal<File | null>(null);
   protected readonly xmlFile = signal<File | null>(null);
   protected readonly imageRootFiles = signal<File[]>([]);
-  protected readonly outputFilename = signal('result.json');
 
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
@@ -161,6 +160,18 @@ export class Work implements OnDestroy {
   protected readonly canRun: Signal<boolean> = computed(
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
+
+  protected readonly summaryTiles: Signal<{ label: string; value: number }[]> = computed(() => {
+    const status = this.workService.status();
+    return [
+      { label: 'Input', value: status.input_samples },
+      { label: 'Prep ready', value: status.preparation_ready },
+      { label: 'Verified', value: status.verification_passed },
+      { label: 'Inference', value: status.inference_attempted },
+      { label: 'Accepted', value: status.accepted },
+      { label: 'Review', value: status.review_required },
+    ];
+  });
 
   protected readonly hasNextPending: Signal<boolean> = computed(() => {
     const selected = this.selectedCaseId();

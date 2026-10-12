@@ -2,111 +2,92 @@
   class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
 >
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 pt-16 pb-10">
-    <div>
-      <h1 class="text-lg font-bold">
-        Agentic ADC – LLM Planning + Deterministic Policy + Two-Stage Inference
-      </h1>
-      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        ADC Inputs → Workflow State → LLM Planner → Observation / Constraint / Decision / Reason →
-        Policy Engine → Tool Execution → State Update → Re-plan
+    <header>
+      <h1 class="text-xl font-semibold">Defect classification workflow</h1>
+      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+        Load a dataset and its inspection XML, then run the agentic workflow. Samples flagged for
+        review can be confirmed in the Review Console.
       </p>
-    </div>
+    </header>
 
-    <!-- Input Selection -->
-    <section class="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
-      <h2 class="mb-3 text-sm font-semibold">Input Selection</h2>
-
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
-        <label for="dataset-name" class="w-36 shrink-0 text-sm">Dataset CSV</label>
+    <!-- Inputs -->
+    <section aria-labelledby="inputs-title" class="rounded-lg border border-slate-300 px-4 py-3 dark:border-slate-700">
+      <h2 id="inputs-title" class="text-sm font-semibold">Inputs</h2>
+      <div class="divide-y divide-slate-200 dark:divide-slate-800">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+        <div class="w-40 shrink-0">
+          <label for="dataset-name" class="text-sm font-medium">Dataset CSV <span class="text-red-600 dark:text-red-400" aria-hidden="true">*</span></label>
+          <p class="text-xs text-slate-500 dark:text-slate-400">The samples to classify</p>
+        </div>
         <input
           type="text"
           readonly
           id="dataset-name"
           [value]="datasetFile()?.name ?? ''"
           placeholder="No file selected"
-          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-300"
+          class="min-w-0 flex-1 truncate rounded border border-slate-300 bg-transparent px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-200"
         />
         <input #datasetInput type="file" accept=".csv" hidden (change)="onDatasetFileChange($event)" />
         <button
           type="button"
           (click)="datasetInput.click()"
-          aria-label="Browse for dataset CSV"
+          aria-label="Choose the dataset CSV"
           class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
         >
-          Browse…
+          Choose…
         </button>
       </div>
-
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
-        <label for="xml-name" class="w-36 shrink-0 text-sm">Inspection XML</label>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+        <div class="w-40 shrink-0">
+          <label for="xml-name" class="text-sm font-medium">Inspection XML <span class="text-red-600 dark:text-red-400" aria-hidden="true">*</span></label>
+          <p class="text-xs text-slate-500 dark:text-slate-400">AOI inspection results</p>
+        </div>
         <input
           type="text"
           readonly
           id="xml-name"
           [value]="xmlFile()?.name ?? ''"
           placeholder="No file selected"
-          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-300"
+          class="min-w-0 flex-1 truncate rounded border border-slate-300 bg-transparent px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-200"
         />
         <input #xmlInput type="file" accept=".xml" hidden (change)="onXmlFileChange($event)" />
         <button
           type="button"
           (click)="xmlInput.click()"
-          aria-label="Browse for inspection XML"
+          aria-label="Choose the inspection XML"
           class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
         >
-          Browse…
+          Choose…
         </button>
       </div>
-
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
-        <label for="image-root-name" class="w-36 shrink-0 text-sm">Image Folder (Optional)</label>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+        <div class="w-40 shrink-0">
+          <label for="image-root-name" class="text-sm font-medium">Image folder <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Where the board images live</p>
+        </div>
         <input
           type="text"
           readonly
           id="image-root-name"
           [value]="imageRootSummary()"
           placeholder="No folder selected"
-          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-300"
+          class="min-w-0 flex-1 truncate rounded border border-slate-300 bg-transparent px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-500 dark:border-slate-700 dark:text-slate-200"
         />
-        <input
-          #imageRootInput
-          type="file"
-          webkitdirectory
-          multiple
-          hidden
-          (change)="onImageRootFilesChange($event)"
-        />
+        <input #imageRootInput type="file" webkitdirectory multiple hidden (change)="onImageRootFilesChange($event)" />
         <button
           type="button"
           (click)="imageRootInput.click()"
-          aria-label="Browse for image folder"
+          aria-label="Choose the image folder"
           class="shrink-0 rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
         >
-          Browse…
+          Choose…
         </button>
       </div>
-
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
-        <label for="output-name" class="w-36 shrink-0 text-sm">Output JSON</label>
-        <input
-          type="text"
-          id="output-name"
-          [ngModel]="outputFilename()"
-          (ngModelChange)="outputFilename.set($event)"
-          name="outputFilename"
-          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
-        />
       </div>
-
-      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Image Folder remaps paths below the original "usi" root, e.g. ...\usi\35-... → the folder
-        you pick here. Output JSON is only a filename - there's no local save path to choose from
-        a browser, so this names the file "Download result.json" saves below.
-      </p>
     </section>
 
     <!-- Active settings (edited in the Work settings panel) -->
-    <p class="text-xs text-slate-500 dark:text-slate-400" data-testid="settings-summary">
+    <p class="-mt-2 text-xs text-slate-600 dark:text-slate-400" data-testid="settings-summary">
       {{ settingsSummary() }}
     </p>
 
@@ -182,20 +163,23 @@
       </div>
     </div>
 
-    <!-- Workflow Summary -->
-    <section class="rounded-lg border border-slate-300 p-3 dark:border-slate-700" aria-label="Workflow summary">
-      <div role="status" class="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-        <span><span class="text-slate-500 dark:text-slate-400">Status:</span> <span class="font-bold">{{ workService.status().status }}</span></span>
-        <span><span class="text-slate-500 dark:text-slate-400">Input:</span> {{ workService.status().input_samples }}</span>
-        <span><span class="text-slate-500 dark:text-slate-400">Prep Ready:</span> {{ workService.status().preparation_ready }}</span>
-        <span><span class="text-slate-500 dark:text-slate-400">Verified:</span> {{ workService.status().verification_passed }}</span>
-        <span><span class="text-slate-500 dark:text-slate-400">Inference:</span> {{ workService.status().inference_attempted }}</span>
-        <span><span class="text-slate-500 dark:text-slate-400">Accepted:</span> {{ workService.status().accepted }}</span>
-        <span><span class="text-slate-500 dark:text-slate-400">Review:</span> {{ workService.status().review_required }}</span>
+    <!-- Workflow summary -->
+    <section aria-label="Workflow summary">
+      <div role="status" class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 lg:grid-cols-8">
+        <div class="col-span-2 rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 sm:col-span-4 lg:col-span-2">
+          <p class="text-xs text-slate-600 dark:text-slate-400">Status</p>
+          <p class="truncate font-semibold" data-testid="summary-status">{{ workService.status().status }}</p>
+        </div>
+        @for (tile of summaryTiles(); track tile.label) {
+          <div class="rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700">
+            <p class="text-xs text-slate-600 dark:text-slate-400">{{ tile.label }}</p>
+            <p class="text-lg font-semibold tabular-nums">{{ tile.value }}</p>
+          </div>
+        }
       </div>
     </section>
 
-    <app-work-execution-log [runId]="runId()" [outputFilename]="outputFilename()" />
+    <app-work-execution-log [runId]="runId()" />
 
     <!-- Review Console popup: Agent 1 vs Agent 2 for every REVIEW_REQUIRED sample -->
     @if (consoleOpen()) {

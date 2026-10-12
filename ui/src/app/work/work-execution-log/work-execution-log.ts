@@ -37,7 +37,6 @@ const LOG_BOTTOM_SLACK_PX = 24;
 })
 export class WorkExecutionLog implements OnDestroy {
   readonly runId = input<string | null>(null);
-  readonly outputFilename = input('result.json');
 
   protected readonly logFilter = signal<'all' | 'steps' | 'errors'>('all');
   protected readonly logFollowing = signal(true);
@@ -170,7 +169,7 @@ export class WorkExecutionLog implements OnDestroy {
     }
     this.saveFile(
       new Blob([json], { type: 'application/json' }),
-      this.outputFilename().trim() || 'result.json',
+      `result-${this.runId() ?? 'run'}.json`,
     );
   }
 

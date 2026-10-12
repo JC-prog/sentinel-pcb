@@ -343,26 +343,16 @@ describe('Work', () => {
     expect(text).toContain('State → Planner → Policy → Tool → State Update → Re-plan');
   });
 
-  it('defaults the output filename to result.json and uses it for the download label/name', () => {
-    fake.result.set(runResult([]));
-    fixture.detectChanges();
-
-    const downloadButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Download result.json'),
-    ) as HTMLButtonElement;
-
-    expect(downloadButton).toBeDefined();
-  });
-
-  it('keeps Stop and the result download in place, disabled until there is something to act on', () => {
-    const stop = fixture.nativeElement.querySelector('[data-testid="stop-run"]') as HTMLButtonElement;
-    const download = fixture.nativeElement.querySelector('[data-testid="download-result"]') as HTMLButtonElement;
-    expect(stop.disabled).toBe(true);
-    expect(download.disabled).toBe(true);
+  it('offers the run result for download once there is one', () => {
+    const download = () =>
+      fixture.nativeElement.querySelector('[data-testid="download-result"]') as HTMLButtonElement;
+    expect(download().disabled).toBe(true);
 
     fake.result.set(runResult([]));
     fixture.detectChanges();
-    expect(download.disabled).toBe(false);
+
+    expect(download().disabled).toBe(false);
+    expect(download().textContent).toContain('Download result');
   });
 
   describe('Execution log', () => {
