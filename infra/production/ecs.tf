@@ -61,6 +61,9 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+  # The backend imports a lot at start-up (LangChain, LangGraph, NeMo Guardrails) and creates its
+  # database tables; don't let the load balancer's health check kill it as "unhealthy" before then.
+  health_check_grace_period_seconds = 180
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids
