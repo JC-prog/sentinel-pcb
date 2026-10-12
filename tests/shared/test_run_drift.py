@@ -125,6 +125,7 @@ def test_the_final_decision_is_the_label_and_drift_is_what_the_model_did_not_get
         "model_version": "JcProg/body@v2",
         "model_source": "classified",
         "region_guess": {"label": "Body", "confidence": 0.95},
+        "region_result": None,
         "agent1_label": "MissingPart",
         "machine_label": "WrongPart_13",
         "agent2_label": None,
@@ -336,3 +337,28 @@ def test_the_helpers_read_both_inference_shapes() -> None:
     assert run_drift.sample_confidence(completed) == 0.9
     assert run_drift.sample_model_name(stage_one) is None
     assert run_drift.sample_confidence(stage_one) is None
+
+
+def test_the_operators_region_choice_routes_a_correction_to_the_defect_model_that_region_belongs_to() -> None:
+    point = _point("S1", label="MissingPart", model="pcb_body_defect")  # the model said Body
+    review = _decision("S1", "wrong part")
+    review["human_decision"]["region_result"] = "Lead"
+
+    correction = run_drift.correction_of(point, review)
+
+    assert correction is not None
+    assert correction["region_result"] == "Lead"
+    assert (correction["model_name"], correction["model_source"]) == ("pcb_lead_defect", "operator_region")
+    # no model version: the lead model never ran on this sample
+    assert correction["model_version"] is None
+
+
+def test_a_region_choice_that_matches_what_ran_keeps_the_classified_model() -> None:
+    point = _point("S1", label="MissingPart", model="pcb_body_defect")
+    review = _decision("S1", "wrong part")
+    review["human_decision"]["region_result"] = "Body"
+
+    correction = run_drift.correction_of(point, review)
+
+    assert correction is not None
+    assert (correction["model_name"], correction["model_source"]) == ("pcb_body_defect", "classified")

@@ -270,6 +270,9 @@ def _correction_reason(run_id: str, correction: dict[str, Any]) -> str:
         f"Labelled by the operator in run {run_id[:8]}: {said}; the correct label is "
         f"{correction['final_result']} ({correction['selected_source']})"
     )
+    region = correction.get("region_result")
+    if region:
+        reason += f"; the operator set the region to {region}"
     notes = correction.get("operator_notes")
     return f"{reason}. Notes: {notes}" if notes else reason
 

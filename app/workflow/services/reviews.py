@@ -76,6 +76,17 @@ def _feature_label(result: dict[str, Any]) -> str | None:
     return str(prediction) if prediction else None
 
 
+def _feature_confidence(result: dict[str, Any]) -> float | None:
+    """The stage-1 (region model) confidence, wherever the stage is stored - see _feature_label."""
+
+    feature = result.get("feature_classification")
+    if not isinstance(feature, dict):
+        details = result.get("details")
+        feature = details.get("feature_classification") if isinstance(details, dict) else None
+    confidence = feature.get("confidence") if isinstance(feature, dict) else None
+    return float(confidence) if isinstance(confidence, int | float) else None
+
+
 def build_agent2_input(sample: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     """Mirrors adc_shared/agent2_api.py's build_input for one verified sample + its Agent 1
     result. A sample that stopped at feature classification (low-confidence stage 1) has no defect
@@ -92,6 +103,11 @@ def build_agent2_input(sample: dict[str, Any], result: dict[str, Any]) -> dict[s
         "preliminary_defect": _agent1_label(result) or sample.get("machine_defect") or "",
         "confidence": defect.get("confidence", 0.0) if isinstance(defect, dict) else 0.0,
         "aoi_measurements": sample.get("failed_inspections", {}),
+        # Not read by Agent 2 (execute_explainability_review picks its own keys) - kept for the
+        # Review Console, which shows both models' confidence.
+        "region_label": _feature_label(result),
+        "region_confidence": _feature_confidence(result),
+        "defect_model_ran": isinstance(defect, dict),
     }
 
 
@@ -261,6 +277,9 @@ async def list_cases(session: AsyncSession, *, run_id: str) -> list[WorkflowRevi
                 board_id=str(case.get("board_id") or ""),
                 component_ref=str(case.get("component_ref") or ""),
                 feature_type=str(case.get("feature_type") or ""),
+                region_label=case.get("region_label"),
+                region_confidence=case.get("region_confidence"),
+                defect_model_ran=bool(case.get("defect_model_ran", True)),
                 agent1_verdict=normalize_defect(case.get("preliminary_defect")),
                 agent1_confidence=float(case.get("confidence") or 0.0),
                 has_golden_image=image_path(run_id, sample_id, "golden") is not None,
@@ -296,6 +315,7 @@ def _stored_decision_out(
         machine_result=decision.get("machine_result"),
         ai_result=decision.get("ai_result"),
         operator_notes=decision.get("operator_notes"),
+        region_result=decision.get("region_result"),
         decided_by_user_id=str(decision.get("decided_by_user_id") or ""),
     )
 
@@ -314,6 +334,7 @@ async def save_decision(
         "machine_result": request.machine_result,
         "ai_result": request.ai_result,
         "ai_diagnosis": request.ai_diagnosis,
+        "region_result": request.region_result,
         "decided_by_user_id": user.id,
     }
     try:
@@ -347,6 +368,8 @@ async def _save_decision_postgres(
     row.ai_result = request.ai_result
     row.ai_diagnosis = request.ai_diagnosis
     row.operator_notes = (request.operator_notes or "").strip() or None
+    # region_result has no column here: the Postgres fallback keeps the defect decision only. A
+    # region correction is recorded on the run's Qdrant point (the normal path).
     row.decided_by_user_id = user.id
     await session.commit()
     await session.refresh(row)

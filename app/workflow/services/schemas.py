@@ -1,6 +1,6 @@
 """Request/response schemas for the /api/orchestrator/* routes in app/workflow/api/orchestrator.py."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -122,6 +122,7 @@ class WorkflowCorrectionOut(BaseModel):
     model_version: str | None
     model_source: str | None = None
     region_guess: WorkflowRegionGuessOut | None = None
+    region_result: str | None = None  # the region the operator set, when they changed it
     agent1_label: str | None  # the model's prediction; None when no defect model was reached
     machine_label: str | None  # the AOI machine's own call
     agent2_label: str | None
@@ -236,6 +237,9 @@ class WorkflowReviewDecisionRequest(BaseModel):
     ai_result: str | None = None
     ai_diagnosis: str | None = None
     operator_notes: str | None = None
+    # The part area (Body / Lead / Text) when the operator corrected the region model. None means
+    # they left it as the model had it.
+    region_result: Literal["Body", "Lead", "Text"] | None = None
 
 
 class WorkflowReviewDecisionOut(BaseModel):
@@ -246,6 +250,7 @@ class WorkflowReviewDecisionOut(BaseModel):
     machine_result: str | None
     ai_result: str | None
     operator_notes: str | None
+    region_result: str | None = None
     decided_by_user_id: str
 
 
@@ -258,6 +263,12 @@ class WorkflowReviewCaseOut(BaseModel):
     board_id: str
     component_ref: str
     feature_type: str
+    # Stage 1 (the region model): its label and confidence. None when the stored run has no stage 1.
+    region_label: str | None = None
+    region_confidence: float | None = None
+    # False when the region model was too unsure and no defect model ran (agent1_verdict is then
+    # the AOI machine's own call and agent1_confidence has no defect model behind it).
+    defect_model_ran: bool = True
     agent1_verdict: str
     agent1_confidence: float
     has_golden_image: bool

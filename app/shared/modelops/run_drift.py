@@ -153,6 +153,9 @@ REGION_TO_DEFECT_MODEL = {
 
 CLASSIFIED = "classified"
 REGION_GUESS = "region_guess"
+# The operator corrected the region (Body / Lead / Text) in the Review Console, so the sample belongs
+# to the defect model that region routes to - not the one Agent 1 picked from its own region call.
+OPERATOR_REGION = "operator_region"
 
 
 def region_guess(point: dict[str, Any]) -> dict[str, Any] | None:
@@ -169,11 +172,18 @@ def region_guess(point: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def training_target(point: dict[str, Any]) -> tuple[str | None, str | None]:
-    """(the defect model a sample belongs to, how that was decided): the model Agent 1 routed it to
-    ("classified"), else the one its region guess routes to ("region_guess"), else (None, None)."""
+def training_target(
+    point: dict[str, Any], region_override: str | None = None
+) -> tuple[str | None, str | None]:
+    """(the defect model a sample belongs to, how that was decided): the one the operator's own
+    region choice routes to when it differs from what ran ("operator_region"), else the model Agent 1
+    routed it to ("classified"), else the one its region guess routes to ("region_guess"), else
+    (None, None)."""
 
     routed = sample_model_name(point)
+    operator_target = REGION_TO_DEFECT_MODEL.get(region_override) if region_override else None
+    if operator_target is not None and operator_target != routed:
+        return operator_target, OPERATOR_REGION
     if routed is not None:
         return routed, CLASSIFIED
     guess = region_guess(point)
@@ -210,13 +220,16 @@ def correction_of(point: dict[str, Any], review: dict[str, Any] | None) -> dict[
     outcome = outcome_of(point, decision)
     if outcome == CONFIRMED:
         return None
-    target, source = training_target(point)
+    region_result = decision.get("region_result")
+    region_result = region_result if isinstance(region_result, str) and region_result else None
+    target, source = training_target(point, region_result)
     return {
         "sample_id": str(point.get("sample_id")),
         "model_name": target,
         "model_version": sample_model_version(point) if source == CLASSIFIED else None,
         "model_source": source,
         "region_guess": region_guess(point),
+        "region_result": region_result,
         "agent1_label": model_prediction(point),
         "machine_label": (point.get("sample") or {}).get("machine_defect"),
         "agent2_label": _agent2_label(review),

@@ -338,6 +338,9 @@ async def test_cases_list_merges_review_and_decision(
     assert cases[0]["decision"]["final_result"] == "missing part"
     assert cases[1]["review"] is None and cases[1]["decision"] is None
     assert cases[0]["component_ref"] == "C978" and cases[0]["agent1_verdict"] == "wrong part"
+    # both models' answers are on the case: the region model's label and confidence, then the defect
+    assert (cases[0]["region_label"], cases[0]["region_confidence"]) == ("Body", 0.95)
+    assert cases[0]["agent1_confidence"] == 0.6 and cases[0]["defect_model_ran"] is True
     assert authenticated_client.get(CASES_URL, params={"run_id": "other"}).json() == []
 
 
@@ -367,3 +370,58 @@ def test_image_route_serves_only_registered_files(authenticated_client: TestClie
     )
     assert bad_kind.status_code == 422
     tmp_dir.cleanup()
+
+
+def test_a_sample_the_defect_model_never_saw_still_reports_the_region_models_confidence() -> None:
+    stage_one_only = {
+        "sample_id": "S3",
+        "final_decision": "REVIEW_REQUIRED",
+        "details": {"feature_classification": {"prediction": "Text", "confidence": 0.31}},
+    }
+
+    agent2_input = reviews.build_agent2_input(_sample("S3"), stage_one_only)
+
+    assert agent2_input["region_label"] == "Text"
+    assert agent2_input["region_confidence"] == 0.31
+    assert agent2_input["defect_model_ran"] is False
+
+
+async def test_a_region_correction_is_saved_with_the_decision(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    saved: dict[str, Any] = {}
+
+    async def fake_save(run_id: str, sample_id: str, decision: dict[str, Any]) -> dict[str, Any]:
+        saved.update(decision)
+        return {"human_decision": decision}
+
+    monkeypatch.setattr("app.workflow.services.run_store.save_decision", fake_save)
+
+    response = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": "run-a",
+            "sample_id": "S1",
+            "selected_source": "MANUAL",
+            "final_result": "tombstone",
+            "region_result": "Lead",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["region_result"] == "Lead"
+    assert saved["region_result"] == "Lead"
+
+
+def test_a_region_correction_must_be_one_of_the_known_regions(authenticated_client: TestClient) -> None:
+    response = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": "r",
+            "sample_id": "S1",
+            "selected_source": "MANUAL",
+            "final_result": "x",
+            "region_result": "Corner",
+        },
+    )
+    assert response.status_code == 422

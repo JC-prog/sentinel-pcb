@@ -260,6 +260,7 @@ def test_the_tab_follows_each_decision_the_operator_saves(
         "model_version": "JcProg/body@v2",
         "model_source": "classified",
         "region_guess": {"label": "Body", "confidence": 0.95},
+        "region_result": None,
         "agent1_label": "MissingPart",
         "machine_label": "MissingPart_1",
         "agent2_label": None,
