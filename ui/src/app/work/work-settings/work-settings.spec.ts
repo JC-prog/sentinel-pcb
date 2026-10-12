@@ -9,6 +9,14 @@ describe('WorkSettings', () => {
   const el = (testId: string) =>
     fixture.nativeElement.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
 
+  async function type(testId: string, value: string): Promise<void> {
+    const input = el(testId);
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
   beforeEach(async () => {
     localStorage.clear();
     await TestBed.configureTestingModule({ imports: [WorkSettings] }).compileComponents();
@@ -16,35 +24,54 @@ describe('WorkSettings', () => {
     settings.open();
     fixture = TestBed.createComponent(WorkSettings);
     fixture.detectChanges();
+    await fixture.whenStable();
   });
 
-  it('writes edits through to the settings service', async () => {
-    await fixture.whenStable();
-    const input = el('defect-threshold');
-    input.value = '0.55';
-    input.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
+  it('holds edits as a draft until Save is pressed', async () => {
+    await type('defect-threshold', '0.55');
+    expect(settings.defectThreshold()).toBe(0.7);
+
+    el('settings-save').click();
 
     expect(settings.defectThreshold()).toBe(0.55);
+    expect(settings.isOpen()).toBe(false);
+  });
+
+  it('discards the draft on Cancel', async () => {
+    await type('defect-threshold', '0.55');
+
+    el('settings-cancel').click();
+
+    expect(settings.defectThreshold()).toBe(0.7);
+    expect(settings.isOpen()).toBe(false);
+  });
+
+  it('discards the draft on Escape', async () => {
+    await type('feature-threshold', '0.2');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(settings.featureThreshold()).toBe(0.7);
+    expect(settings.isOpen()).toBe(false);
+  });
+
+  it('will not save a threshold outside 0 to 1', async () => {
+    await type('feature-threshold', '1.5');
+
+    expect(el('settings-save').disabled).toBe(true);
+    expect(el('threshold-error')).not.toBeNull();
   });
 
   it('disables the model and fallback controls while the LLM planner is off', async () => {
-    await fixture.whenStable();
     expect(el('llm-model').disabled).toBe(true);
     expect(el('llm-fallback').disabled).toBe(true);
 
-    settings.setUseLlm(true);
+    el('use-llm').click();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(el('llm-model').disabled).toBe(false);
     expect(el('llm-fallback').disabled).toBe(false);
-  });
-
-  it('closes on Escape', () => {
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(settings.isOpen()).toBe(false);
   });
 
   it('shows the key status only once it is known', () => {
