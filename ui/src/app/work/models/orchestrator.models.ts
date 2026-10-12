@@ -21,6 +21,10 @@ export interface OrchestratorStatusEvent {
   inference_attempted: number;
   accepted: number;
   review_required: number;
+  /** Samples that dropped out at each stage. Absent from an older server's frames. */
+  preparation_failed?: number;
+  verification_failed?: number;
+  inference_aborted?: number;
 }
 
 export interface OrchestratorPlanStepEvent {
@@ -104,6 +108,9 @@ export interface OrchestratorRunResult {
   workflow_status: string;
   termination_reason: string | null;
   results: OrchestratorInferenceResult[];
+  /** The run's problems in words, e.g. "Verification GOLDEN_IMAGE_NOT_FOUND: 47 sample(s) (e.g.
+   * S000002)" - why samples failed. Absent for the prepare-only modes. */
+  errors?: string[];
   [key: string]: unknown;
 }
 

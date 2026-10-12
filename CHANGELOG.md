@@ -9,6 +9,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the workflow summary has a **Failed** tile (preparation, verification and inference
+  failures added up; red when above 0). The status line says at which stage samples failed, and the
+  server's reasons ("Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s) (e.g. S000001)") are listed
+  under it, so an aborted run explains itself instead of showing only "Verified 0". The run status
+  frames now carry `preparation_failed`, `verification_failed` and `inference_aborted`.
+- Work tab: the Review Console is easier to scan. The queue shows machine and AI verdicts as
+  coloured chips, Pending and Reviewed as badges and a progress bar; the case view compares Machine
+  and AI side by side with an agree or disagree banner and a confidence meter, and the final decision
+  options are colour-coded cards with a green confirm button. Tabs, buttons and image panels carry icons.
+- Work tab: the Review Console no longer jumps when you pick another sample. The window has a
+  fixed size, the queue and the detail pane scroll on their own, images load into fixed boxes, and
+  the result of saving a decision appears below the form. Arrow keys move through the queue.
+- Work tab: the Settings button is a visible bordered button, and the settings window applies
+  changes only when you press **Save settings**; Cancel, Escape or clicking outside discards them.
+- Work tab: renamed to the AOI Inspection Agent, with a short three-step guide, a status light
+  (ready, uploading, running, failed, to review, complete), icons on the inputs and buttons, the run
+  controls inside the Inputs card, and colour on the Accepted and Review counters.
+- Work tab: a cleaner layout. The Output JSON field and the long explanatory note are gone (the
+  result downloads as `result-<run id>.json`), inputs show what each file is for and which are
+  required, and the run counters are tiles instead of a text line. Each run now starts with an empty
+  log.
+- Work tab: the Review Console traps keyboard focus, returns it to the button on close and will not
+  close while a decision is saving. **Confirm & next pending** saves and opens the next unreviewed
+  sample. The queue, images and Save show loading states, the log and form controls are labelled for
+  screen readers, low-contrast text is darker, and a slow response can no longer overwrite newer data.
+- Work tab: a **Stop** button cancels a run in progress, upload and run failures show the server's
+  reason instead of a bare status code, and the review queue can be driven from the keyboard.
+- Work tab: the policy thresholds and LLM planner options moved into a **Settings** panel (button
+  bar), with a one-line summary of the active choices left on the page. They are remembered across
+  reloads in the browser. Thresholds are kept within 0 to 1, and a cleared field no longer sends an
+  invalid value that the server rejects.
 - Work tab: the execution log is easier to follow and keep. It scrolls to the newest line while
   you are at the bottom and pauses when you scroll up, with a "N new lines - jump to latest" button.
   Lines carry the time they arrived, plan steps show their planner source and flag policy rejections,

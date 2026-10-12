@@ -262,7 +262,17 @@
           </div>
         }
         <!-- The pipeline: each stage's count, in the order samples move through it -->
-        <div class="grid grid-cols-3 gap-2 p-3 sm:grid-cols-6">
+        @if (failureReasons().length > 0) {
+          <ul
+            data-testid="failure-reasons"
+            class="mx-3 mt-3 list-inside list-disc rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"
+          >
+            @for (reason of failureReasons(); track $index) {
+              <li>{{ reason }}</li>
+            }
+          </ul>
+        }
+        <div class="grid grid-cols-3 gap-2 p-3 sm:grid-cols-7">
           @for (tile of summaryTiles(); track tile.label) {
             <div class="rounded-lg border px-3 py-2" [class]="tile.tone">
               <p class="whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{{ tile.label }}</p>

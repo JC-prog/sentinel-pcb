@@ -63,7 +63,7 @@ Models tab ─► an Admin approves the plan
 *Expect (rehearsal, ~70 s):*
 - the log streams the planner's steps (*observation -> constraint -> decision*: prepare, verify,
   inference, finalize);
-- **Workflow Summary: Input 11 / Prep Ready 11 / Verified 11 / Inference 11 / Accepted 0 / Review 11**;
+- **Workflow Summary: Input 11 / Prepared 11 / Verified 11 / Inference 11 / Failed 0 / Accepted 0 / Review 11**;
 - then `[Agent 2] Escalating 11 sample(s) for Explainability Review...` and a block per sample:
 
 ```

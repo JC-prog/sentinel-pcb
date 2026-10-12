@@ -205,7 +205,12 @@ reports, open tickets and the retraining queue.
 3. Optionally tick **Use real LLM Planner** (otherwise a deterministic planner is used).
 4. Buttons: **1. Prepare**, **2. Prepare + Verify**, **3. Run Agentic Workflow** (the full run).
 
-The **Workflow Summary** row counts Input / Prep Ready / Verified / Inference / Accepted / Review.
+The **Workflow Summary** counts Input / Prepared / Verified / Inference / **Failed** / Accepted /
+Review. **Failed** adds up samples that dropped out at preparation, verification or inference; it
+turns red when above 0, the line under the status says at which stage ("76 failed verification"),
+and the server's reasons are listed beneath it ("Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s)
+(e.g. S000001)"). A run that ends *Aborted* with Verified 0 almost always means the image paths in
+the CSV did not resolve under the Image Folder.
 The log below shows the planner's steps. When the run finishes, Agent 2 automatically reviews every
 flagged sample (about 35 seconds for 11 samples) and the log prints each one:
 

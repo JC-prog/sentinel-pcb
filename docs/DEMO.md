@@ -172,8 +172,8 @@ same question as 2a, say **"Yes, please create a case for it."**, then:
    [Troubleshooting](#if-something-goes-wrong).*
 3. Click **3. Run Agentic Workflow**.
 
-*Expect (~35 s, rehearsal):* the **Workflow Summary** reads **Input 11 / Prep Ready 11 / Verified 11 /
-Inference 11 / Accepted 0 / Review 11**; the log streams the planner's steps, then
+*Expect (~35 s, rehearsal):* the **Workflow Summary** reads **Input 11 / Prepared 11 / Verified 11 /
+Inference 11 / Failed 0 / Accepted 0 / Review 11**; the log streams the planner's steps, then
 `[Agent 2] Escalating 11 sample(s) for Explainability Review...` with a block per sample:
 
 ```

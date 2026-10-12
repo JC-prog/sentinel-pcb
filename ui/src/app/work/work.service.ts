@@ -32,6 +32,9 @@ const INITIAL_STATUS: OrchestratorStatusEvent = {
   inference_attempted: 0,
   accepted: 0,
   review_required: 0,
+  preparation_failed: 0,
+  verification_failed: 0,
+  inference_aborted: 0,
 };
 
 @Injectable({ providedIn: 'root' })

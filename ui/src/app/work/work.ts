@@ -26,6 +26,15 @@ import { WorkSettings } from './work-settings/work-settings';
 import { WorkAlert } from './work-alert/work-alert';
 import { WorkExecutionLog } from './work-execution-log/work-execution-log';
 import { WorkService } from './work.service';
+import { OrchestratorStatusEvent } from './models/orchestrator.models';
+
+/** Samples that dropped out before a decision: failed preparation, failed verification, or aborted
+ * in inference. Zero for an older server that doesn't send the three counts. */
+export function failedCount(status: OrchestratorStatusEvent): number {
+  return (
+    (status.preparation_failed ?? 0) + (status.verification_failed ?? 0) + (status.inference_aborted ?? 0)
+  );
+}
 
 /** IPC defect classes an operator can override with - the same canonical names Agent 2 and the
  * conflict check (app/workflow/services/reviews.py's normalize_defect) use. */
@@ -163,13 +172,20 @@ export class Work implements OnDestroy {
 
   protected readonly summaryTiles: Signal<{ label: string; value: number; tone: string }[]> = computed(() => {
     const status = this.workService.status();
+    const failed = failedCount(status);
     const plain = 'border-slate-300 dark:border-slate-700';
-    // Colour only where it means something: green for accepted, amber for what needs a person.
+    // Colour only where it means something: green for accepted, amber for what needs a person, red
+    // for samples that dropped out before a decision.
     return [
       { label: 'Input', value: status.input_samples, tone: plain },
       { label: 'Prepared', value: status.preparation_ready, tone: plain },
       { label: 'Verified', value: status.verification_passed, tone: plain },
       { label: 'Inference', value: status.inference_attempted, tone: plain },
+      {
+        label: 'Failed',
+        value: failed,
+        tone: failed > 0 ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30' : plain,
+      },
       {
         label: 'Accepted',
         value: status.accepted,
@@ -199,13 +215,43 @@ export class Work implements OnDestroy {
     } else if (/(ACCEPT|COMPLETE|PASS|SUCCESS)/.test(upper)) {
       light = 'bg-emerald-500';
     }
-    let detail = '';
+    const parts: string[] = [];
     if (status.review_required > 0) {
-      detail = `${status.review_required} of ${status.input_samples} sample${status.input_samples === 1 ? '' : 's'} need a person to confirm`;
+      parts.push(
+        `${status.review_required} of ${status.input_samples} sample${status.input_samples === 1 ? '' : 's'} need a person to confirm`,
+      );
     } else if (status.accepted > 0) {
-      detail = `${status.accepted} of ${status.input_samples} accepted`;
+      parts.push(`${status.accepted} of ${status.input_samples} accepted`);
     }
-    return { label, light, detail };
+    const failed = failedCount(status);
+    if (failed > 0) {
+      const stages = [
+        [status.preparation_failed, 'failed preparation'],
+        [status.verification_failed, 'failed verification'],
+        [status.inference_aborted, 'aborted in inference'],
+      ] as const;
+      parts.push(
+        stages
+          .filter(([count]) => (count ?? 0) > 0)
+          .map(([count, what]) => `${count} ${what}`)
+          .join(', '),
+      );
+      // A run where nothing got through is red whatever the server calls it.
+      if (light === 'bg-slate-400' && failed >= status.input_samples) {
+        light = 'bg-red-500';
+      }
+    }
+    return { label, light, detail: parts.join(' · ') };
+  });
+
+  /** Why samples failed, in the server's words (e.g. "Verification GOLDEN_IMAGE_NOT_FOUND: 47
+   * sample(s) (e.g. S000002)"), shown under the status so a failed run explains itself. */
+  protected readonly failureReasons: Signal<string[]> = computed(() => {
+    if (failedCount(this.workService.status()) === 0) {
+      return [];
+    }
+    const errors = this.workService.result()?.errors;
+    return Array.isArray(errors) ? errors.map(String).slice(0, 4) : [];
   });
 
   /** Accepted against needs-review as shares of everything the agent decided on. */

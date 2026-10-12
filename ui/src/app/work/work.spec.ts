@@ -376,6 +376,85 @@ describe('Work', () => {
       expect(fixture.nativeElement.textContent).toContain('8 of 11 samples need a person to confirm');
       expect(fixture.nativeElement.querySelector('[role="img"][aria-label="3 accepted, 8 need review"]')).not.toBeNull();
     });
+
+    const tile = (label: string): HTMLElement | undefined =>
+      (Array.from(fixture.nativeElement.querySelectorAll('[role="group"] .rounded-lg.border')) as HTMLElement[]).find(
+        (el) => el.querySelector('p')?.textContent?.trim() === label,
+      );
+
+    it('shows a Failed tile that stays plain while nothing has failed', () => {
+      fake.status.set({ ...IDLE_STATUS, status: 'REVIEW_REQUIRED', input_samples: 11, review_required: 11 });
+      fixture.detectChanges();
+
+      const failed = tile('Failed');
+      expect(failed?.textContent).toContain('0');
+      expect(failed?.className).not.toContain('border-red-300');
+      expect(fixture.nativeElement.querySelector('[data-testid="failure-reasons"]')).toBeNull();
+    });
+
+    it('counts samples that failed at any stage, says where, and shows the server\'s reasons', () => {
+      fake.status.set({
+        ...IDLE_STATUS,
+        status: 'REVIEW_REQUIRED',
+        input_samples: 76,
+        preparation_ready: 76,
+        verification_passed: 72,
+        inference_attempted: 72,
+        review_required: 72,
+        verification_failed: 4,
+      });
+      fake.result.set({
+        ...runResult([]),
+        errors: ['Verification IMAGE_PAIR_ALIGNMENT_FAILED: 4 sample(s) (e.g. S000012)'],
+      });
+      fixture.detectChanges();
+
+      const failed = tile('Failed');
+      expect(failed?.textContent).toContain('4');
+      expect(failed?.className).toContain('border-red-300');
+      expect(fixture.nativeElement.textContent).toContain('72 of 76 samples need a person to confirm');
+      expect(fixture.nativeElement.textContent).toContain('4 failed verification');
+      expect(fixture.nativeElement.querySelector('[data-testid="failure-reasons"]').textContent).toContain(
+        'IMAGE_PAIR_ALIGNMENT_FAILED: 4 sample(s)',
+      );
+    });
+
+    it('explains an aborted run where nothing got through verification', () => {
+      fake.status.set({
+        ...IDLE_STATUS,
+        status: 'ABORTED',
+        input_samples: 76,
+        preparation_ready: 76,
+        verification_failed: 76,
+      });
+      fake.result.set({
+        ...runResult([]),
+        errors: ['Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s) (e.g. S000001)'],
+      });
+      fixture.detectChanges();
+
+      expect(tile('Failed')?.textContent).toContain('76');
+      expect(fixture.nativeElement.textContent).toContain('76 failed verification');
+      expect(fixture.nativeElement.querySelector('[data-testid="failure-reasons"]').textContent).toContain(
+        'GOLDEN_IMAGE_NOT_FOUND: 76 sample(s)',
+      );
+    });
+
+    it('adds up preparation, verification and inference failures', () => {
+      fake.status.set({
+        ...IDLE_STATUS,
+        status: 'INFERENCE_COMPLETED',
+        input_samples: 10,
+        preparation_failed: 1,
+        verification_failed: 2,
+        inference_aborted: 3,
+      });
+      fixture.detectChanges();
+
+      expect(tile('Failed')?.textContent).toContain('6');
+      const text = fixture.nativeElement.textContent as string;
+      expect(text).toContain('1 failed preparation, 2 failed verification, 3 aborted in inference');
+    });
   });
 
   describe('status light', () => {
