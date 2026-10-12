@@ -110,7 +110,7 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the supervisor is given the tools this r
 - `get_sample`, `list_review_cases`, `get_run_drift` - the Sample Agent: read-only views of the Work
   tab's stored runs (Qdrant), looked up by the dataset's `sample_id`, plus per-model drift for a run
   and the operator's corrections. Those corrections are queued as retraining tickets in the Review
-  Console's Drift & Retraining tab; `draft_retraining_plan` drafts the tickets into a job.
+  Console's Corrections & Retraining tab; `draft_retraining_plan` drafts the tickets into a job.
 - `relabel_case`, `confirm_relabel` - the Relabel Agent below; they work from a case number (or the
   latest case in the conversation), so no image is needed.
 - `get_drift_summary`, `report_model_drift`, `draft_retraining_plan` - the Monitoring Agent's

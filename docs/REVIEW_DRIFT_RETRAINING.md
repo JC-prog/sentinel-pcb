@@ -18,7 +18,7 @@ the app see [`USER_GUIDE.md`](USER_GUIDE.md); for the system as a whole see
  Operator decision in Explanation Review ("User Final Decision")
    │ saved:  adc_agent2_reviews.human_decision                          (Qdrant)
    ▼
- GET  .../monitoring/run-drift  ── shared/modelops/run_drift.py ──►  Drift & Retraining tab
+ GET  .../monitoring/run-drift  ── shared/modelops/run_drift.py ──►  Corrections & Retraining tab
    │ the final decision is the label; drift = wrong / classified (couldn't-decide shown apart)
    ▼
  Operator queues corrections:  POST .../monitoring/run-retraining-tickets
@@ -96,20 +96,28 @@ Pure functions over the stored payload dicts - no I/O - so the Work tab (`run_st
 - **Training target** (`model_name`, `model_source`): the defect model Agent 1 routed the sample to
   (`classified`), else the one its region guess routes to (`region_guess`) via `REGION_TO_DEFECT_MODEL`
   (Body/Lead/Text -> pcb_body/lead/text_defect - re-stated from Agent 1's router; a test reads the
-  drop-in's files to keep them equal). Per-model stats are grouped by this target.
-- **Correction** = a reviewed sample that is not `confirmed`; addable to training data (`queueable`)
+  drop-in's files to keep them equal). It decides where a correction is sent, not how per-model stats
+  are grouped (see below).
+- **Correction** = a reviewed sample that is not `confirmed`; sendable for retraining (`queueable`)
   when it has a target. Its ticket learns `correct_label` = the operator's label; `observed_label` =
   the model's prediction (None for couldn't-decide); `model_version` only when that model actually ran
   (a region-guess ticket gets None - not the region model's version).
+- **Open tickets** are returned twice: `open_tickets` (per model, whatever their origin - what a plan
+  drafted now would contain) and `run_open_tickets` (only tickets added from this run), so the tab can
+  say which waiting samples are this run's and how many more a plan would take.
 - **Plans for region-guess tickets** need a base version from the live model: if none is recorded yet
   (fresh database, Models tab never opened), `POST .../retraining-plan` syncs versions from the
   inference service (`GET /models`, the same sync the Models tab does) and retries once.
 - **Decision statistics** (`decisions` in the summary): `by_source` - for each of `MACHINE` / `AI` / `MANUAL` how
   many final decisions were made (`chosen`) and how many of those the model got wrong (`overruled_model`; couldn't-decide not included);
   `pending` - flagged samples with no decision yet; `top_overruled` - the five commonest
-  (model label -> chosen label) misses with counts, labels normalised. It is what the tab's "Your
-  decisions in the Explanation Review" block shows and what chat's `get_run_drift` reports.
-- **Per-model stats** (grouped by `routing.service_model`; un-routed samples group under `null`):
+  (model label -> chosen label) misses with counts, labels normalised. The
+  tab shows `top_overruled` ("Most common mistakes") and the unreviewed count; it no longer charts
+  `by_source`, which says how the operator chose rather than how the model did. Chat's
+  `get_run_drift` reports all of it.
+- **Per-model stats** (grouped by the defect model that classified the sample, `routing.service_model`;
+  a sample no defect model ran on groups under `null`, shown as "No defect model ran", so no model is
+  credited with samples it never answered - their corrections still route by region guess):
   `samples`, `review_required`, `decided`, `corrected`, `correction_rate` (corrected/decided),
   `agent2_disagreed`, `low_confidence_rate` (defect confidence < `ADC_DEFECT_CONFIDENCE_THRESHOLD`),
   `mean_confidence`, `model_version`.
@@ -183,7 +191,7 @@ user's waiting draft; deleting the conversation cascades to it.
 | Situation | Behaviour |
 | --- | --- |
 | Qdrant unreachable during a run | The run completes from memory; the Review Console works from the in-memory registry until restart. Decisions fall back to `workflow_review_decisions`. |
-| Qdrant unreachable for the Drift tab | `run-drift` returns `available:false` + message; the tab shows it. Queueing returns 503. |
+| Qdrant unreachable for the Corrections & Retraining tab | `run-drift` returns `available:false` + message; the tab shows it. Queueing returns 503. |
 | Backend restarted | The Review Console rebuilds its registry from Qdrant (`reviews.ensure_run_loaded`), including reviews already generated. |
 | Chat tool cannot reach Qdrant / run not stored | The tool returns an `error` the assistant relays; the chat turn does not fail. |
 | Inference service down | `inspect_image` errors with nothing saved; relabel fails closed (it cannot validate the label). |
@@ -207,10 +215,10 @@ The Work tab's own thresholds (default 0.70) are per-run inputs in the UI, not s
 | --- | --- |
 | Drift/correction maths, normalisation | `tests/shared/test_run_drift.py` |
 | Run persistence, restart survival, fallback | `tests/workflow/test_run_store.py`, `test_orchestrator_reviews.py` |
-| Drift tab routes: decision -> numbers -> queue, idempotency, all-or-nothing, fail-open, report snapshot | `tests/workflow/test_run_drift_routes.py` |
+| Corrections & Retraining tab routes: decision -> numbers -> queue, idempotency, all-or-nothing, fail-open, report snapshot | `tests/workflow/test_run_drift_routes.py` |
 | Chat reader/tools, `get_run_drift`, and the full chain (workflow ticket -> chat `draft_retraining_plan`) | `tests/chat/agents/test_sample_agent.py` |
 | Confirm-before-create, same-turn refusal, end to end through the supervisor | `tests/chat/agents/test_create_case.py` |
-| UI: Drift & Retraining refresh after a decision, corrections table, queue | `ui/src/app/work/work.spec.ts`, `work-orchestrator-client.spec.ts` |
+| UI: Corrections & Retraining refresh after a decision, corrections table, queue | `ui/src/app/work/work.spec.ts`, `work-orchestrator-client.spec.ts` |
 | Module boundaries (chat/workflow/modelops independent) | `tests/test_module_boundaries.py`, `tests/chat/test_agent_boundaries.py` |
 | Live tool-selection evals (opt-in, costs tokens) | `uv run pytest -m eval -s` (`tests/evals/`) |
 

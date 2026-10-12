@@ -203,25 +203,32 @@ label - this is where the data gets relabelled."
 
 ---
 
-## Act 6 - How often was the model wrong, and add your labels to training data (2 min)  - **Review Console**
+## Act 6 - How often was the model wrong, and send your labels for retraining (2 min)  - **Review Console**
 
-Click the **Drift & Retraining** tab (badge **"2 to add"**). *Expect (rehearsal):*
+Click the **Corrections & Retraining** tab (badge **"2 to send"**). *Expect (rehearsal):*
 
-- **Drift (model wrong): 67%** - *2 of 3 it classified*; Model right **1** (S000003), Model wrong
-  **2**, Couldn't decide **0**, Not reviewed yet **8**; the `pcb_text_defect` row shows the same;
-- **Your final decisions:** Accept Machine 1, Accept AI 1, Manual 1, and the model's commonest mistakes
-  (model said *no defect* -> correct label *wrong part* / *tombstone*);
-- **Add your labels to the training data:** `S000001` (model said Golden, your label **wrong part**
-  (AI)) and `S000004` (model said Golden, your label **Tombstone** (MANUAL)), both *Not added yet* and
-  ticked.
+- the **three steps** across the top, with step 2 (*Send your corrections for retraining*) marked;
+- **Error rate on reviewed samples: 67%** - *2 of 3 the defect model classified were wrong*, and
+  *3 of 11 flagged samples reviewed - this changes as you review*; the bar and legend read Model right
+  **1** (S000003), Model wrong **2**, Couldn't decide **0**, Not reviewed yet **8**; the
+  `pcb_text_defect` row shows the same;
+- **Most common mistakes:** model said *no defect* -> correct label *wrong part* / *tombstone*;
+- **Send corrections for retraining:** `S000001` (model said no defect, your label **wrong part**
+  (Accept AI)) and `S000004` (model said no defect, your label **tombstone** (Manual)), both *Not sent
+  yet* and **unticked**.
 
-*Say:* "My final decision is the correct label. Of the samples the model classified, it got two of three
-wrong - that's the drift. Those samples, with my labels, are exactly what it should learn from."
+*Say:* "My final decision is the correct label. Of the samples the defect model classified, it got two
+of three wrong - and this is only the flagged ones, so it's the error rate on what I've reviewed, not
+the model's overall accuracy. Those samples, with my labels, are what it should learn from."
 
-Click **Add 2 to training data**. *Expect:* "Added 2 samples to the training data. Retraining plan for
-pcb_text_defect is waiting for an Admin in the Models tab."; both rows now read *In a retraining plan*;
-the badge disappears. Clicking again adds nothing twice. (For a run where the model couldn't decide
-anything, see the Variant in [`WORK-DEMO.md`](WORK-DEMO.md).)
+Tick **select all**, then click **Send 2 corrections for retraining**. *Expect:* "Sent 2 corrections
+for retraining. The retraining plan for pcb_text_defect is waiting for an Admin to approve it in the
+Models tab."; both rows now show a tick and read *In a retraining plan, awaiting Admin approval*; the
+badge disappears and step 3 is marked. Sending again sends nothing twice. (For a run where the model
+couldn't decide anything, see the Variant in [`WORK-DEMO.md`](WORK-DEMO.md).)
+
+> The numbers above were carried over from the previous rehearsal; the wording is the current UI's.
+> Re-run the dataset once before presenting and adjust if your run differs.
 
 ---
 
@@ -240,7 +247,7 @@ explanation, and **the operator decision you just made**.* (tool: *Sample lookup
 
 > **How did the models do in the last run, and what did the operator correct?**
 
-*Per-model numbers matching the Drift & Retraining tab, and the two relabelled samples - already in a retraining plan.*
+*Per-model numbers matching the Corrections & Retraining tab, and the two relabelled samples - already in a retraining plan.*
 (tool: *Run drift*)
 
 > **What do you know about sample S999999?**
@@ -280,7 +287,7 @@ Optional extras if time allows:
 | *What stops the AI from inventing data?* | It can only report what tools return; unknown samples/cases return an error; tools it isn't allowed to call aren't even given to the model. |
 | *Why are some classifier results low confidence / odd?* | The bundled models are weak on this data. Low confidence is the trigger for human review - which is the point of the workflow. |
 | *What's Agent 1 vs Agent 2?* | Agent 1 = two-stage classifier (region -> defect). Agent 2 = an explainability review (precedents, telemetry, optional vision) that audits Agent 1. |
-| *What does "drift" mean here?* | The operator's final decision is the correct label. Drift for a run is, of the samples the model classified, the share where it didn't predict that label (names normalised, `WrongPart_13` -> `wrong part`). Samples it couldn't decide on are counted separately, not as drift. |
+| *What does "drift" mean here?* | The operator's final decision is the correct label. The tab shows an error rate for the run: of the reviewed samples the model classified, the share where it didn't predict that label (it only covers flagged samples, so it is not overall accuracy) (names normalised, `WrongPart_13` -> `wrong part`). Samples it couldn't decide on are counted separately, not as drift. |
 | *Where is the data stored?* | Cases, users, tickets, plans: Postgres. Work-tab runs, Agent 2 reviews and decisions: Qdrant. Long-term chat memory: Qdrant. |
 | *Does retraining really run?* | The trainer is a stub that simulates a job; the approval flow and bookkeeping are real. |
 
@@ -293,9 +300,9 @@ Optional extras if time allows:
 | Chat inspection says region uncertain, no defect | Thresholds are at 0.70. Lower them in `.env` and **restart the backend** (Before you start, step 2). |
 | Work-tab run: Verified 0 or all samples "FEATURE_CLASSIFICATION_UNCERTAIN", corrections say *No model recorded* | Feature threshold too high. Re-run with **0.3**. |
 | Verification fails / images not found | Choose the **folder** `Sample_data_2/Sample_data_2` as the Image Folder (not a parent folder). |
-| Drift tab says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
+| Corrections & Retraining tab says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
 | Assistant doesn't call a tool | Rephrase closer to the prompts above; with a local model, be explicit ("Yes, confirm it."). A hosted model follows more reliably. |
 | *"cannot tell which version ... to retrain from"* when drafting a plan | Open the **Models** tab once - it syncs versions from the inference service - then try again. |
-| Retraining queue is empty after queueing | Expected: queueing makes *tickets*. Draft the plan (Drift & Retraining tab, or chat) and the job appears. |
+| Retraining queue is empty after sending | Sending makes *tickets* and drafts the plan. If the plan step failed, use **Create retraining plan** (Corrections & Retraining tab, or chat) and the job appears. |
 | Models tab "inference unreachable" | Start the inference service (port 8001). |
 | Weird leftovers from rehearsal | Use **Clear Log** in the Work tab; start a **new chat** for each act you want clean. Old cases/tickets from rehearsal stay in the database (they are harmless). |

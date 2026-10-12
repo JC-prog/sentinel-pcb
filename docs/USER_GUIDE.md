@@ -184,7 +184,7 @@ If it looks wrong:
 > plan with status **pending approval**.
 
 Tickets come from either place: a confirmed **relabel** in chat, or an operator's **queued
-correction** in the Work tab's Drift & Retraining tab (section 8). **Approving a plan and promoting
+correction** sent from the Work tab's Corrections & Retraining tab (section 8). **Approving a plan and promoting
 a retrained model are Admin actions in the Models tab - never from chat.**
 
 **Admin only:** *"What is the model status?"* - which version of each model is live, open drift
@@ -233,50 +233,59 @@ Click **Open Review Console**. On the **Explanation Review** tab:
 
 Nothing is ever auto-approved - even when the two agents agree, the operator makes the call.
 
-### 8.3 Drift & Retraining - how often the model was wrong, and adding your labels to training data
+### 8.3 Corrections & Retraining - how often the model was wrong, and sending your labels for retraining
+
+The tab opens with three steps and marks the one you are on: **1. Review flagged samples** (the
+Explanation Review tab), **2. Send your corrections for retraining** (this tab), **3. An Admin
+approves the plan** (the Models tab).
 
 **Your final decision is the correct label.** Whatever you pick under *User Final Decision* - Accept
-Machine, Accept AI or Manual - the saved final result is the sample's label. The Drift & Retraining
-tab compares it with what the **model** (the defect classifier) predicted, and refreshes every time
-you save a decision (the tab shows a badge such as "2 to add"). Each reviewed sample is one of:
+Machine, Accept AI or Manual - the saved final result is the sample's label. The tab compares it
+with what the **defect model** predicted, and refreshes every time you save a decision (the tab
+shows a badge such as "2 to send"). Only samples **flagged for review** are counted, so this is not
+the model's overall accuracy. Each reviewed sample is one of:
 
 | | What it means |
 | --- | --- |
-| **Model right** | the model predicted your label |
-| **Model wrong** | the model predicted something else |
-| **Couldn't decide** | the region model was below its confidence threshold, so no defect model ran |
+| **Model right** | the defect model predicted your label |
+| **Model wrong** | the defect model predicted something else |
+| **Couldn't decide** | the first-stage model wasn't confident enough, so no defect model ran |
 
-**Drift (model wrong)** = of the samples the model classified (right + wrong), the share it got wrong.
-*Couldn't decide* samples are **not** drift - the model never answered - and are counted on their own;
-if the model classified none of the reviewed samples, drift shows "—". The tab, top to bottom:
+**Error rate on reviewed samples** = of the samples the defect model classified (right + wrong), the
+share it got wrong. It says how many flagged samples you have reviewed ("4 of 6 flagged samples
+reviewed - this changes as you review"), so treat it as partial until you finish. *Couldn't decide*
+samples do **not** count toward it - the model never answered - and show on their own; if the model
+classified none of the reviewed samples the rate shows "-". The tab, top to bottom:
 
-- **How often was the model wrong in this run?** - the drift ("67% - 2 of 3 it classified"), the
-  counts above plus **Not reviewed yet**, and a per-model table (reviewed, right, wrong, couldn't
-  decide, drift). Computed on the server from the stored run, not from the browser.
-- **Your final decisions** - how they split between Accept Machine, Accept AI and Manual (bar, count,
-  share, and how many were cases where the model was wrong), and **the model's commonest mistakes**
-  ("model said *missing part* -> correct label *wrong part* x 2").
-- **Add your labels to the training data** - every sample the model got wrong or couldn't decide, with
-  the defect model it belongs to, what the model said, your label (and which decision you used), your
-  notes and its **training data** status. A *couldn't decide* sample goes to the model the region
-  model guessed (Body / Lead / Text -> the body / lead / text defect model), marked **(region guess)**.
-  The ones that can be added are ticked; **Add N to training data** adds them *and* puts them in a
-  retraining plan for each model, ready for an Admin. Adding twice adds nothing twice; nothing is
-  added automatically.
+- **How accurate was the defect model on the flagged samples?** - the error rate ("67% - 2 of 3 the
+  defect model classified were wrong"), one bar split into model right / model wrong / couldn't
+  decide / not reviewed yet with a count for each, and a per-model table (reviewed, right, wrong,
+  couldn't decide, error rate). Samples no defect model ran on sit in their own **No defect model
+  ran** row. Computed on the server from the stored run, not from the browser.
+- **Most common mistakes** - "model said *missing part* -> correct label *wrong part* x 2".
+- **Send corrections for retraining** - every sample the model got wrong or couldn't decide, with the
+  defect model it belongs to, what the model said, your label (and which decision you used, in the
+  review tab's words), your notes and its status. A *couldn't decide* sample goes to the model the
+  first guess points to (Body / Lead / Text -> the body / lead / text defect model), marked **(from
+  first guess)**. **Nothing is ticked until you choose**: tick rows or use the select-all box, then
+  **Send N corrections for retraining**. That creates the retraining tickets *and* puts them in a
+  retraining plan for each model, ready for an Admin. Sending twice sends nothing twice; nothing is
+  sent automatically. Sent rows show a tick instead of a checkbox.
 
-Statuses: *Not added yet* -> *In a retraining plan* (waiting for an Admin) -> *Retrained*.
-*In training data - no plan yet* means the plan step did not go through (usually the inference service
-was down); a **Create retraining plan** button then appears below. *Can't add - no model to route to*:
-the region model's guess has no defect model (rare).
+Statuses: *Not sent yet* -> *In a retraining plan, awaiting Admin approval* -> *Retrained*.
+*Sent, waiting for a retraining plan* means the plan step did not go through (usually the inference
+service was down); a **Create retraining plan** prompt then appears below, counting only samples from
+this run and noting any others it would also take. *Can't send: no defect model to route it to*: the
+first guess has no defect model (rare). Confirmations and errors share one status line.
 
-### 8.4 After you add samples: the Admin approves the plan
+### 8.4 After you send corrections: the Admin approves the plan
 
 The plan appears under **Models -> Retraining queue** as *pending approval*. An **Admin** uses
 **Show flagged cases** to see what it contains (Work-tab samples show their run) and clicks
 **Approve**, which sends it to the inference service (whose trainer is currently a stub that
-simulates the job). QA can add samples and create plans; only an Admin can approve one. In chat,
+simulates the job). QA can send corrections and create plans; only an Admin can approve one. In chat,
 *"Draft a retraining plan for pcb_text_defect"* does the same plan step for any samples already in
-the training data (including chat relabels).
+the open tickets (including chat relabels).
 
 ---
 
@@ -300,10 +309,12 @@ versions and job progress from the service when reachable.
 1. **Work tab:** run the dataset -> Agent 2 reviews every flagged sample.
 2. **Review Console:** for `S000001` (Agent 1 said *no defect*, Agent 2 said *wrong part*) choose
    **Accept AI**, note *"text is wrong on the part"*, **Confirm Decision**.
-3. **Drift & Retraining:** the correction appears (`Golden -> wrong part`); click **Queue 1 for retraining**.
+3. **Corrections & Retraining:** the correction appears (`Golden -> wrong part`); tick it and click
+   **Send 1 correction for retraining**.
 4. **Chat:** *"How did the models do in the last run?"* - the assistant reports the correction.
-5. **Drift & Retraining:** under **Retraining plan** click **Draft retraining plan** (or ask chat:
-   *"Draft a retraining plan for pcb_text_defect."*) - a plan awaiting approval.
+5. **Corrections & Retraining:** sending already drafted the plan; if it could not (the leftover
+   prompt appears), click **Create retraining plan** (or ask chat: *"Draft a retraining plan for
+   pcb_text_defect."*) - a plan awaiting approval.
 6. **Models (Admin):** the job is now in the **Retraining queue**; **Approve** it.
 
 ---
@@ -313,9 +324,9 @@ versions and job progress from the service when reachable.
 | Symptom | Likely cause |
 | --- | --- |
 | Inspect result is always *Review required*, no defect shown | Region confidence is below the 0.70 threshold. Lower `ADC_REGION_CONFIDENCE_THRESHOLD` (and restart the backend) - see [`DEMO.md`](DEMO.md#before-you-start). |
-| Drift shows "—" and every sample *couldn't decide* | No defect model ran (region model below the 0.7 threshold). Your labels can still be added (by region guess); to measure the model, re-run with a lower **feature threshold** (e.g. 0.3). |
-| Retraining queue shows "N unplanned" but no job | Samples are in the training data without a plan. Click **Create retraining plan** in the Drift & Retraining tab, or ask chat for a plan. |
-| "Run could not be read" in Drift & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
+| Error rate shows "-" and every sample *couldn't decide* | No defect model ran (region model below the 0.7 threshold). Your labels can still be sent (by first guess); to measure the model, re-run with a lower **feature threshold** (e.g. 0.3). |
+| Retraining queue shows "N unplanned" but no job | Samples are in the training data without a plan. Click **Create retraining plan** in the Corrections & Retraining tab, or ask chat for a plan. |
+| "Run could not be read" in Corrections & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
 | "inference service ..." errors | The inference service (port 8001) isn't running or `INFERENCE_BASE_URL` is blank. `start-dev` sets it. |
 | Assistant says a tool isn't available | Your role doesn't allow it, or its kill switch is off. |
 | "unknown run" / images missing in the Review Console after a redeploy | Uploaded images live on the backend's local disk; re-run the dataset. |

@@ -23,8 +23,8 @@ to retraining. For the chat side see [`DEMO.md`](DEMO.md); for the full referenc
 Run the dataset ─► Agent 1 (the model) labels every sample, flags the uncertain ones
                    Agent 2 explains each flagged sample
 Explanation Review ─► you make the final decision = the label        (Accept Machine / AI / Manual)
-Drift & Retraining ─► how often the model was wrong in this run (drift)
-                   ─► Add the relabelled samples to the training data (+ a retraining plan)
+Corrections & Retraining ─► how often the defect model was wrong in this run (error rate)
+                   ─► Send the relabelled samples for retraining (+ a retraining plan)
 Models tab ─► an Admin approves the plan
 ```
 
@@ -101,41 +101,43 @@ data. Where my label differs from what the model said, the model got it wrong."
 
 ---
 
-## Act 3 - How often was the model wrong? (2 min)  - Review Console -> Drift & Retraining
+## Act 3 - How often was the model wrong? (2 min)  - Review Console -> Corrections & Retraining
 
-Click the **Drift & Retraining** tab (badge **"2 to add"**). *Expect (rehearsal):*
+Click the **Corrections & Retraining** tab (badge **"2 to send"**). *Expect (rehearsal):*
 
-- **Drift (model wrong): 67%** - *2 of 3 it classified*;
-  **Model right 1** (S000003) · **Model wrong 2** · **Couldn't decide 0** · **Not reviewed yet 8**;
-- per model: `pcb_text_defect` - reviewed 3 / 9, right 1, wrong 2, drift **67%**;
-- **Your final decisions:** Accept Machine 1, Accept AI 1, Manual 1 - with how many of each were
-  cases where the model was wrong;
-- **The model's commonest mistakes:** model said *no defect* -> correct label *wrong part* / *tombstone*.
+- the **three steps** at the top, with step 2 marked;
+- **Error rate on reviewed samples: 67%** - *2 of 3 the defect model classified were wrong*, and
+  *3 of 11 flagged samples reviewed - this changes as you review*;
+  the bar's legend: **Model right 1** (S000003) · **Model wrong 2** · **Couldn't decide 0** ·
+  **Not reviewed yet 8**;
+- per model: `pcb_text_defect` - reviewed 3 of 9, right 1, wrong 2, error rate **67%**;
+- **Most common mistakes:** model said *no defect* -> correct label *wrong part* / *tombstone*.
 
-*Say:* "My final decision is the correct label. Of the three samples the model classified, it got two
-wrong - 67% drift in this run. It's computed on the server from what I saved and updates every time I
-save a decision." *(Optional: go back, change a decision, return - the numbers move.)*
+*Say:* "My final decision is the correct label. Of the three samples the defect model classified, it
+got two wrong - 67% in this run, on the samples I've reviewed so far. It's computed on the server from
+what I saved and updates every time I save a decision." *(Optional: go back, change a decision,
+return - the numbers move.)*
 
 ---
 
-## Act 4 - Add your labels to the training data (1 min)
+## Act 4 - Send your labels for retraining (1 min)
 
-Still in Drift & Retraining, **Add your labels to the training data** lists:
+Still in Corrections & Retraining, **Send corrections for retraining** lists:
 
-| Sample | Model | Model said | Your label | Training data |
+| Sample | Defect model | Model said | Your label | Status |
 | --- | --- | --- | --- | --- |
-| S000001 | pcb_text_defect | Golden | **wrong part** (AI) | Not added yet |
-| S000004 | pcb_text_defect | Golden | **Tombstone** (MANUAL) | Not added yet |
+| S000001 | pcb_text_defect | no defect | **wrong part** (Accept AI) | Not sent yet |
+| S000004 | pcb_text_defect | no defect | **tombstone** (Manual) | Not sent yet |
 
-Both are ticked. Click **Add 2 to training data**.
+Nothing is ticked yet. Tick **select all**, then click **Send 2 corrections for retraining**.
 
-*Expect:* "Added 2 samples to the training data. Retraining plan for pcb_text_defect is waiting for an
-Admin in the Models tab." Both rows now read **In a retraining plan**; the badge disappears. Clicking
-again adds nothing twice.
+*Expect:* "Sent 2 corrections for retraining. The retraining plan for pcb_text_defect is waiting for
+an Admin to approve it in the Models tab." Both rows now show a tick and read **In a retraining plan,
+awaiting Admin approval**; the badge disappears and step 3 is marked. Sending again sends nothing
+twice.
 
 *Say:* "The samples the model got wrong, with my label, are exactly what it should learn from. One
-click puts them in its training data and drafts the retraining plan - but nothing retrains until an
-Admin says so."
+click sends them and drafts the retraining plan - but nothing retrains until an Admin says so."
 
 ---
 
@@ -157,19 +159,20 @@ this prototype is a stub that simulates the job, so this shows the control flow,
 Run the same dataset with the **default feature threshold 0.7**. *(Rehearsal: every one of the 11
 samples stops at the region stage - the region model is only 40-58% confident - so no defect model
 runs.)* Make a few final decisions (e.g. Accept Machine on S000001 and S000002, Accept AI on S000003
-and S000004), then open Drift & Retraining. *Expect (rehearsal):*
+and S000004), then open Corrections & Retraining. *Expect (rehearsal):*
 
-- **Drift (model wrong): —** - *the model classified none of the reviewed samples*;
+- **Error rate on reviewed samples: -** - *the defect model classified none of the reviewed samples*;
   **Couldn't decide 4**. It is not shown as 0% or 100%: the model never answered, so there is nothing
-  to measure;
-- the note explains: the region model was below its threshold, so no defect model ran;
-- every row reads *couldn't decide (region: Text 50%)* (or *Body 58%*), with the model it belongs to
-  marked **(region guess)** - `pcb_text_defect` for three, `pcb_body_defect` for one;
-- they are ticked and **can** be added: **Add 4 to training data** -> two retraining plans, one per
-  model, all four rows *In a retraining plan*.
+  to measure; the per-model table has a single **No defect model ran** row;
+- the note explains: the first-stage model wasn't confident enough, so no defect model ran;
+- every row reads *couldn't decide (first guess: Text area 50%)* (or *Body area 58%*), with the model
+  it belongs to marked **(from first guess)** - `pcb_text_defect` for three, `pcb_body_defect` for one;
+- tick **select all** and click **Send 4 corrections for retraining** -> two retraining plans, one per
+  model, all four rows *In a retraining plan, awaiting Admin approval*.
 
-*Say:* "When the model can't decide, that's not counted as drift - but my labels are still valuable.
-They go to the defect model the region model guessed, the same routing Agent 1 would have used."
+*Say:* "When the model can't decide, that's not counted in the error rate - but my labels are still
+valuable. They go to the defect model the first guess points to, the same routing Agent 1 would have
+used."
 
 ---
 
@@ -195,7 +198,7 @@ They go to the defect model the region model guessed, the same routing Agent 1 w
 | Backend won't start: `Connect call failed ... 5433` | Docker services are down - run the `docker compose ... up -d --wait db qdrant` command above. |
 | Every sample says *couldn't decide* and drift shows "—" | Feature threshold is 0.7, so no defect model ran - that's the Variant. For the main demo re-run with **0.3**. |
 | Images not found / Verified 0 | Choose the folder `Sample_data_2/Sample_data_2` as the Image Folder. |
-| Drift tab: "the stored run could not be read" | Qdrant is down - start it and click **Refresh**. |
+| Corrections & Retraining tab: "the stored run could not be read" | Qdrant is down - start it and click **Refresh**. |
 | "In training data - no plan yet" after adding | The plan step failed - usually the inference service is down (the plan asks it which model version to retrain from). Start it and click **Create retraining plan**. |
 | Approve fails / "inference unreachable" | Start the inference service on port 8001. |
 | Leftovers from the dry run | **Clear Log** in the Work tab starts a fresh view; old runs stay stored (harmless). |

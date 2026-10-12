@@ -184,7 +184,7 @@ Here that became:
   status) and, for the selected one, the golden and defect images side by side, the Machine / AI
   results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
   Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
-- **Drift & Retraining follows the decisions.** The console's second tab no longer trusts what the
+- **Corrections & Retraining (formerly Drift & Retraining) follows the decisions.** The console's second tab no longer trusts what the
   browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
   review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
   drift: the operator's final decision is the sample's label, and drift is - of the samples a defect
