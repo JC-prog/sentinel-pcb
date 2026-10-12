@@ -23,20 +23,11 @@ describe('Settings', () => {
     expect(component).toBeTruthy();
   });
 
-  it('does not show the server-key note for the ollama provider', () => {
+  it('says chat uses OpenAI through the server key, with no provider choice to make', () => {
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).not.toContain("Uses the server's configured API key");
-  });
-
-  it('shows the server-key note once openai is selected', () => {
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLElement[];
-    const openaiButton = buttons.find((btn) => btn.textContent?.includes('OpenAI'));
-    openaiButton!.click();
-    fixture.detectChanges();
-
-    expect(settingsService.provider()).toBe('openai');
-    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('OpenAI');
     expect(compiled.textContent).toContain("Uses the server's configured API key");
+    expect(compiled.textContent).not.toContain('Ollama');
   });
 
   it('closes when the close button is clicked', () => {

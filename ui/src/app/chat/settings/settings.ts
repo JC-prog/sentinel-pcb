@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { LlmProvider, SettingsService } from '../settings.service';
+import { SettingsService } from '../settings.service';
 
 @Component({
   imports: [],
@@ -9,8 +9,4 @@ import { LlmProvider, SettingsService } from '../settings.service';
 })
 export class Settings {
   constructor(protected readonly settingsService: SettingsService) {}
-
-  selectProvider(provider: LlmProvider): void {
-    this.settingsService.setProvider(provider);
-  }
 }

@@ -182,21 +182,7 @@ describe('HttpChatResponder', () => {
     expect(requestBody.xml_ids).toEqual([]);
   });
 
-  it('defaults to the ollama provider', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await firstValueFrom(
-      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
-    );
-
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(requestBody.provider).toBe('ollama');
-    expect(requestBody.openai_api_key).toBeUndefined();
-  });
-
-  it('sends the openai provider with no key when selected in settings', async () => {
-    settings.setProvider('openai');
+  it('sends the openai provider and never a key', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
     vi.stubGlobal('fetch', fetchMock);
 
