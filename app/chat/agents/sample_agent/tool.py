@@ -30,7 +30,8 @@ async def get_sample(
     confidences, Agent 2's review and explanation, and the operator's final decision if there is
     one. Read-only. Use it whenever the user gives a sample id like S000001 - a sample id is not a
     case number (CASE-xxxxxx). If the sample appears in several runs it answers from the latest and
-    lists the others in other_runs - tell the user and offer to look at another run."""
+    lists the others in other_runs - always tell the user which run it came from and offer to look
+    at another run."""
 
     try:
         return await service.describe_sample(

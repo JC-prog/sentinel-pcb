@@ -155,7 +155,7 @@ async def test_get_sample_reports_what_the_run_stored(client: AsyncQdrantClient)
     assert list(inspection["measurements"]) == ["ConfidenceLevel"]
     assert result["agent2"] is None and result["human_decision"] is None
     assert result["review_state"] == "awaiting_agent2"
-    assert "other_runs" not in result
+    assert "other_runs" not in result and "instruction" not in result
     # server-side image paths are not handed to the model
     assert "secret" not in json.dumps(result)
 
@@ -221,12 +221,15 @@ async def test_a_sample_in_several_runs_answers_from_the_latest_and_names_the_ot
     latest = await call(GET_SAMPLE, _ctx(), sample_id="S1")
     assert latest["run_id"] == "run-new"
     assert [r["run_id"] for r in latest["other_runs"]] == ["run-old"]
+    # the model is told to name the run it answered from, since the user didn't pick one
+    assert "run-new" in latest["instruction"] and "another run" in latest["instruction"]
 
     older = await call(GET_SAMPLE, _ctx(), sample_id="S1", run_id="run-old")
     assert older["run_id"] == "run-old"
     assert older["agent1"]["final_decision"] == "ACCEPTED"
     assert older["review_state"] == "not_flagged"
     assert "other_runs" not in older
+    assert "instruction" not in older
 
 
 async def test_a_run_that_is_still_being_written_is_not_read(client: AsyncQdrantClient) -> None:

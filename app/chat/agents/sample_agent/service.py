@@ -156,6 +156,14 @@ async def describe_sample(sample_id: str, run_id: str | None) -> dict[str, Any]:
     others = [{"run_id": s.run.run_id, "saved_at_utc": s.run.saved_at_utc} for s in found[1:]]
     if others:
         described["other_runs"] = others
+        if run_id is None:
+            # The user didn't pick a run, so say which one was used rather than let the answer pass
+            # for "the" sample: a sample id restarts every run.
+            described["instruction"] = (
+                f"Sample {sample_id} is in {len(others) + 1} runs and the user didn't name one. State "
+                f"that this answer is from run {chosen.run.run_id} (saved {chosen.run.saved_at_utc}, "
+                "the latest) and offer to look at another run from other_runs."
+            )
     return described
 
 
