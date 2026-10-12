@@ -1,5 +1,5 @@
 import { WorkflowCorrection } from './models/orchestrator.models';
-import { formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
+import { aiSaid, formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
 
 const base = {
   agent1_label: null,
@@ -36,9 +36,12 @@ describe('work-format', () => {
     expect(sourceLabel(null)).toBe('—');
   });
 
-  it('shows the same machine verdict as the Review Console: the defect prediction, else the AOI call', () => {
-    expect(machineSaid({ ...base, agent1_label: 'WrongPart_13', machine_label: 'Shift' })).toBe('wrong part');
-    expect(machineSaid({ ...base, machine_label: 'MissingPart' })).toBe('missing part');
+  it('separates the folder label (Machine) from the model prediction (AI)', () => {
+    const both = { ...base, agent1_label: 'WrongPart_13', machine_label: 'Shift_4' } as WorkflowCorrection;
+    expect(machineSaid(both)).toBe('shift');
+    expect(aiSaid(both)).toBe('wrong part');
+    expect(machineSaid({ ...base, machine_label: 'MissingPart' } as WorkflowCorrection)).toBe('missing part');
+    expect(aiSaid(base)).toBe('Not classified');
     expect(machineSaid(base)).toBe('—');
   });
 

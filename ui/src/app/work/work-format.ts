@@ -47,10 +47,15 @@ export function sourceLabel(source: string | null | undefined): string {
   return source ? (labels[source] ?? source) : '—';
 }
 
-/** What the Review Console calls "Machine" for a sample: the defect model's prediction, or - when
- * no defect model ran - the AOI machine's own defect call. Same value on both screens. */
+/** "Machine": the label that came with the uploaded folder - the same value the Review Console
+ * shows under Machine. */
 export function machineSaid(correction: WorkflowCorrection): string {
-  return labelText(correction.agent1_label ?? correction.machine_label);
+  return labelText(correction.machine_label);
+}
+
+/** "AI": what Agent 1's defect model predicted, or that it never classified the sample. */
+export function aiSaid(correction: WorkflowCorrection): string {
+  return correction.agent1_label ? labelText(correction.agent1_label) : 'Not classified';
 }
 
 /** Why a sample is on the list when the defect model never answered: the region model (which only

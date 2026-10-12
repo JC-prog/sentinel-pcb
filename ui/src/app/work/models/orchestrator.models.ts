@@ -240,6 +240,12 @@ export interface WorkflowReviewOut {
   contradiction_detected: boolean;
   ipc_citations: string[];
   visual_evidence: string;
+  /** Where the visual evidence came from: the vision model, a fixed fallback sentence (model
+   * unavailable) or skipped (image not found). */
+  visual_evidence_source?: 'vision_model' | 'fallback' | 'skipped';
+  /** Whether the AOI record carried a physical reading the review could use. */
+  telemetry_available?: boolean;
+  precedents?: { ipc_clause: string; standard: string; rule: string }[];
   errors: string[];
 }
 
@@ -283,6 +289,10 @@ export interface WorkflowReviewCaseOut {
   /** Stage 1, the region model: its label and confidence (null when not stored). */
   region_label?: string | null;
   region_confidence?: number | null;
+  /** Machine = the label from the uploaded folder; AI = Agent 1's defect model prediction (null when
+   * no defect model ran). */
+  machine_verdict?: string | null;
+  ai_verdict?: string | null;
   /** False when the region model was unsure and no defect model ran. */
   defect_model_ran?: boolean;
   agent1_verdict: string;

@@ -22,7 +22,7 @@ import {
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
-import { formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
+import { aiSaid, formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
 import { WorkAlert } from './work-alert/work-alert';
@@ -756,6 +756,7 @@ export class Work implements OnDestroy {
   protected readonly labelText = labelText;
   protected readonly sourceLabel = sourceLabel;
   protected readonly machineSaid = machineSaid;
+  protected readonly aiSaid = aiSaid;
   protected readonly modelNote = modelNote;
   protected readonly trainingStatus = trainingStatus;
   protected readonly percent = percent;
@@ -802,6 +803,18 @@ export class Work implements OnDestroy {
     return value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`;
   }
 
+  /** The label from the uploaded folder (older backends sent only the baseline). */
+  protected machineVerdict(reviewCase: WorkflowReviewCaseOut): string | null {
+    return reviewCase.machine_verdict ?? reviewCase.agent1_verdict ?? null;
+  }
+
+  /** Machine and AI differ - the queue marks it so the operator looks closer. */
+  protected machineAiDiffer(reviewCase: WorkflowReviewCaseOut): boolean {
+    const machine = this.machineVerdict(reviewCase);
+    const ai = reviewCase.ai_verdict;
+    return !!machine && !!ai && machine !== ai;
+  }
+
   /** Arrow keys in the queue: selects the neighbouring row and keeps focus on it. */
   async moveSelection(step: 1 | -1): Promise<void> {
     const cases = this.filteredCases();
@@ -829,7 +842,7 @@ export class Work implements OnDestroy {
     this.reviewError.set(null);
     this.reviewMessage.set(null);
     const decision = reviewCase.decision;
-    this.decisionSource.set(decision?.selected_source ?? 'MACHINE');
+    this.decisionSource.set(decision?.selected_source ?? (this.machineVerdict(reviewCase) ? 'MACHINE' : 'MANUAL'));
     this.manualClass.set(decision?.selected_source === 'MANUAL' ? decision.final_result : IPC_CLASSES[0]);
     this.operatorNotes.set(decision?.operator_notes ?? '');
     this.regionResult.set(this.regionOf(decision?.region_result) ?? this.regionOf(reviewCase.region_label) ?? this.regionOf(reviewCase.feature_type) ?? 'Body');
@@ -844,16 +857,14 @@ export class Work implements OnDestroy {
       return;
     }
     const source = this.decisionSource();
-    const agent2Verdict = reviewCase.review?.agent2_verdict ?? null;
-    if (source === 'AI' && agent2Verdict === null) {
+    const machine = this.machineVerdict(reviewCase);
+    const ai = reviewCase.ai_verdict ?? null;
+    // Accept AI needs Agent 1's defect model to have answered; Agent 2 is advisory and not a choice.
+    if (source === 'AI' && ai === null) {
       return;
     }
     const finalResult =
-      source === 'MACHINE'
-        ? reviewCase.agent1_verdict
-        : source === 'AI'
-          ? (agent2Verdict ?? '')
-          : this.manualClass();
+      source === 'MACHINE' ? (machine ?? '') : source === 'AI' ? (ai ?? '') : this.manualClass();
 
     this.reviewBusy.set(true);
     this.reviewError.set(null);
@@ -864,8 +875,8 @@ export class Work implements OnDestroy {
         sample_id: reviewCase.sample_id,
         selected_source: source,
         final_result: finalResult,
-        machine_result: reviewCase.agent1_verdict,
-        ai_result: agent2Verdict,
+        machine_result: machine,
+        ai_result: ai,
         ai_diagnosis: reviewCase.review?.diagnosis ?? null,
         operator_notes: this.operatorNotes().trim() || null,
         // only a real correction is sent: leaving the region as the model had it records nothing

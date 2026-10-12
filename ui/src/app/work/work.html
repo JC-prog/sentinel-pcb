@@ -445,11 +445,11 @@
                     >
                       <td class="px-3 py-2 font-medium">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
                       <td class="px-3 py-2">
-                        <span class="capitalize">{{ reviewCase.agent1_verdict }}</span>
+                        <span class="capitalize">{{ machineVerdict(reviewCase) ?? '—' }}</span>
                       </td>
                       <td class="px-3 py-2">
-                        <span class="capitalize">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span>
-                        @if (reviewCase.review?.conflict) {
+                        <span class="capitalize">{{ reviewCase.ai_verdict ?? 'Not classified' }}</span>
+                        @if (machineAiDiffer(reviewCase)) {
                           <span class="ml-1 inline-block align-middle text-amber-600 dark:text-amber-400" title="Machine and AI differ" aria-label="Machine and AI differ"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg></span>
                         }
                       </td>
@@ -514,15 +514,23 @@
                     </section>
                   </div>
 
-                  <!-- How sure each model was: the region model picks the part area, the defect model then
-                       names the defect. A sample the region model was unsure about never reaches the defect model. -->
-                  <section aria-label="Model confidence" data-testid="model-confidence" class="rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
-                    <h3 class="mb-2 text-xs font-medium text-slate-600 dark:text-slate-400">How sure were the models?</h3>
-                    <div class="grid gap-3 sm:grid-cols-2">
+                  <!-- Agent 1: the models' inference only. Machine is the label that came with the folder;
+                       AI is what the defect model said after the region model routed the sample. -->
+                  <section
+                    aria-label="Agent 1 model inference"
+                    data-testid="agent1-card"
+                    class="rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700"
+                  >
+                    <h3 class="mb-2 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>Agent 1 · Model inference</span>
+                    </h3>
+                    <p class="mb-3" data-testid="machine-label">
+                      <b>Machine</b> <span class="text-slate-600 dark:text-slate-400">label from the folder</span>
+                      <span class="ml-1 font-medium capitalize">{{ machineVerdict(reviewCase) ?? '—' }}</span>
+                    </p>
+                    <div class="grid gap-3 sm:grid-cols-2" data-testid="model-confidence">
                       <div data-testid="region-confidence">
-                        <p class="flex items-baseline justify-between">
-                          <span><b>Region model</b> <span class="text-slate-600 dark:text-slate-400">picks the part area</span></span>
-                        </p>
+                        <p><b>Region model</b> <span class="text-slate-600 dark:text-slate-400">picks the part area</span></p>
                         <p class="mt-0.5">
                           <span class="font-medium">{{ reviewCase.region_label || reviewCase.feature_type || '—' }}</span>
                           <span class="ml-1 tabular-nums" data-testid="region-confidence-value">{{ confidenceText(reviewCase.region_confidence) }}</span>
@@ -539,12 +547,12 @@
                         }
                       </div>
                       <div data-testid="defect-confidence">
-                        <p><b>Defect model</b> <span class="text-slate-600 dark:text-slate-400">names the defect</span></p>
-                        @if (reviewCase.defect_model_ran === false) {
+                        <p><b>Defect model</b> <span class="text-slate-600 dark:text-slate-400">AI, names the defect</span></p>
+                        @if (reviewCase.defect_model_ran === false || !reviewCase.ai_verdict) {
                           <p class="mt-0.5 text-slate-600 dark:text-slate-400" data-testid="defect-not-run">Did not run: the region model was unsure.</p>
                         } @else {
                           <p class="mt-0.5">
-                            <span class="font-medium capitalize">{{ reviewCase.agent1_verdict }}</span>
+                            <span class="font-medium capitalize">{{ reviewCase.ai_verdict }}</span>
                             <span class="ml-1 tabular-nums" data-testid="defect-confidence-value">{{ confidenceText(reviewCase.agent1_confidence) }}</span>
                           </p>
                           <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -557,57 +565,77 @@
                         }
                       </div>
                     </div>
-                  </section>
-
-                  <section aria-label="Machine and AI results" class="grid gap-3 text-sm sm:grid-cols-2">
-                    <div class="rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
-                      <p class="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><path d="M8 2.5v2.5M12 2.5v2.5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/></svg>Machine</p>
-                      <p class="mt-1"><b>Machine defect:</b> <span class="capitalize">{{ reviewCase.agent1_verdict }}</span></p>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
-                      <p class="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/></svg>AI</p>
-                      <p class="mt-1"><b>AI defect:</b> <span class="capitalize">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span></p>
-                      <p class="mt-1 flex items-center gap-2">
-                        <b>Confidence:</b>
-                        {{ reviewCase.review ? reviewCase.review.confidence.toFixed(3) : '-' }}
-                        @if (reviewCase.review) {
-                          <span class="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" aria-hidden="true">
-                            <span class="block h-full bg-slate-600 dark:bg-slate-300" [style.width.%]="reviewCase.review.confidence * 100"></span>
-                          </span>
-                        }
-                      </p>
-                    </div>
-                    @if (reviewCase.review) {
-                      <p
-                        class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium sm:col-span-2"
-                        [class]="reviewCase.review.conflict
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                          : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'"
-                      >
-                        @if (reviewCase.review.conflict) {
-                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg>Machine and AI disagree. Check the images before deciding.
-                        } @else {
-                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>Machine and AI agree.
-                        }
+                    @if (machineAiDiffer(reviewCase)) {
+                      <p class="mt-3 rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                        Machine and AI disagree.
                       </p>
                     }
                   </section>
 
-                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                    <h3 class="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/></svg>Explanation Agent Output</h3>
-                    <div class="max-h-40 min-h-16 overflow-y-auto whitespace-pre-wrap text-sm">
-                      @if (reviewCase.review; as review) {
+                  <!-- Agent 2: the explanation. Advisory - it is not one of the decisions below. -->
+                  <section
+                    aria-label="Agent 2 explainability"
+                    data-testid="agent2-card"
+                    class="rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700"
+                  >
+                    <h3 class="mb-2 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <span>Agent 2 · Explainability</span>
+                      <span class="rounded-full bg-slate-100 px-2 py-0.5 font-normal text-slate-600 dark:bg-slate-800 dark:text-slate-400">Advisory</span>
+                    </h3>
+                    @if (reviewCase.review; as review) {
+                      <p data-testid="agent2-verdict">
+                        <b>Agent 2 says</b>
+                        <span class="ml-1 font-medium capitalize">{{ review.agent2_verdict }}</span>
+                        <span class="ml-1 tabular-nums text-slate-600 dark:text-slate-400">{{ confidenceText(review.confidence) }}</span>
+                      </p>
+                      <p
+                        class="mt-1 text-xs font-medium"
+                        [class]="review.conflict ? 'text-amber-800 dark:text-amber-300' : 'text-emerald-800 dark:text-emerald-300'"
+                        data-testid="agent2-agreement"
+                      >
+                        {{ review.conflict ? 'Differs from Agent 1 (' + (reviewCase.ai_verdict ?? machineVerdict(reviewCase) ?? 'baseline') + ')' : 'Agrees with Agent 1' }}
+                      </p>
+                      <div class="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap">
                         <p>{{ review.diagnosis || 'No detailed diagnosis provided by Agent 2.' }}</p>
-                        @if (review.visual_evidence) {
-                          <p class="mt-2"><b>Visual evidence:</b> {{ review.visual_evidence }}</p>
-                        }
+                      </div>
+                      <dl class="mt-2 space-y-1 text-xs">
+                        <div data-testid="agent2-visual">
+                          <dt class="inline font-medium">Visual evidence:</dt>
+                          <dd class="inline">
+                            {{ review.visual_evidence }}
+                            <span class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-400" data-testid="agent2-visual-source">
+                              {{
+                                review.visual_evidence_source === 'vision_model'
+                                  ? 'vision model'
+                                  : review.visual_evidence_source === 'skipped'
+                                    ? 'not run: image not found'
+                                    : 'not run: vision model unavailable'
+                              }}
+                            </span>
+                          </dd>
+                        </div>
+                        <div data-testid="agent2-measurements">
+                          <dt class="inline font-medium">Physical measurements:</dt>
+                          <dd class="inline">{{ review.telemetry_available ? 'used' : 'not recorded for this sample' }}</dd>
+                        </div>
                         @if (review.ipc_citations.length > 0) {
-                          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ review.ipc_citations.join('; ') }}</p>
+                          <div><dt class="inline font-medium">IPC citations:</dt> <dd class="inline">{{ review.ipc_citations.join('; ') }}</dd></div>
                         }
-                      } @else {
-                        <p>Agent 2 review is still pending. Click Refresh after Agent 2 finishes.</p>
-                      }
-                    </div>
+                        @for (precedent of review.precedents ?? []; track precedent.ipc_clause + precedent.standard) {
+                          <div class="text-slate-600 dark:text-slate-400">
+                            <span class="font-medium">{{ precedent.ipc_clause }}</span> {{ precedent.standard }}: {{ precedent.rule }}
+                          </div>
+                        }
+                        @if (!review.self_check_passed) {
+                          <div class="text-amber-800 dark:text-amber-300">Agent 2's own self-check did not pass.</div>
+                        }
+                        @for (error of review.errors; track error) {
+                          <div class="text-red-700 dark:text-red-300">{{ error }}</div>
+                        }
+                      </dl>
+                    } @else {
+                      <p class="text-slate-600 dark:text-slate-400">Agent 2 review is still pending. Click Refresh after Agent 2 finishes.</p>
+                    }
                   </section>
 
                   <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
@@ -635,7 +663,7 @@
                           type="radio"
                           name="decisionSource"
                           class="accent-sky-600"
-                          [disabled]="!reviewCase.review"
+                          [disabled]="!reviewCase.ai_verdict"
                           [checked]="decisionSource() === 'AI'"
                           (change)="decisionSource.set('AI')"
                         />
@@ -702,7 +730,7 @@
                       </label>
                       <button
                         type="button"
-                        [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
+                        [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.ai_verdict)"
                         data-testid="confirm-decision"
                         (click)="submitDecision(true)"
                         class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
@@ -841,7 +869,8 @@
                                 />
                               </th>
                               <th class="py-2 pr-3 font-medium">Sample</th>
-                              <th class="py-2 pr-3 font-medium">Machine said</th>
+                              <th class="py-2 pr-3 font-medium">Machine</th>
+                              <th class="py-2 pr-3 font-medium">AI</th>
                               <th class="py-2 pr-3 font-medium">You chose</th>
                               <th class="py-2 pr-3 font-medium">Status</th>
                             </tr>
@@ -868,8 +897,9 @@
                                     {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}@if (correction.model_source === 'operator_region') { (from your region)}
                                   </span>
                                 </td>
+                                <td class="py-2 pr-3 capitalize text-slate-600 dark:text-slate-400" data-testid="machine-said">{{ machineSaid(correction) }}</td>
                                 <td class="py-2 pr-3 text-slate-600 dark:text-slate-400">
-                                  <span class="capitalize" data-testid="said-model">{{ machineSaid(correction) }}</span>
+                                  <span class="capitalize" data-testid="said-model">{{ aiSaid(correction) }}</span>
                                   @if (modelNote(correction)) {
                                     <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="model-note">{{ modelNote(correction) }}</span>
                                   }

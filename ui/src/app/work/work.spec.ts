@@ -661,6 +661,9 @@ describe('Work', () => {
         contradiction_detected: false,
         ipc_citations: ['IPC-A-610 Section 8.3.1'],
         visual_evidence: 'bare pads',
+        visual_evidence_source: 'vision_model',
+        telemetry_available: false,
+        precedents: [{ ipc_clause: 'IPC-A-610 Section 8.3.1', standard: 'Missing Component', rule: 'Absent land.' }],
         errors: [],
         ...overrides,
       };
@@ -676,6 +679,8 @@ describe('Work', () => {
         region_label: 'Body',
         region_confidence: 0.95,
         defect_model_ran: true,
+        machine_verdict: 'shifted',
+        ai_verdict: 'wrong part',
         agent1_verdict: 'wrong part',
         agent1_confidence: 0.6,
         has_golden_image: true,
@@ -721,6 +726,10 @@ describe('Work', () => {
 
     function text(): string {
       return (fixture.nativeElement as HTMLElement).textContent ?? '';
+    }
+
+    function tidy(el: Element | null | undefined): string {
+      return el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
     }
 
     it('moves focus into the console when it opens and back to the button when it closes', async () => {
@@ -986,7 +995,8 @@ describe('Work', () => {
       expect(fake.getReviewCases).toHaveBeenCalledWith('run-1');
       await openConsole();
       expect(text()).toContain('Items Needing Explanation (1 of 3 reviewed)');
-      expect(text()).toContain('Unknown'); // S2: Agent 2 has not finished
+      expect(text()).toContain('shifted'); // Machine: the label that came with the folder
+      expect(text()).toContain('wrong part'); // AI: Agent 1's defect model
       expect(text()).toContain('Reviewed');
       expect(text()).toContain('Pending');
     });
@@ -994,7 +1004,7 @@ describe('Work', () => {
     it('refetches the cases each time Agent 2 finishes a sample', async () => {
       await showRun([reviewCase({ review: null })]);
       await openConsole();
-      expect(text()).toContain('Unknown');
+      expect(text()).toContain('Agent 2 review is still pending');
       const callsBefore = fake.getReviewCases.mock.calls.length;
 
       fake.getReviewCases.mockResolvedValue([reviewCase()]);
@@ -1004,8 +1014,8 @@ describe('Work', () => {
       fixture.detectChanges();
 
       expect(fake.getReviewCases.mock.calls.length).toBeGreaterThan(callsBefore);
-      expect(text()).toContain('missing part');
-      expect(text()).not.toContain('Unknown');
+      expect(text()).toContain('Agent 2 says');
+      expect(text()).not.toContain('Agent 2 review is still pending');
     });
 
     it('opens a case with its images and Agent 2 explanation', async () => {
@@ -1049,14 +1059,14 @@ describe('Work', () => {
         run_id: 'run-1',
         sample_id: 'S1',
         selected_source: 'MACHINE',
-        final_result: 'wrong part',
-        machine_result: 'wrong part',
-        ai_result: 'missing part',
+        final_result: 'shifted', // the folder's own label
+        machine_result: 'shifted',
+        ai_result: 'wrong part',
         ai_diagnosis: 'Laser height is ~0 - the body is absent.',
         operator_notes: 'looks fine',
         region_result: null, // left as the region model had it: nothing to record
       });
-      expect(text()).toContain('Saved S1: wrong part');
+      expect(text()).toContain('Saved S1: shifted');
     });
 
     it('shows both models\' confidence, and flags a region call below the threshold', async () => {
@@ -1098,15 +1108,20 @@ describe('Work', () => {
       expect(fake.saveReviewDecision).toHaveBeenCalledWith(expect.objectContaining({ region_result: 'Lead' }));
     });
 
-    it('saves Agent 2 or a manual IPC class when picked', async () => {
+    it('saves the AI inference or a manual IPC class when picked', async () => {
       await showRun([reviewCase()]);
       await openCase();
 
-      radios()[1].click(); // AI
+      radios()[1].click(); // AI = Agent 1's defect model, not Agent 2
       submit().click();
       await fixture.whenStable();
       expect(fake.saveReviewDecision).toHaveBeenLastCalledWith(
-        expect.objectContaining({ selected_source: 'AI', final_result: 'missing part' }),
+        expect.objectContaining({
+          selected_source: 'AI',
+          final_result: 'wrong part',
+          machine_result: 'shifted',
+          ai_result: 'wrong part',
+        }),
       );
 
       const select = fixture.nativeElement.querySelector('select[name="manualClass"]') as HTMLSelectElement;
@@ -1120,12 +1135,41 @@ describe('Work', () => {
       );
     });
 
-    it('cannot pick Agent 2 while its review is still pending', async () => {
-      await showRun([reviewCase({ review: null })]);
+    it('cannot accept the AI when the defect model never ran', async () => {
+      await showRun([reviewCase({ ai_verdict: null, defect_model_ran: false })]);
       await openCase();
 
       expect(radios()[1].disabled).toBe(true);
-      expect(text()).toContain('Agent 2 review is still pending');
+    });
+
+    it('keeps Agent 1 and Agent 2 in separate cards, and the AI choice does not depend on Agent 2', async () => {
+      await showRun([reviewCase({ review: null })]);
+      await openCase();
+
+      const agent1 = fixture.nativeElement.querySelector('[data-testid="agent1-card"]') as HTMLElement;
+      const agent2 = fixture.nativeElement.querySelector('[data-testid="agent2-card"]') as HTMLElement;
+      expect(tidy(agent1)).toContain('Machine');
+      expect(tidy(agent1)).toContain('shifted');
+      expect(tidy(agent1)).not.toContain('Agent 2');
+      expect(tidy(agent2)).toContain('Agent 2 review is still pending');
+      expect(radios()[1].disabled).toBe(false); // Agent 1 answered, so Accept AI works
+    });
+
+    it('shows Agent 2\'s evidence with where it came from', async () => {
+      await showRun([
+        reviewCase({
+          review: reviewOut({ visual_evidence_source: 'fallback', telemetry_available: false }),
+        }),
+      ]);
+      await openCase();
+
+      const agent2 = fixture.nativeElement.querySelector('[data-testid="agent2-card"]') as HTMLElement;
+      expect(tidy(agent2.querySelector('[data-testid="agent2-verdict"]'))).toContain('missing part');
+      expect(tidy(agent2.querySelector('[data-testid="agent2-visual-source"]'))).toBe(
+        'not run: vision model unavailable',
+      );
+      expect(tidy(agent2.querySelector('[data-testid="agent2-measurements"]'))).toContain('not recorded');
+      expect(tidy(agent2)).toContain('IPC-A-610 Section 8.3.1');
     });
 
     it('pre-fills the form from a saved decision', async () => {
@@ -1443,8 +1487,9 @@ describe('Work', () => {
         expect(boxes()[0].disabled && !boxes()[0].checked).toBe(true);
         expect(selectAll().disabled).toBe(true);
         expect(sendButton().disabled).toBe(true);
-        // the same "machine" verdict the Review Console shows: no defect prediction, so the AOI call
-        expect(allByTestId('said-model')[1]).toBe('wrong part');
+        // Machine is the folder's label; AI is Agent 1's model, which never classified this sample
+        expect(allByTestId('machine-said')[1]).toBe('wrong part');
+        expect(allByTestId('said-model')[1]).toBe('Not classified');
         expect(allByTestId('model-note')[0]).toBe(
           'The defect model did not run: the region model was unsure (Gap area 40%).',
         );
@@ -1481,7 +1526,8 @@ describe('Work', () => {
         expect(tidy(byTestId('drift-rate'))).toBe('—');
         expect(tidy(byTestId('drift-of'))).toBe('the defect model classified none of the reviewed samples');
         expect(tidy(byTestId('kpi-no-answer'))).toBe('2');
-        expect(allByTestId('said-model')).toEqual(['wrong part', 'wrong part']);
+        expect(allByTestId('machine-said')).toEqual(['wrong part', 'wrong part']);
+        expect(allByTestId('said-model')).toEqual(['Not classified', 'Not classified']);
         expect(allByTestId('model-note')).toEqual([
           'The defect model did not run: the region model was unsure (Text area 50%).',
           'The defect model did not run: the region model was unsure (Text area 50%).',
