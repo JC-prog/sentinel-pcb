@@ -9,6 +9,14 @@ Fargate (1 vCPU, 2 GiB), the inference service on Fargate, Qdrant on Fargate, RD
 repositories, an S3 bucket for the UI, three Secrets Manager secrets, and a private DNS namespace.
 Details of each piece are in [`infra/production/README.md`](../infra/production/README.md).
 
+**Contents**
+
+| Part | Steps |
+|---|---|
+| Deploy | [0. Before you start](#0-before-you-start) · [1. State bucket](#1-one-time-the-terraform-state-bucket) · [2. Repositories](#2-create-the-container-repositories-first) · [3. Build and push](#3-build-and-push-the-two-images) · [4. Create the rest](#4-create-everything-else) · [5. Health check](#5-check-that-the-backend-is-healthy) · [6. Publish the UI](#6-publish-the-ui) · [7. Use it](#7-use-it) |
+| Update | [8. Updating while it is up](#8-updating-while-it-is-up) |
+| **Teardown** | [**9. Teardown**](#9-teardown-destroy-everything) · [9.1 Destroy](#91-destroy-the-stack) · [9.2 Confirm nothing is left](#92-confirm-nothing-is-left-running) · [9.3 Clean up outside Terraform](#93-clean-up-outside-terraform) |
+
 ---
 
 ## 0. Before you start
@@ -198,7 +206,7 @@ Things to expect on a fresh deployment:
 
 ---
 
-## 9. Teardown
+## 9. Teardown (destroy everything)
 
 Do this as soon as you are done; the stack costs money while it exists.
 
