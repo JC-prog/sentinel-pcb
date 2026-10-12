@@ -755,7 +755,8 @@ describe('Work', () => {
       await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
       await openCase('S1');
 
-      const next = fixture.nativeElement.querySelector('[data-testid="confirm-next"]') as HTMLButtonElement;
+      const next = fixture.nativeElement.querySelector('[data-testid="confirm-decision"]') as HTMLButtonElement;
+      expect(next.textContent).toContain('Confirm & next pending');
       next.click();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -872,7 +873,7 @@ describe('Work', () => {
 
       await openConsole();
       expect(popup()?.getAttribute('aria-modal')).toBe('true');
-      expect(text()).toContain('Explanation Review Queue');
+      expect(text()).toContain('Review Console');
       expect(text()).toContain('Run: run-1');
 
       (fixture.nativeElement.querySelector('button[aria-label="close review console"]') as HTMLElement).click();

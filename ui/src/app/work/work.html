@@ -308,7 +308,7 @@
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>
             </span>
             <h1 id="review-console-title" class="text-lg font-bold">
-              {{ consoleTab() === 'review' ? 'Explanation Review Queue' : 'Corrections & Retraining' }}
+              {{ consoleTab() === 'review' ? 'Review Console' : 'Corrections & Retraining' }}
             </h1>
             <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
@@ -637,23 +637,13 @@
                       <button
                         type="button"
                         [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
-                        (click)="submitDecision()"
+                        data-testid="confirm-decision"
+                        (click)="submitDecision(true)"
                         class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
                       >
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>
-                        {{ reviewBusy() ? 'Saving…' : 'Confirm Decision' }}
+                        {{ reviewBusy() ? 'Saving…' : hasNextPending() ? 'Confirm & next pending' : 'Confirm Decision' }}
                       </button>
-                      @if (hasNextPending()) {
-                        <button
-                          type="button"
-                          data-testid="confirm-next"
-                          [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
-                          (click)="submitDecision(true)"
-                          class="shrink-0 rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-                        >
-                          Confirm &amp; next pending
-                        </button>
-                      }
                     </div>
                   </section>
                 </div>
