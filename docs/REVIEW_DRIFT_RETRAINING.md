@@ -18,7 +18,7 @@ the app see [`USER_GUIDE.md`](USER_GUIDE.md); for the system as a whole see
  Operator decision in Explanation Review ("User Final Decision")
    │ saved:  adc_agent2_reviews.human_decision                          (Qdrant)
    ▼
- GET  .../monitoring/run-drift  ── shared/modelops/run_drift.py ──►  Corrections & Retraining tab
+ GET  .../monitoring/run-drift  ── shared/modelops/run_drift.py ──►  Model feedback + Retraining queue tabs
    │ the final decision is the label; drift = wrong / classified (couldn't-decide shown apart)
    ▼
  Operator queues corrections:  POST .../monitoring/run-retraining-tickets
@@ -191,7 +191,7 @@ user's waiting draft; deleting the conversation cascades to it.
 | Situation | Behaviour |
 | --- | --- |
 | Qdrant unreachable during a run | The run completes from memory; the Review Console works from the in-memory registry until restart. Decisions fall back to `workflow_review_decisions`. |
-| Qdrant unreachable for the Corrections & Retraining tab | `run-drift` returns `available:false` + message; the tab shows it. Queueing returns 503. |
+| Qdrant unreachable for the Model feedback / Retraining queue tabs | `run-drift` returns `available:false` + message; the tab shows it. Queueing returns 503. |
 | Backend restarted | The Review Console rebuilds its registry from Qdrant (`reviews.ensure_run_loaded`), including reviews already generated. |
 | Chat tool cannot reach Qdrant / run not stored | The tool returns an `error` the assistant relays; the chat turn does not fail. |
 | Inference service down | `inspect_image` errors with nothing saved; relabel fails closed (it cannot validate the label). |
@@ -215,10 +215,10 @@ The Work tab's own thresholds (default 0.70) are per-run inputs in the UI, not s
 | --- | --- |
 | Drift/correction maths, normalisation | `tests/shared/test_run_drift.py` |
 | Run persistence, restart survival, fallback | `tests/workflow/test_run_store.py`, `test_orchestrator_reviews.py` |
-| Corrections & Retraining tab routes: decision -> numbers -> queue, idempotency, all-or-nothing, fail-open, report snapshot | `tests/workflow/test_run_drift_routes.py` |
+| Model feedback / Retraining queue routes: decision -> numbers -> queue, idempotency, all-or-nothing, fail-open, report snapshot | `tests/workflow/test_run_drift_routes.py` |
 | Chat reader/tools, `get_run_drift`, and the full chain (workflow ticket -> chat `draft_retraining_plan`) | `tests/chat/agents/test_sample_agent.py` |
 | Confirm-before-create, same-turn refusal, end to end through the supervisor | `tests/chat/agents/test_create_case.py` |
-| UI: Corrections & Retraining refresh after a decision, corrections table, queue | `ui/src/app/work/work.spec.ts`, `work-orchestrator-client.spec.ts` |
+| UI: Model feedback and Retraining queue refresh after a decision, corrections table, queue | `ui/src/app/work/work.spec.ts`, `work-orchestrator-client.spec.ts` |
 | Module boundaries (chat/workflow/modelops independent) | `tests/test_module_boundaries.py`, `tests/chat/test_agent_boundaries.py` |
 | Live tool-selection evals (opt-in, costs tokens) | `uv run pytest -m eval -s` (`tests/evals/`) |
 

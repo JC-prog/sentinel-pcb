@@ -202,7 +202,7 @@ label - this is where the data gets relabelled."
 
 ## Act 6 - How often was the model wrong, and send your labels for retraining (2 min)  - **Review Console**
 
-Click the **Corrections & Retraining** tab (badge **"2 to send"**). *Expect (rehearsal):*
+Click the **Retraining queue** tab (badge **"2 to send"**); the analytics are in **Model feedback**. *Expect (rehearsal):*
 
 - the **three steps** across the top, with step 2 (*Send your corrections for retraining*) marked;
 - **Error rate on reviewed samples: 67%** - *2 of 3 the defect model classified were wrong*, and
@@ -244,7 +244,7 @@ explanation, and **the operator decision you just made**.* (tool: *Sample lookup
 
 > **How did the models do in the last run, and what did the operator correct?**
 
-*Per-model numbers matching the Corrections & Retraining tab, and the two relabelled samples - already in a retraining plan.*
+*Per-model numbers matching the Model feedback tab, and the two relabelled samples - already in a retraining plan.*
 (tool: *Run drift*)
 
 > **What do you know about sample S999999?**
@@ -297,7 +297,7 @@ Optional extras if time allows:
 | Chat inspection says region uncertain, no defect | Thresholds are at 0.70. Lower them in `.env` and **restart the backend** (Before you start, step 2). |
 | Work-tab run: Verified 0 or all samples "FEATURE_CLASSIFICATION_UNCERTAIN", corrections say *No model recorded* | Feature threshold too high. Re-run with **0.3**. |
 | Verification fails / images not found | Choose the **folder** `Sample_data_2/Sample_data_2` as the Image Folder (not a parent folder). |
-| Corrections & Retraining tab says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
+| Model feedback / Retraining queue says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
 | Assistant doesn't call a tool | Rephrase closer to the prompts above; with a local model, be explicit ("Yes, confirm it."). A hosted model follows more reliably. |
 | *"cannot tell which version ... to retrain from"* when drafting a plan | Open the **Models** tab once - it syncs versions from the inference service - then try again. |
 | Retraining queue is empty after sending | Sending makes *tickets* and drafts the plan. If the plan step failed, use **Create retraining plan** (Corrections & Retraining tab, or chat) and the job appears. |

@@ -184,7 +184,7 @@ If it looks wrong:
 > plan with status **pending approval**.
 
 Tickets come from either place: a confirmed **relabel** in chat, or an operator's **queued
-correction** sent from the Work tab's Corrections & Retraining tab (section 8). **Approving a plan and promoting
+correction** sent from the Work tab's Retraining queue tab (section 8). **Approving a plan and promoting
 a retrained model are Admin actions in the Models tab - never from chat.**
 
 **Admin only:** *"What is the model status?"* - which version of each model is live, open drift
@@ -238,7 +238,13 @@ Click **Open Review Console**. On the **Explanation Review** tab:
 
 Nothing is ever auto-approved - even when the two agents agree, the operator makes the call.
 
-### 8.3 Corrections & Retraining - how often the model was wrong, and sending your labels for retraining
+### 8.3 Model feedback and the Retraining queue - how the models did, and sending your labels for retraining
+
+The Review Console has three tabs. **Review** is where you decide. **Model feedback** is a read-only
+report: how the region model and the defect models did on this run, where flagged samples dropped
+out, and how useful Agent 2 was. **Retraining queue** is the work list: the corrections you made,
+grouped by the model they teach (the region model, and each defect model), each with its own send
+button. A sample can appear twice: once for the part area you corrected and once for the defect label.
 
 The tab opens with three steps and marks the one you are on: **1. Review flagged samples** (the
 Explanation Review tab), **2. Send your corrections for retraining** (this tab), **3. An Admin
@@ -314,10 +320,10 @@ versions and job progress from the service when reachable.
 1. **Work tab:** run the dataset -> Agent 2 reviews every flagged sample.
 2. **Review Console:** for `S000001` (Agent 1 said *no defect*, Agent 2 said *wrong part*) choose
    **Accept AI**, note *"text is wrong on the part"*, **Confirm Decision**.
-3. **Corrections & Retraining:** the correction appears (`Golden -> wrong part`); tick it and click
+3. **Retraining queue:** the correction appears (`Golden -> wrong part`); tick it and click
    **Send 1 correction for retraining**.
 4. **Chat:** *"How did the models do in the last run?"* - the assistant reports the correction.
-5. **Corrections & Retraining:** sending already drafted the plan; if it could not (the leftover
+5. **Retraining queue:** sending already drafted the plan; if it could not (the leftover
    prompt appears), click **Create retraining plan** (or ask chat: *"Draft a retraining plan for
    pcb_text_defect."*) - a plan awaiting approval.
 6. **Models (Admin):** the job is now in the **Retraining queue**; **Approve** it.
@@ -331,7 +337,7 @@ versions and job progress from the service when reachable.
 | Inspect result is always *Review required*, no defect shown | Region confidence is below the 0.70 threshold. Lower `ADC_REGION_CONFIDENCE_THRESHOLD` (and restart the backend) - see [`DEMO.md`](DEMO.md#before-you-start). |
 | Error rate shows "-" and every sample *couldn't decide* | No defect model ran (region model below the 0.7 threshold). Your labels can still be sent (by first guess); to measure the model, re-run with a lower **feature threshold** (e.g. 0.3). |
 | Retraining queue shows "N unplanned" but no job | Samples are in the training data without a plan. Click **Create retraining plan** in the Corrections & Retraining tab, or ask chat for a plan. |
-| "Run could not be read" in Corrections & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
+| "Run could not be read" in Model feedback or Retraining queue | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
 | "inference service ..." errors | The inference service (port 8001) isn't running or `INFERENCE_BASE_URL` is blank. `start-dev` sets it. |
 | Assistant says a tool isn't available | Your role doesn't allow it, or its kill switch is off. |
 | "unknown run" / images missing in the Review Console after a redeploy | Uploaded images live on the backend's local disk; re-run the dataset. |

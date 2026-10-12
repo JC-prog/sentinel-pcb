@@ -148,6 +148,8 @@ export interface WorkflowModelDrift {
  * data (`queueable`); `ticket_status` says where it stands once added. */
 export interface WorkflowCorrection {
   sample_id: string;
+  /** "defect": the defect label, for a defect model. "region": the part area, for the region model. */
+  kind?: 'defect' | 'region';
   /** The defect model the sample belongs to - the one that classified it, or the one its region
    * guess routes to (`model_source`). */
   model_name: string | null;
@@ -180,6 +182,33 @@ export interface WorkflowDecisionStats {
   top_overruled: { model_label: string; chosen_label: string; count: number }[];
 }
 
+export interface WorkflowRegionStats {
+  reviewed: number;
+  confirmed: number;
+  corrected: number;
+  accuracy: number | null;
+  mean_confidence: number | null;
+  /** Flagged samples the region model was too unsure about for a defect model to run. */
+  stopped_here: number;
+  by_region: { region: string; samples: number; corrected: number; mean_confidence: number | null }[];
+  swaps: { model_region: string; chosen_region: string; count: number }[];
+}
+
+export interface WorkflowFunnel {
+  flagged: number;
+  defect_ran: number;
+  reviewed: number;
+  corrected: number;
+}
+
+export interface WorkflowAgent2Stats {
+  with_review: number;
+  matched: number;
+  by_evidence: Record<string, { n: number; matched: number }>;
+  with_measurements: { n: number; matched: number };
+  without_measurements: { n: number; matched: number };
+}
+
 export interface WorkflowRunDrift {
   run_id: string;
   /** False when the stored run could not be read; `message` says so. */
@@ -199,6 +228,9 @@ export interface WorkflowRunDrift {
   models: WorkflowModelDrift[];
   corrections: WorkflowCorrection[];
   decisions: WorkflowDecisionStats;
+  region?: WorkflowRegionStats | null;
+  funnel?: WorkflowFunnel | null;
+  agent2?: WorkflowAgent2Stats | null;
   /** Open (not yet planned) retraining tickets per model - what a plan drafted now would contain. */
   open_tickets?: Record<string, number>;
   /** The same, counting only tickets added from this run. */
@@ -215,9 +247,15 @@ export interface WorkflowRetrainingPlanOut {
   drift_reports_linked: number;
 }
 
+/** One correction to send: the sample and the model it is a correction for. */
+export interface WorkflowCorrectionRef {
+  sample_id: string;
+  model_name: string;
+}
+
 export interface WorkflowQueueCorrectionsRequest {
   run_id: string;
-  sample_ids: string[];
+  items: WorkflowCorrectionRef[];
 }
 
 export interface WorkflowQueueCorrectionsOut {

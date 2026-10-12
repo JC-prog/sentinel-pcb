@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Review Console now has three tabs. **Model feedback** is a report that adds the
+  **region model** (accuracy, confidence, what you changed it to), a funnel of where flagged samples
+  went, and how useful Agent 2 was. **Retraining queue** is the work list: your corrections grouped by
+  the model they teach, each group with its label mix, a hint when the batch is tiny or lopsided, and
+  its own send button. Part-area corrections can now be sent for retraining as tickets for the region
+  model, so one sample can carry a region and a defect correction. The ticket uniqueness now includes
+  the model: on an existing database run
+  `DROP INDEX uq_retraining_tickets_run_sample; CREATE UNIQUE INDEX uq_retraining_tickets_run_sample ON retraining_tickets (run_id, sample_ref, model_name) WHERE run_id IS NOT NULL;`.
 - Work tab: the Review Console separates the two agents. **Agent 1** is a card with the model
   inference only (Machine is the label from the uploaded folder; AI is the defect model, with the
   region model's and defect model's confidence). **Agent 2** is its own advisory card: verdict,

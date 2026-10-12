@@ -23,7 +23,7 @@ to retraining. For the chat side see [`DEMO.md`](DEMO.md); for the full referenc
 Run the dataset ─► Agent 1 (the model) labels every sample, flags the uncertain ones
                    Agent 2 explains each flagged sample
 Explanation Review ─► you make the final decision = the label        (Accept Machine / AI / Manual)
-Corrections & Retraining ─► how often the defect model was wrong in this run (error rate)
+Model feedback ─► how often the models were wrong in this run; Retraining queue ─► send corrections
                    ─► Send the relabelled samples for retraining (+ a retraining plan)
 Models tab ─► an Admin approves the plan
 ```
@@ -101,9 +101,9 @@ data. Where my label differs from what the model said, the model got it wrong."
 
 ---
 
-## Act 3 - How often was the model wrong? (2 min)  - Review Console -> Corrections & Retraining
+## Act 3 - How often was the model wrong? (2 min)  - Review Console -> Model feedback and Retraining queue
 
-Click the **Corrections & Retraining** tab (badge **"2 to send"**). *Expect (rehearsal):*
+Click the **Model feedback** tab for the numbers; the **Retraining queue** tab carries the badge **"2 to send"**. *Expect (rehearsal):*
 
 - the **three steps** at the top, with step 2 marked;
 - **Error rate on reviewed samples: 67%** - *2 of 3 the defect model classified were wrong*, and
@@ -122,7 +122,7 @@ return - the numbers move.)*
 
 ## Act 4 - Send your labels for retraining (1 min)
 
-Still in Corrections & Retraining, **Send corrections for retraining** lists:
+In the **Retraining queue**, the corrections are grouped by model and listed:
 
 | Sample | Defect model | Model said | Your label | Status |
 | --- | --- | --- | --- | --- |
@@ -159,7 +159,7 @@ this prototype is a stub that simulates the job, so this shows the control flow,
 Run the same dataset with the **default feature threshold 0.7**. *(Rehearsal: every one of the 11
 samples stops at the region stage - the region model is only 40-58% confident - so no defect model
 runs.)* Make a few final decisions (e.g. Accept Machine on S000001 and S000002, Accept AI on S000003
-and S000004), then open Corrections & Retraining. *Expect (rehearsal):*
+and S000004), then open Model feedback. *Expect (rehearsal):*
 
 - **Error rate on reviewed samples: -** - *the defect model classified none of the reviewed samples*;
   **Couldn't decide 4**. It is not shown as 0% or 100%: the model never answered, so there is nothing
@@ -198,7 +198,7 @@ used."
 | Backend won't start: `Connect call failed ... 5433` | Docker services are down - run the `docker compose ... up -d --wait db qdrant` command above. |
 | Every sample says *couldn't decide* and drift shows "—" | Feature threshold is 0.7, so no defect model ran - that's the Variant. For the main demo re-run with **0.3**. |
 | Images not found / Verified 0 | Choose the folder `Sample_data_2/Sample_data_2` as the Image Folder. |
-| Corrections & Retraining tab: "the stored run could not be read" | Qdrant is down - start it and click **Refresh**. |
+| Model feedback / Retraining queue: "the stored run could not be read" | Qdrant is down - start it and click **Refresh**. |
 | "In training data - no plan yet" after adding | The plan step failed - usually the inference service is down (the plan asks it which model version to retrain from). Start it and click **Create retraining plan**. |
 | Approve fails / "inference unreachable" | Start the inference service on port 8001. |
 | Leftovers from the dry run | **Clear Log** in the Work tab starts a fresh view; old runs stay stored (harmless). |

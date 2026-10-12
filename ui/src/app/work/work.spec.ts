@@ -1064,7 +1064,7 @@ describe('Work', () => {
         ai_result: 'wrong part',
         ai_diagnosis: 'Laser height is ~0 - the body is absent.',
         operator_notes: 'looks fine',
-        region_result: null, // left as the region model had it: nothing to record
+        region_result: 'Body', // always the area settled on: confirmed is told apart from not looked at
       });
       expect(text()).toContain('Saved S1: shifted');
     });
@@ -1224,6 +1224,13 @@ describe('Work', () => {
     });
 
     describe('Corrections & Retraining: how often the model was wrong, and sending corrections for retraining', () => {
+      async function openQueueTab(): Promise<void> {
+        await openConsole();
+        (fixture.nativeElement.querySelector('[data-testid="tab-queue"]') as HTMLButtonElement).click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
       async function openDriftTab(): Promise<void> {
         await openConsole();
         (fixture.nativeElement.querySelector('[data-testid="tab-drift"]') as HTMLButtonElement).click();
@@ -1287,8 +1294,10 @@ describe('Work', () => {
         expect(tidy(byTestId('drift-of'))).toBe('nothing reviewed yet');
         expect(tidy(byTestId('review-progress'))).toBe('0 of 2 flagged samples reviewed - this changes as you review');
         expect(tidy(byTestId('activity-empty'))).toContain('No decisions yet');
+
+        await openQueueTab();
         expect(tidy(byTestId('no-corrections'))).toBe('Nothing reviewed yet.');
-        expect(sendButton().disabled).toBe(true);
+        expect(byTestId('send-for-retraining')).toBeNull(); // nothing to send
       });
 
       it('shows what is still unreviewed in the outcome bar, and the model\'s commonest mistakes', async () => {
@@ -1319,7 +1328,7 @@ describe('Work', () => {
         const stage = (key: string): string => tidy(fixture.nativeElement.querySelector(`[data-stage="${key}"]`));
         fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         expect(byTestId('feedback-status')?.getAttribute('data-kind')).toBe('send');
         expect(tidy(byTestId('feedback-status'))).toContain('2 reviewed samples can teach the model: 2 the model got wrong. 2 are ready to send.');
@@ -1369,21 +1378,126 @@ describe('Work', () => {
         expect(tidy(byTestId('review-activity'))).toContain('2 chosen, 2 overruled the model');
       });
 
-      it('puts the graphs and telemetry first, then where the corrections stand', async () => {
+      it('keeps Model feedback a report: graphs and telemetry, with a pointer to the queue', async () => {
         fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' })]));
         await showRun([reviewCase()]);
         await openDriftTab();
 
-        const section = (id: string): Element => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as Element;
-        const before = (a: Element, b: Element): boolean =>
-          !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-        expect(before(section('run-drift'), section('feedback-status'))).toBe(true);
-        expect(before(section('feedback-status'), section('training-data'))).toBe(true);
-
-        const telemetry = section('model-telemetry');
+        const telemetry = byTestId('model-telemetry') as Element;
         expect(tidy(telemetry.querySelector('[data-testid="telemetry-mean"]'))).toBe('70%');
         expect(tidy(telemetry.querySelector('[data-testid="telemetry-low"]'))).toBe('50%');
         expect(tidy(telemetry.querySelector('[data-testid="telemetry-agent2"]'))).toBe('1 of 2');
+        // reading, not sending: the corrections list and the send button live in the queue tab
+        expect(byTestId('corrections')).toBeNull();
+        expect(byTestId('send-for-retraining')).toBeNull();
+        expect(tidy(byTestId('queue-banner'))).toContain('1 correction ready to send for retraining');
+
+        (byTestId('open-queue') as HTMLButtonElement).click();
+        await settle();
+        expect(byTestId('training-data')).not.toBeNull();
+      });
+
+      it('groups corrections by the model they teach and sends one group at a time', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', model_name: 'pcb_body_defect' }),
+            correction({ sample_id: 'S2', model_name: 'pcb_body_defect' }),
+            correction({
+              sample_id: 'S3',
+              kind: 'region',
+              model_name: 'pcb_region',
+              agent1_label: 'Body',
+              final_result: 'Lead',
+            }),
+          ]),
+        );
+        fake.queueCorrections.mockResolvedValue({
+          created: [{ id: 't', sample_ref: 'S3', model_name: 'pcb_region', status: 'open' }],
+          already_queued: [],
+        });
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        const groups = Array.from(fixture.nativeElement.querySelectorAll('[data-group]')).map(
+          (g) => (g as HTMLElement).getAttribute('data-group'),
+        );
+        expect(groups).toEqual(['pcb_region', 'pcb_body_defect']); // the region model first
+        expect(tidy(byTestId('send-group-pcb_region'))).toBe('Send 1 to Region model');
+        expect(tidy(byTestId('send-group-pcb_body_defect'))).toBe('Send 2 to Body defect model');
+
+        (byTestId('send-group-pcb_region') as HTMLButtonElement).click();
+        await settle();
+
+        // only that group's corrections went
+        expect(fake.queueCorrections).toHaveBeenCalledWith({
+          run_id: 'run-1',
+          items: [{ sample_id: 'S3', model_name: 'pcb_region' }],
+        });
+        expect(fake.draftRetrainingPlan).toHaveBeenCalledWith('pcb_region');
+        expect(fake.draftRetrainingPlan).not.toHaveBeenCalledWith('pcb_body_defect');
+      });
+
+      it('lets one model\'s group be unticked without touching the others', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', model_name: 'pcb_body_defect' }),
+            correction({ sample_id: 'S2', model_name: 'pcb_lead_defect' }),
+          ]),
+        );
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        (byTestId('select-group-pcb_body_defect') as HTMLInputElement).click();
+        fixture.detectChanges();
+
+        expect(tidy(byTestId('send-group-pcb_body_defect'))).toBe('Send 0 to Body defect model');
+        expect((byTestId('send-group-pcb_body_defect') as HTMLButtonElement).disabled).toBe(true);
+        expect(tidy(byTestId('send-group-pcb_lead_defect'))).toBe('Send 1 to Lead defect model');
+      });
+
+      it('shows what each batch would teach, and warns about a tiny one', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', final_result: 'tombstone' }),
+            correction({ sample_id: 'S2', final_result: 'shifted' }),
+          ]),
+        );
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        const group = fixture.nativeElement.querySelector('[data-group="pcb_body_defect"]') as HTMLElement;
+        expect(tidy(group.querySelector('[data-testid="group-mix"]'))).toContain('tombstone1');
+        expect(tidy(group.querySelector('[data-testid="group-hint"]'))).toContain('Small batch');
+      });
+
+      it('shows the region model as its own section with accuracy and what was changed', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([], {
+            region: {
+              reviewed: 4,
+              confirmed: 3,
+              corrected: 1,
+              accuracy: 0.75,
+              mean_confidence: 0.82,
+              stopped_here: 2,
+              by_region: [
+                { region: 'Body', samples: 3, corrected: 1, mean_confidence: 0.9 },
+                { region: 'Lead', samples: 1, corrected: 0, mean_confidence: 0.6 },
+              ],
+              swaps: [{ model_region: 'Body', chosen_region: 'Lead', count: 1 }],
+            },
+            funnel: { flagged: 6, defect_ran: 4, reviewed: 4, corrected: 1 },
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(tidy(byTestId('region-accuracy'))).toBe('75%');
+        expect(tidy(byTestId('region-confirmed'))).toBe('3 / 4');
+        expect(tidy(byTestId('region-swaps'))).toContain('Body → Lead× 1');
+        expect(fixture.nativeElement.querySelector('[data-region="Body"]')).not.toBeNull();
+        expect(tidy(byTestId('funnel-stopped'))).toContain('2 stopped at the region model');
+        expect(allByTestId('funnel')[0]).toContain('Flagged for review');
       });
 
       it('asks for the rest of the review first, with a way back', async () => {
@@ -1393,7 +1507,7 @@ describe('Work', () => {
           }),
         );
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         expect(tidy(byTestId('feedback-status'))).toContain('3 flagged samples still need review');
         (byTestId('go-review') as HTMLButtonElement).click();
@@ -1404,7 +1518,7 @@ describe('Work', () => {
       it('lists each correction in the review tab\'s own words, with everything ticked ready to send', async () => {
         fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         expect(allByTestId('said-model')).toEqual(['missing part', 'missing part']);
         expect(allByTestId('chose')).toEqual(['tombstone (Manual)', 'tombstone (Manual)']);
@@ -1418,7 +1532,7 @@ describe('Work', () => {
       it('selects every sendable correction at once', async () => {
         fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' }), correction({ sample_id: 'S2' })]));
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         expect(boxes().every((box) => box.checked)).toBe(true);
         expect(tidy(sendButton())).toBe('Send 2 corrections for retraining');
@@ -1453,7 +1567,7 @@ describe('Work', () => {
           already_queued: [],
         });
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
         boxes()[0].click(); // untick S1, leaving S2
         fixture.detectChanges();
         expect(tidy(sendButton())).toBe('Send 1 correction for retraining');
@@ -1468,7 +1582,10 @@ describe('Work', () => {
         await settle();
 
         // only ids go to the server - it builds the training sample from what it stored
-        expect(fake.queueCorrections).toHaveBeenCalledWith({ run_id: 'run-1', sample_ids: ['S2'] });
+        expect(fake.queueCorrections).toHaveBeenCalledWith({
+          run_id: 'run-1',
+          items: [{ sample_id: 'S2', model_name: 'pcb_body_defect' }],
+        });
         expect(fake.draftRetrainingPlan).toHaveBeenCalledWith('pcb_body_defect');
         expect(tidy(byTestId('action-message'))).toBe(
           'Sent 1 correction for retraining. The retraining plan for pcb_body_defect is waiting for an Admin to approve it in the Models tab.',
@@ -1498,14 +1615,15 @@ describe('Work', () => {
           ]),
         );
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         expect(boxes().length).toBe(1); // S1 shows a tick instead
         expect(boxes()[0].disabled && !boxes()[0].checked).toBe(true);
-        expect(selectAll().disabled).toBe(true);
-        expect(sendButton().disabled).toBe(true);
+        expect(byTestId('select-all')).toBeNull(); // nothing left to select
+        expect(byTestId('send-for-retraining')).toBeNull();
+        expect(byTestId('send-group-none')).toBeNull(); // the unroutable group has no send button
         // Machine is the folder's label; AI is Agent 1's model, which never classified this sample
-        expect(allByTestId('machine-said')[1]).toBe('wrong part');
+        expect(allByTestId('machine-said')[1]).toBe('Machine: wrong part');
         expect(allByTestId('said-model')[1]).toBe('Not classified');
         expect(allByTestId('model-note')[0]).toBe(
           'The defect model did not run: the region model was unsure (Gap area 40%).',
@@ -1543,14 +1661,17 @@ describe('Work', () => {
         expect(tidy(byTestId('drift-rate'))).toBe('—');
         expect(tidy(byTestId('drift-of'))).toBe('the defect model classified none of the reviewed samples');
         expect(tidy(byTestId('kpi-no-answer'))).toBe('2');
-        expect(allByTestId('machine-said')).toEqual(['wrong part', 'wrong part']);
+
+        // the labels can still be sent, to the model the region guess points at
+        await openQueueTab();
+        expect(allByTestId('machine-said')).toEqual(['Machine: wrong part', 'Machine: wrong part']);
         expect(allByTestId('said-model')).toEqual(['Not classified', 'Not classified']);
         expect(allByTestId('model-note')).toEqual([
           'The defect model did not run: the region model was unsure (Text area 50%).',
           'The defect model did not run: the region model was unsure (Text area 50%).',
         ]);
-        expect(allByTestId('target-model')).toEqual(['pcb_text_defect (from first guess)', 'pcb_text_defect (from first guess)']);
         expect(allByTestId('chose')).toEqual(['solder insufficient (Accept Machine)', 'polarity1 (Accept Machine)']);
+        expect(fixture.nativeElement.querySelector('[data-group="pcb_text_defect"]')).not.toBeNull();
         expect(tidy(sendButton())).toBe('Send 2 corrections for retraining');
       });
 
@@ -1558,7 +1679,7 @@ describe('Work', () => {
         fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
         fake.queueCorrections.mockRejectedValue(new Error('nothing to add for sample(s) S1'));
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         sendButton().click();
         await settle();
@@ -1576,7 +1697,7 @@ describe('Work', () => {
         });
         fake.draftRetrainingPlan.mockRejectedValueOnce(new Error('cannot tell which version'));
         await showRun([reviewCase()]);
-        await openDriftTab();
+        await openQueueTab();
 
         fake.getRunDrift.mockResolvedValue(
           runDrift([correction({ queued: true, ticket_status: 'open' })], {

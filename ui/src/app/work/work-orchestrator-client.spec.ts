@@ -156,13 +156,19 @@ describe('WorkOrchestratorClient', () => {
     vi.stubGlobal('fetch', fetchMock);
     const client = new WorkOrchestratorClient(authService);
 
-    await client.queueCorrections({ run_id: 'run-1', sample_ids: ['S1'] });
+    await client.queueCorrections({
+      run_id: 'run-1',
+      items: [{ sample_id: 'S1', model_name: 'pcb_body_defect' }],
+    });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toContain('/api/orchestrator/monitoring/run-retraining-tickets');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ run_id: 'run-1', sample_ids: ['S1'] });
+    expect(JSON.parse(init.body)).toEqual({
+      run_id: 'run-1',
+      items: [{ sample_id: 'S1', model_name: 'pcb_body_defect' }],
+    });
 
-    await expect(client.queueCorrections({ run_id: 'run-1', sample_ids: ['S2'] })).rejects.toThrow(
+    await expect(client.queueCorrections({ run_id: 'run-1', items: [{ sample_id: 'S2', model_name: 'pcb_body_defect' }] })).rejects.toThrow(
       'no operator correction recorded for sample(s): S2',
     );
   });

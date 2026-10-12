@@ -184,7 +184,7 @@ Here that became:
   status) and, for the selected one, the golden and defect images side by side, the Machine / AI
   results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
   Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
-- **Corrections & Retraining (formerly Drift & Retraining) follows the decisions.** The console's second tab no longer trusts what the
+- **Model feedback and the Retraining queue (formerly Drift & Retraining) follow the decisions.** The console's second tab no longer trusts what the
   browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
   review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
   drift: the operator's final decision is the sample's label, and drift is - of the samples a defect
@@ -228,6 +228,17 @@ precedents and no longer lets physical telemetry decide the verdict. Deliberate 
   `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
   `test_agent2_security[../../../../../../etc/passwd]` fail the same way upstream.
   Run them from `app/workflow/`: `PYTHONPATH=<repo>:. python -m pytest tests/<file>`.
+
+## Region corrections and ticket identity (Oct 2026)
+
+The Review Console records the part area (Body / Lead / Text) with every decision (`region_result`).
+`run_drift.corrections_of` turns a different area into a **region correction** for `pcb_region`, next
+to the defect correction a sample may already carry, so a sample can have two tickets. Ticket
+identity is therefore (run, sample, model): the partial unique index `uq_retraining_tickets_run_sample`
+covers `run_id, sample_ref, model_name` (Alembic `a9c4e17d3b52`). `POST .../run-retraining-tickets`
+takes `items: [{sample_id, model_name}]`; a bare `sample_ids` list still means each sample's defect
+correction. Run summaries gain `region`, `funnel` (shared) and `agent2` (workflow layer, it needs the
+review's evidence flags).
 
 ## Explicitly kept, not wired
 

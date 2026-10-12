@@ -308,7 +308,7 @@
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>
             </span>
             <h1 id="review-console-title" class="text-lg font-bold">
-              {{ consoleTab() === 'review' ? 'Review Console' : 'Model feedback' }}
+              {{ consoleTab() === 'review' ? 'Review Console' : consoleTab() === 'feedback' ? 'Model feedback' : 'Retraining queue' }}
             </h1>
             <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
@@ -356,7 +356,7 @@
               id="tab-review"
               aria-controls="console-panel"
               [attr.tabindex]="consoleTab() === 'review' ? 0 : -1"
-              (keydown.arrowright)="showDriftTab()"
+              (keydown.arrowright)="showFeedbackTab()"
               [attr.aria-selected]="consoleTab() === 'review'"
               (click)="consoleTab.set('review')"
               class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
@@ -374,18 +374,38 @@
               data-testid="tab-drift"
               id="tab-drift"
               aria-controls="console-panel"
-              [attr.tabindex]="consoleTab() === 'drift' ? 0 : -1"
+              [attr.tabindex]="consoleTab() === 'feedback' ? 0 : -1"
               (keydown.arrowleft)="consoleTab.set('review')"
-              [attr.aria-selected]="consoleTab() === 'drift'"
-              (click)="showDriftTab()"
+              (keydown.arrowright)="showQueueTab()"
+              [attr.aria-selected]="consoleTab() === 'feedback'"
+              (click)="showFeedbackTab()"
               class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
               [class]="
-                consoleTab() === 'drift'
+                consoleTab() === 'feedback'
                   ? 'border-slate-300 border-t-2 border-t-sky-500 bg-white font-semibold dark:border-slate-700 dark:border-t-sky-400 dark:bg-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               "
             >
               <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5"/></svg>Model feedback</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="tab-queue"
+              id="tab-queue"
+              aria-controls="console-panel"
+              [attr.tabindex]="consoleTab() === 'queue' ? 0 : -1"
+              (keydown.arrowleft)="showFeedbackTab()"
+              [attr.aria-selected]="consoleTab() === 'queue'"
+              (click)="showQueueTab()"
+              class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
+              [class]="
+                consoleTab() === 'queue'
+                  ? 'border-slate-300 border-t-2 border-t-sky-500 bg-white font-semibold dark:border-slate-700 dark:border-t-sky-400 dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              "
+            >
+              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>Retraining queue</span>
               @if (pendingCorrections().length > 0) {
                 <span
                   data-testid="corrections-badge"
@@ -758,7 +778,7 @@
               }
             </div>
           </div>
-          } @else {
+          } @else if (consoleTab() === 'feedback') {
           <!-- Model feedback: where the operator's corrections stand, sending them, and how the model did -->
           <div
             data-testid="drift-section"
@@ -783,6 +803,24 @@
                     {{ drift.message }}
                   </p>
                 } @else {
+                  <!-- Corrections waiting: sending happens in the Retraining queue tab -->
+                  @if (pendingCorrections().length > 0) {
+                    <div
+                      data-testid="queue-banner"
+                      class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm dark:border-sky-800 dark:bg-sky-950/30"
+                    >
+                      <span>{{ pendingCorrections().length }} correction{{ pendingCorrections().length === 1 ? '' : 's' }} ready to send for retraining.</span>
+                      <button
+                        type="button"
+                        data-testid="open-queue"
+                        (click)="showQueueTab()"
+                        class="rounded-md border border-sky-600 px-3 py-1 text-sm font-medium text-sky-800 hover:bg-sky-100 dark:text-sky-200 dark:hover:bg-sky-950"
+                      >
+                        Open Retraining queue
+                      </button>
+                    </div>
+                  }
+
                   <!-- Analytics: how the model did on this run -->
                   <section data-testid="run-drift" aria-labelledby="analytics-title" class="space-y-4">
                     <div>
@@ -844,6 +882,108 @@
                                   <p class="text-slate-600 dark:text-slate-400">Agent 2 disagreed</p>
                                   <p class="font-semibold tabular-nums" data-testid="telemetry-agent2">{{ m.agent2Disagreed }}</p>
                                 </div>
+                              </div>
+                            </li>
+                          }
+                        </ul>
+                      </div>
+                    }
+
+                    <!-- Where the flagged samples went -->
+                    @if (funnelSteps().length > 0) {
+                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="funnel">
+                        <h3 class="mb-2 text-sm font-semibold">Where the flagged samples went</h3>
+                        <ol class="space-y-2">
+                          @for (step of funnelSteps(); track step.key) {
+                            <li [attr.data-funnel]="step.key">
+                              <div class="flex justify-between text-xs">
+                                <span>{{ step.label }}</span>
+                                <span class="font-semibold tabular-nums">{{ step.count }}</span>
+                              </div>
+                              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                <div class="h-full rounded-full bg-sky-500" [style.width.%]="step.share"></div>
+                              </div>
+                            </li>
+                          }
+                        </ol>
+                        @if (drift.region && drift.region.stopped_here > 0) {
+                          <p class="mt-2 text-xs text-slate-600 dark:text-slate-400" data-testid="funnel-stopped">
+                            {{ drift.region.stopped_here }} stopped at the region model, which was too unsure for a defect model to run.
+                          </p>
+                        }
+                      </div>
+                    }
+
+                    <!-- The region model (stage 1) -->
+                    @if (drift.region; as region) {
+                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="region-model">
+                        <h3 class="mb-2 text-sm font-semibold">Region model <span class="font-normal text-slate-600 dark:text-slate-400">picks the part area</span></h3>
+                        <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          <div>
+                            <p class="text-slate-600 dark:text-slate-400">Accuracy</p>
+                            <p class="text-lg font-semibold tabular-nums" data-testid="region-accuracy">{{ percent(region.accuracy) }}</p>
+                          </div>
+                          <div>
+                            <p class="text-slate-600 dark:text-slate-400">Confirmed / reviewed</p>
+                            <p class="text-lg font-semibold tabular-nums" data-testid="region-confirmed">{{ region.confirmed }} / {{ region.reviewed }}</p>
+                          </div>
+                          <div>
+                            <p class="text-slate-600 dark:text-slate-400">You corrected</p>
+                            <p class="text-lg font-semibold tabular-nums" data-testid="region-corrected">{{ region.corrected }}</p>
+                          </div>
+                          <div>
+                            <p class="text-slate-600 dark:text-slate-400">Mean confidence</p>
+                            <p class="text-lg font-semibold tabular-nums" data-testid="region-mean">{{ percent(region.mean_confidence) }}</p>
+                          </div>
+                        </div>
+                        @if (region.by_region.length > 0) {
+                          <ul class="mt-3 space-y-2" data-testid="region-by-area">
+                            @for (area of region.by_region; track area.region) {
+                              <li [attr.data-region]="area.region">
+                                <div class="flex justify-between text-xs">
+                                  <span class="font-medium">{{ area.region }}</span>
+                                  <span class="text-slate-600 dark:text-slate-400">
+                                    {{ area.samples }} sample{{ area.samples === 1 ? '' : 's' }}, {{ area.corrected }} corrected, mean {{ percent(area.mean_confidence) }}
+                                  </span>
+                                </div>
+                                <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div class="h-full rounded-full bg-amber-500" [style.width.%]="area.samples === 0 ? 0 : (area.corrected / area.samples) * 100"></div>
+                                </div>
+                              </li>
+                            }
+                          </ul>
+                        }
+                        @if (region.swaps.length > 0) {
+                          <div class="mt-3" data-testid="region-swaps">
+                            <p class="mb-1 text-xs font-medium">Said, then set by you</p>
+                            <ul class="space-y-0.5 text-xs">
+                              @for (swap of region.swaps; track swap.model_region + '>' + swap.chosen_region) {
+                                <li class="flex justify-between border-t border-slate-100 py-0.5 dark:border-slate-800">
+                                  <span>{{ swap.model_region }} &rarr; <b>{{ swap.chosen_region }}</b></span>
+                                  <span class="tabular-nums">&times; {{ swap.count }}</span>
+                                </li>
+                              }
+                            </ul>
+                          </div>
+                        } @else if (region.reviewed > 0) {
+                          <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">You agreed with every part area the region model picked.</p>
+                        }
+                      </div>
+                    }
+
+                    <!-- How useful Agent 2 was -->
+                    @if (agent2Rows().length > 0) {
+                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="agent2-usefulness">
+                        <h3 class="mb-2 text-sm font-semibold">How useful was Agent 2? <span class="font-normal text-slate-600 dark:text-slate-400">its verdict was your final decision</span></h3>
+                        <ul class="space-y-2 text-xs">
+                          @for (row of agent2Rows(); track row.key) {
+                            <li [attr.data-agent2]="row.key">
+                              <div class="flex justify-between">
+                                <span>{{ row.label }}</span>
+                                <span class="tabular-nums"><b>{{ row.rate }}</b> <span class="text-slate-600 dark:text-slate-400">({{ row.matched }} of {{ row.n }})</span></span>
+                              </div>
+                              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                <div class="h-full rounded-full bg-violet-500" [style.width.%]="row.n === 0 ? 0 : (row.matched / row.n) * 100"></div>
                               </div>
                             </li>
                           }
@@ -961,6 +1101,32 @@
                     }
                   </section>
 
+                }
+              }
+            }
+          </div>
+          } @else {
+          <!-- Retraining queue: send the corrections, one group per model -->
+          <div
+            data-testid="queue-section"
+            id="console-panel"
+            role="tabpanel"
+            aria-labelledby="tab-queue"
+            class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4"
+          >
+            @if (runId() === null) {
+              <p data-testid="queue-no-run" class="text-sm text-slate-600 dark:text-slate-400">
+                There is no run yet. Run the agentic workflow and confirm a decision on each flagged sample in
+                the Review Console; the corrections you make wait here, grouped by the model they teach.
+              </p>
+            } @else {
+              @if (driftError()) {
+                <app-work-alert kind="error" role="alert" data-testid="queue-error">{{ driftError() }}</app-work-alert>
+              }
+              @if (runDrift(); as drift) {
+                @if (!drift.available) {
+                  <p data-testid="queue-unavailable" class="text-sm text-slate-600 dark:text-slate-400">{{ drift.message }}</p>
+                } @else {
                   <!-- Where things stand, and the next step -->
                   <div
                     data-testid="feedback-status"
@@ -1020,115 +1186,186 @@
                     }
                   </ol>
 
-                  <!-- Sending the corrections -->
-                  <section data-testid="training-data" aria-labelledby="send-title">
-                    <h2 id="send-title" class="text-base font-semibold">Corrections to send</h2>
-                    <p class="mb-2 text-sm text-slate-600 dark:text-slate-400">
-                      Samples where the defect model was wrong, or never classified them, with the label you chose. They teach the model
-                      what it missed. Untick any you do not want to send.
-                    </p>
+                  <!-- One group per model: its corrections, what they teach and a send button -->
+                  <section data-testid="training-data" aria-labelledby="send-title" class="space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 id="send-title" class="text-base font-semibold">Corrections to send</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                          Each model learns from its own group. Untick any you do not want to send.
+                        </p>
+                      </div>
+                      @if (pendingCorrections().length > 0) {
+                        <label class="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            aria-label="select all corrections"
+                            data-testid="select-all"
+                            [checked]="allCorrectionsSelected()"
+                            (change)="toggleAllCorrections()"
+                          />
+                          All groups
+                        </label>
+                      }
+                    </div>
+
                     @if (corrections().length === 0) {
                       <p data-testid="no-corrections" class="text-sm text-slate-600 dark:text-slate-400">
                         @if (drift.totals.decided === 0) {
                           Nothing reviewed yet.
                         } @else {
-                          Nothing to send - the defect model got every reviewed sample right.
+                          Nothing to send - the models got every reviewed sample right.
                         }
                       </p>
-                    } @else {
-                      <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                        <table class="w-full text-left text-sm" data-testid="corrections">
-                          <thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
-                            <tr>
-                              <th class="px-3 py-2">
-                                <input
-                                  type="checkbox"
-                                  aria-label="select all corrections"
-                                  data-testid="select-all"
-                                  [checked]="allCorrectionsSelected()"
-                                  [disabled]="pendingCorrections().length === 0"
-                                  (change)="toggleAllCorrections()"
-                                />
-                              </th>
-                              <th class="py-2 pr-3 font-medium">Sample</th>
-                              <th class="py-2 pr-3 font-medium">Machine</th>
-                              <th class="py-2 pr-3 font-medium">AI</th>
-                              <th class="py-2 pr-3 font-medium">You chose</th>
-                              <th class="py-2 pr-3 font-medium">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            @for (correction of corrections(); track correction.sample_id) {
-                              <tr class="border-t border-slate-200 dark:border-slate-800" [attr.data-sample]="correction.sample_id">
-                                <td class="px-3 py-2">
-                                  @if (correction.queued) {
-                                    <span class="text-emerald-600 dark:text-emerald-400" role="img" aria-label="already sent">✓</span>
-                                  } @else {
-                                    <input
-                                      type="checkbox"
-                                      [attr.aria-label]="'send ' + correction.sample_id"
-                                      [checked]="correction.queueable && isCorrectionSelected(correction.sample_id)"
-                                      [disabled]="!correction.queueable"
-                                      (change)="toggleCorrection(correction.sample_id)"
-                                    />
-                                  }
-                                </td>
-                                <td class="py-2 pr-3">
-                                  <span class="font-mono">{{ correction.sample_id }}</span>
-                                  <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="target-model">
-                                    {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}@if (correction.model_source === 'operator_region') { (from your region)}
-                                  </span>
-                                </td>
-                                <td class="py-2 pr-3 capitalize text-slate-600 dark:text-slate-400" data-testid="machine-said">{{ machineSaid(correction) }}</td>
-                                <td class="py-2 pr-3 text-slate-600 dark:text-slate-400">
-                                  <span class="capitalize" data-testid="said-model">{{ aiSaid(correction) }}</span>
-                                  @if (modelNote(correction)) {
-                                    <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="model-note">{{ modelNote(correction) }}</span>
-                                  }
-                                </td>
-                                <td class="py-2 pr-3">
-                                  <span data-testid="chose"><b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-xs text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span></span>
-                                  @if (correction.region_result) {
-                                    <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="region-set">Region set to {{ correction.region_result }}</span>
-                                  }
-                                  @if (correction.operator_notes) {
-                                    <span class="block text-xs italic text-slate-500 dark:text-slate-400">{{ correction.operator_notes }}</span>
-                                  }
-                                </td>
-                                <td class="py-2 pr-3" data-testid="correction-status">{{ trainingStatus(correction) }}</td>
-                              </tr>
+                    }
+
+                    @for (group of correctionGroups(); track group.modelName ?? 'none') {
+                      <div class="rounded-lg border border-slate-200 dark:border-slate-800" [attr.data-group]="group.modelName ?? 'none'">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
+                          <div class="flex items-center gap-3">
+                            @if (group.pending.length > 0) {
+                              <input
+                                type="checkbox"
+                                [attr.aria-label]="'select all ' + group.title"
+                                [attr.data-testid]="'select-group-' + (group.modelName ?? 'none')"
+                                [checked]="groupAllSelected(group)"
+                                (change)="toggleGroup(group)"
+                              />
                             }
-                          </tbody>
-                        </table>
+                            <div>
+                              <h3 class="text-sm font-semibold">{{ group.title }}</h3>
+                              @if (group.modelName) {
+                                <p class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ group.modelName }}</p>
+                              }
+                            </div>
+                          </div>
+                          <p class="flex flex-wrap items-center gap-2 text-xs" data-testid="group-counts">
+                            <span class="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 dark:bg-sky-950 dark:text-sky-200">{{ group.pending.length }} to send</span>
+                            @if (group.sent > 0) {
+                              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{{ group.sent }} sent</span>
+                            }
+                            @if (group.inPlan > 0) {
+                              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-200">{{ group.inPlan }} awaiting Admin</span>
+                            }
+                            @if (group.retrained > 0) {
+                              <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{{ group.retrained }} retrained</span>
+                            }
+                          </p>
+                        </div>
+
+                        <!-- What this batch would teach the model -->
+                        @if (group.mix.length > 0) {
+                          <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800" data-testid="group-mix">
+                            <div class="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="img" aria-label="label mix">
+                              @for (m of group.mix; track m.label) {
+                                <span class="block h-full" [style.width.%]="m.share" [style.background-color]="'hsl(' + ($index * 57 + 200) + ' 65% 55%)'"></span>
+                              }
+                            </div>
+                            <ul class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+                              @for (m of group.mix; track m.label) {
+                                <li><span class="capitalize">{{ m.label }}</span> <b class="tabular-nums">{{ m.count }}</b></li>
+                              }
+                            </ul>
+                            @if (group.hint) {
+                              <p class="mt-1 text-xs text-amber-800 dark:text-amber-300" data-testid="group-hint">{{ group.hint }}</p>
+                            }
+                          </div>
+                        }
+
+                        <div class="overflow-x-auto">
+                          <table class="w-full text-left text-sm" data-testid="corrections">
+                            <thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
+                              <tr>
+                                <th class="w-8 px-3 py-1.5"></th>
+                                <th class="py-1.5 pr-3 font-medium">Sample</th>
+                                <th class="py-1.5 pr-3 font-medium">Said</th>
+                                <th class="py-1.5 pr-3 font-medium">You chose</th>
+                                <th class="py-1.5 pr-3 font-medium">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              @for (correction of group.corrections; track correction.sample_id + '|' + correction.model_name) {
+                                <tr class="border-t border-slate-200 dark:border-slate-800" [attr.data-sample]="correction.sample_id">
+                                  <td class="px-3 py-2">
+                                    @if (correction.queued) {
+                                      <span class="text-emerald-600 dark:text-emerald-400" role="img" aria-label="already sent">✓</span>
+                                    } @else {
+                                      <input
+                                        type="checkbox"
+                                        [attr.aria-label]="'send ' + correction.sample_id + ' to ' + group.title"
+                                        [checked]="correction.queueable && isCorrectionSelected(correction)"
+                                        [disabled]="!correction.queueable"
+                                        (change)="toggleCorrection(correction)"
+                                      />
+                                    }
+                                  </td>
+                                  <td class="py-2 pr-3 font-mono">{{ correction.sample_id }}</td>
+                                  <td class="py-2 pr-3 text-slate-600 dark:text-slate-400">
+                                    @if (correction.kind === 'region') {
+                                      <span data-testid="said-model">Region: {{ correction.agent1_label }}</span>
+                                    } @else {
+                                      <span class="capitalize" data-testid="said-model">{{ aiSaid(correction) }}</span>
+                                      <span class="block text-xs capitalize text-slate-500 dark:text-slate-400" data-testid="machine-said">Machine: {{ machineSaid(correction) }}</span>
+                                      @if (modelNote(correction)) {
+                                        <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="model-note">{{ modelNote(correction) }}</span>
+                                      }
+                                    }
+                                  </td>
+                                  <td class="py-2 pr-3">
+                                    <span data-testid="chose"><b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-xs text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span></span>
+                                    @if (correction.operator_notes) {
+                                      <span class="block text-xs italic text-slate-500 dark:text-slate-400">{{ correction.operator_notes }}</span>
+                                    }
+                                  </td>
+                                  <td class="py-2 pr-3" data-testid="correction-status">{{ trainingStatus(correction) }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+
+                        @if (group.pending.length > 0) {
+                          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-2 dark:border-slate-800">
+                            <p class="text-xs text-slate-600 dark:text-slate-400">An Admin approves the plan before this model changes.</p>
+                            <button
+                              type="button"
+                              [attr.data-testid]="'send-group-' + (group.modelName ?? 'none')"
+                              [disabled]="monitoringBusy() || groupSelected(group).length === 0"
+                              (click)="sendForRetraining(group)"
+                              class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                            >
+                              Send {{ groupSelected(group).length }} to {{ group.title }}
+                            </button>
+                          </div>
+                        }
                       </div>
                     }
 
                     @if (actionError()) {
-                      <app-work-alert kind="error" role="alert" data-testid="action-error" spacing="mt-3">
-                        {{ actionError() }}
-                      </app-work-alert>
+                      <app-work-alert kind="error" role="alert" data-testid="action-error">{{ actionError() }}</app-work-alert>
                     }
                     @if (actionMessage()) {
-                      <app-work-alert kind="success" role="status" data-testid="action-message" spacing="mt-3">
-                        {{ actionMessage() }}
-                      </app-work-alert>
+                      <app-work-alert kind="success" role="status" data-testid="action-message">{{ actionMessage() }}</app-work-alert>
                     }
-                    <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <button
-                        type="button"
-                        data-testid="send-for-retraining"
-                        [disabled]="!canQueueCorrections()"
-                        (click)="sendForRetraining()"
-                        class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-                      >
-                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
-                        Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
-                      </button>
-                      <p class="text-xs text-slate-600 dark:text-slate-400">
-                        An Admin must approve before the model changes.
-                        <a routerLink="/models" class="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300">Open Models tab</a>
-                      </p>
-                    </div>
+
+                    @if (pendingCorrections().length > 0) {
+                      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <button
+                          type="button"
+                          data-testid="send-for-retraining"
+                          [disabled]="!canQueueCorrections()"
+                          (click)="sendForRetraining()"
+                          class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                        >
+                          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
+                          Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
+                        </button>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">
+                          An Admin must approve before the model changes.
+                          <a routerLink="/models" class="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300">Open Models tab</a>
+                        </p>
+                      </div>
+                    }
 
                     @if (planModels().length > 0) {
                       <!-- Only when samples of this run were sent but no plan covers them (e.g. the plan
@@ -1159,7 +1396,6 @@
                       </div>
                     }
                   </section>
-
                 }
               }
             }

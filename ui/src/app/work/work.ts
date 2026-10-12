@@ -23,6 +23,7 @@ import {
   WorkflowRunDrift,
 } from './models/orchestrator.models';
 import { aiSaid, formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
+import { CorrectionGroup, correctionKey, groupCorrections } from './work-feedback';
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
 import { WorkAlert } from './work-alert/work-alert';
@@ -98,7 +99,7 @@ export class Work implements OnDestroy {
     this.corrections().filter((c) => c.queueable && !c.queued),
   );
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
-    this.pendingCorrections().filter((c) => !this.excludedCorrectionIds().has(c.sample_id)),
+    this.pendingCorrections().filter((c) => !this.excludedCorrectionIds().has(correctionKey(c))),
   );
   protected readonly allCorrectionsSelected: Signal<boolean> = computed(
     () => this.pendingCorrections().length > 0 && this.selectedCorrections().length === this.pendingCorrections().length,
@@ -264,6 +265,53 @@ export class Work implements OnDestroy {
 
   protected readonly planBusy = signal(false);
 
+  /** The corrections, one group per model they teach (region model first). */
+  protected readonly correctionGroups: Signal<CorrectionGroup[]> = computed(() =>
+    groupCorrections(this.corrections()),
+  );
+
+  /** Where the flagged samples went, stage by stage: flagged -> defect model ran -> reviewed ->
+   * corrected, each with its share of the flagged. */
+  protected readonly funnelSteps: Signal<{ key: string; label: string; count: number; share: number }[]> = computed(() => {
+    const funnel = this.runDrift()?.funnel;
+    if (!funnel) {
+      return [];
+    }
+    const base = Math.max(funnel.flagged, 1);
+    return [
+      { key: 'flagged', label: 'Flagged for review', count: funnel.flagged },
+      { key: 'defect-ran', label: 'Defect model ran', count: funnel.defect_ran },
+      { key: 'reviewed', label: 'Reviewed by you', count: funnel.reviewed },
+      { key: 'corrected', label: 'Needed a correction', count: funnel.corrected },
+    ].map((step) => ({ ...step, share: (step.count / base) * 100 }));
+  });
+
+  /** Agent 2's usefulness as percentages the template can show. */
+  protected readonly agent2Rows: Signal<{ key: string; label: string; n: number; matched: number; rate: string }[]> = computed(() => {
+    const stats = this.runDrift()?.agent2;
+    if (!stats || stats.with_review === 0) {
+      return [];
+    }
+    const rate = (n: number, matched: number): string => (n === 0 ? '—' : `${Math.round((matched / n) * 100)}%`);
+    const evidence: Record<string, string> = {
+      vision_model: 'Looked at the image (vision model)',
+      fallback: 'Visual check did not run',
+      skipped: 'Image not found',
+    };
+    return [
+      { key: 'all', label: 'All reviewed samples', n: stats.with_review, matched: stats.matched, rate: rate(stats.with_review, stats.matched) },
+      ...Object.entries(stats.by_evidence).map(([source, v]) => ({
+        key: source,
+        label: evidence[source] ?? source,
+        n: v.n,
+        matched: v.matched,
+        rate: rate(v.n, v.matched),
+      })),
+      { key: 'measured', label: 'Had physical measurements', n: stats.with_measurements.n, matched: stats.with_measurements.matched, rate: rate(stats.with_measurements.n, stats.with_measurements.matched) },
+      { key: 'unmeasured', label: 'No measurements recorded', n: stats.without_measurements.n, matched: stats.without_measurements.matched, rate: rate(stats.without_measurements.n, stats.without_measurements.matched) },
+    ].filter((row) => row.key === 'all' || row.n > 0);
+  });
+
   protected readonly canQueueCorrections: Signal<boolean> = computed(
     () => this.selectedCorrections().length > 0 && !this.monitoringBusy(),
   );
@@ -272,7 +320,7 @@ export class Work implements OnDestroy {
   protected readonly ipcClasses = IPC_CLASSES;
   protected readonly reviewCases = signal<WorkflowReviewCaseOut[]>([]);
   protected readonly consoleOpen = signal(false);
-  protected readonly consoleTab = signal<'review' | 'drift'>('review');
+  protected readonly consoleTab = signal<'review' | 'feedback' | 'queue'>('review');
   protected readonly caseFilter = signal<'all' | 'pending' | 'reviewed'>('all');
   protected readonly selectedCaseId = signal<string | null>(null);
   protected readonly goldenImageUrl = signal<string | null>(null);
@@ -695,20 +743,52 @@ export class Work implements OnDestroy {
     }
   }
 
-  async showDriftTab(): Promise<void> {
-    this.consoleTab.set('drift');
+  async showFeedbackTab(): Promise<void> {
+    this.consoleTab.set('feedback');
     await this.refreshDrift();
   }
 
-  isCorrectionSelected(sampleId: string): boolean {
-    return !this.excludedCorrectionIds().has(sampleId);
+  async showQueueTab(): Promise<void> {
+    this.consoleTab.set('queue');
+    await this.refreshDrift();
   }
 
-  toggleCorrection(sampleId: string): void {
+  isCorrectionSelected(correction: WorkflowCorrection): boolean {
+    return !this.excludedCorrectionIds().has(correctionKey(correction));
+  }
+
+  toggleCorrection(correction: WorkflowCorrection): void {
+    const key = correctionKey(correction);
     this.excludedCorrectionIds.update((ids) => {
       const next = new Set(ids);
-      if (!next.delete(sampleId)) {
-        next.add(sampleId);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  /** The group's pending corrections that are still ticked. */
+  protected groupSelected(group: CorrectionGroup): WorkflowCorrection[] {
+    return group.pending.filter((c) => this.isCorrectionSelected(c));
+  }
+
+  protected groupAllSelected(group: CorrectionGroup): boolean {
+    return group.pending.length > 0 && this.groupSelected(group).length === group.pending.length;
+  }
+
+  /** Unticks every pending correction of one model, or ticks them all again when none is. */
+  toggleGroup(group: CorrectionGroup): void {
+    const keys = group.pending.map(correctionKey);
+    const all = this.groupAllSelected(group);
+    this.excludedCorrectionIds.update((ids) => {
+      const next = new Set(ids);
+      for (const key of keys) {
+        if (all) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
       }
       return next;
     });
@@ -717,19 +797,23 @@ export class Work implements OnDestroy {
   /** Unticks every correction that can still be sent, or ticks them all again when none is. */
   toggleAllCorrections(): void {
     this.excludedCorrectionIds.set(
-      this.allCorrectionsSelected() ? new Set(this.pendingCorrections().map((c) => c.sample_id)) : new Set(),
+      this.allCorrectionsSelected() ? new Set(this.pendingCorrections().map(correctionKey)) : new Set(),
     );
   }
 
-  /** Sends the ticked corrections for retraining: one retraining ticket each (built on the server
-   * from the stored sample and final decision - only the ids go over the wire), then a retraining
-   * plan for each model involved, so an Admin can approve it in the Models tab. */
-  async sendForRetraining(): Promise<void> {
+  /** Sends the ticked corrections for retraining - all of them, or one model's group: one retraining
+   * ticket each (built on the server from the stored sample and final decision - only the sample
+   * and model go over the wire), then a retraining plan for each model involved, so an Admin can
+   * approve it in the Models tab. */
+  async sendForRetraining(group?: CorrectionGroup): Promise<void> {
     const runId = this.runId();
-    if (runId === null || !this.canQueueCorrections()) {
+    if (runId === null || this.monitoringBusy()) {
       return;
     }
-    const selected = this.selectedCorrections();
+    const selected = group ? this.groupSelected(group) : this.selectedCorrections();
+    if (selected.length === 0) {
+      return;
+    }
     const models = [...new Set(selected.map((c) => c.model_name).filter((m): m is string => m !== null))];
     this.monitoringBusy.set(true);
     this.actionError.set(null);
@@ -737,7 +821,7 @@ export class Work implements OnDestroy {
     try {
       const out = await this.workService.queueCorrections({
         run_id: runId,
-        sample_ids: selected.map((c) => c.sample_id),
+        items: selected.map((c) => ({ sample_id: c.sample_id, model_name: c.model_name as string })),
       });
       const sent = out.created.length;
       const planned: string[] = [];
@@ -895,8 +979,8 @@ export class Work implements OnDestroy {
         ai_result: ai,
         ai_diagnosis: reviewCase.review?.diagnosis ?? null,
         operator_notes: this.operatorNotes().trim() || null,
-        // only a real correction is sent: leaving the region as the model had it records nothing
-        region_result: this.regionChanged(reviewCase) ? this.regionResult() : null,
+        // Always the area the operator settled on, so "confirmed" is told apart from "not looked at".
+        region_result: this.regionResult(),
       });
       this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
       await Promise.all([this.refreshCases(), this.refreshDrift()]);
