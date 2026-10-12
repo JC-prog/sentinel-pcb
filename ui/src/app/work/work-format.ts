@@ -47,18 +47,24 @@ export function sourceLabel(source: string | null | undefined): string {
   return source ? (labels[source] ?? source) : '—';
 }
 
-/** What the model said for a sample it didn't get right: its prediction, or that it couldn't
- * decide with the region model's best guess. */
-export function modelSaid(correction: WorkflowCorrection): string {
-  if (correction.agent1_label !== null) {
-    return labelText(correction.agent1_label);
+/** What the Review Console calls "Machine" for a sample: the defect model's prediction, or - when
+ * no defect model ran - the AOI machine's own defect call. Same value on both screens. */
+export function machineSaid(correction: WorkflowCorrection): string {
+  return labelText(correction.agent1_label ?? correction.machine_label);
+}
+
+/** Why a sample is on the list when the defect model never answered: the region model (which only
+ * says which part area it is looking at, not a defect) was not confident enough to route it. */
+export function modelNote(correction: WorkflowCorrection): string {
+  if (correction.outcome !== 'no_prediction') {
+    return '';
   }
   const guess = correction.region_guess;
   if (!guess) {
-    return 'unsure';
+    return 'The defect model did not run.';
   }
   const confidence = guess.confidence === null ? '' : ` ${Math.round(guess.confidence * 100)}%`;
-  return `unsure (first guess: ${guess.label} area${confidence})`;
+  return `The defect model did not run: the region model was unsure (${guess.label} area${confidence}).`;
 }
 
 /** Where a correction stands on its way to retraining. */

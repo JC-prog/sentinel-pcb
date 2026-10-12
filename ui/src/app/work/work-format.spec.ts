@@ -1,5 +1,5 @@
 import { WorkflowCorrection } from './models/orchestrator.models';
-import { formatBytes, labelText, modelSaid, percent, sourceLabel, trainingStatus } from './work-format';
+import { formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
 
 const base = {
   agent1_label: null,
@@ -36,12 +36,18 @@ describe('work-format', () => {
     expect(sourceLabel(null)).toBe('—');
   });
 
-  it('describes what the model said, including a region guess when it could not decide', () => {
-    expect(modelSaid({ ...base, agent1_label: 'WrongPart_13' })).toBe('wrong part');
-    expect(modelSaid(base)).toBe('unsure');
-    expect(modelSaid({ ...base, region_guess: { label: 'Body', confidence: 0.95 } })).toBe(
-      'unsure (first guess: Body area 95%)',
-    );
+  it('shows the same machine verdict as the Review Console: the defect prediction, else the AOI call', () => {
+    expect(machineSaid({ ...base, agent1_label: 'WrongPart_13', machine_label: 'Shift' })).toBe('wrong part');
+    expect(machineSaid({ ...base, machine_label: 'MissingPart' })).toBe('missing part');
+    expect(machineSaid(base)).toBe('—');
+  });
+
+  it('explains a sample the defect model never saw, without presenting the region as a defect', () => {
+    expect(modelNote({ ...base, outcome: 'relabelled' } as WorkflowCorrection)).toBe('');
+    expect(modelNote({ ...base, outcome: 'no_prediction' } as WorkflowCorrection)).toBe('The defect model did not run.');
+    expect(
+      modelNote({ ...base, outcome: 'no_prediction', region_guess: { label: 'Body', confidence: 0.4 } } as WorkflowCorrection),
+    ).toBe('The defect model did not run: the region model was unsure (Body area 40%).');
   });
 
   it('describes where a correction is on its way to retraining', () => {

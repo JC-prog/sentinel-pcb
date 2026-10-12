@@ -21,7 +21,7 @@ import {
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
-import { formatBytes, labelText, modelSaid, percent, sourceLabel, trainingStatus } from './work-format';
+import { formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
 import { WorkAlert } from './work-alert/work-alert';
@@ -114,7 +114,7 @@ export class Work implements OnDestroy {
         .sort((a, b) => a.name.localeCompare(b.name));
     },
   );
-  /** The flagged samples split into one bar: model right / wrong / unsure / not reviewed. */
+  /** The flagged samples split into one bar: model right / wrong / not classified / not reviewed. */
   protected readonly outcomeSegments: Signal<
     { key: string; label: string; count: number; share: number; barClass: string }[]
   > = computed(() => {
@@ -125,7 +125,7 @@ export class Work implements OnDestroy {
     const parts = [
       { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'bg-emerald-500' },
       { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'bg-red-500' },
-      { key: 'no-answer', label: 'Model unsure', count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
+      { key: 'no-answer', label: 'Not classified', count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
       { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'bg-slate-300 dark:bg-slate-600' },
     ];
     const total = parts.reduce((sum, part) => sum + part.count, 0);
@@ -151,9 +151,15 @@ export class Work implements OnDestroy {
     if (toSend === 0) {
       return { kind: 'sent', text: `All ${plural(corrections, 'correction')} have been sent.` };
     }
+    const wrong = this.corrections().filter((c) => c.outcome === 'relabelled').length;
+    const unclassified = corrections - wrong;
+    const parts = [
+      wrong > 0 ? `${wrong} the model got wrong` : '',
+      unclassified > 0 ? `${unclassified} the defect model never classified` : '',
+    ].filter(Boolean);
     return {
       kind: 'send',
-      text: `You corrected ${corrections} of ${drift?.totals.decided ?? 0} reviewed samples. ${toSend} ${toSend === 1 ? 'is' : 'are'} ready to send.`,
+      text: `${plural(corrections, 'reviewed sample')} can teach the model: ${parts.join(', ')}. ${toSend} ${toSend === 1 ? 'is' : 'are'} ready to send.`,
     };
   });
 
@@ -188,8 +194,8 @@ export class Work implements OnDestroy {
         value: answered === 0 ? '—' : `${Math.round((t.confirmed / answered) * 100)}%`,
         hint: answered === 0 ? 'nothing classified yet' : `${t.confirmed} of ${answered} right`,
       },
-      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or unsure' },
-      { label: 'Model unsure', value: String(t.no_prediction), hint: 'no defect model ran' },
+      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or not classified' },
+      { label: 'Not classified', value: String(t.no_prediction), hint: 'no defect model ran' },
     ];
   });
 
@@ -745,7 +751,8 @@ export class Work implements OnDestroy {
 
   protected readonly labelText = labelText;
   protected readonly sourceLabel = sourceLabel;
-  protected readonly modelSaid = modelSaid;
+  protected readonly machineSaid = machineSaid;
+  protected readonly modelNote = modelNote;
   protected readonly trainingStatus = trainingStatus;
   protected readonly percent = percent;
 

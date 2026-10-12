@@ -748,7 +748,7 @@
                   <section data-testid="training-data" aria-labelledby="send-title">
                     <h2 id="send-title" class="text-base font-semibold">Corrections to send</h2>
                     <p class="mb-2 text-sm text-slate-600 dark:text-slate-400">
-                      Samples where the model was wrong or unsure, with the label you chose. They teach the model
+                      Samples where the defect model was wrong, or never classified them, with the label you chose. They teach the model
                       what it missed. Untick any you do not want to send.
                     </p>
                     @if (corrections().length === 0) {
@@ -775,7 +775,7 @@
                                 />
                               </th>
                               <th class="py-2 pr-3 font-medium">Sample</th>
-                              <th class="py-2 pr-3 font-medium">Model said</th>
+                              <th class="py-2 pr-3 font-medium">Machine said</th>
                               <th class="py-2 pr-3 font-medium">You chose</th>
                               <th class="py-2 pr-3 font-medium">Status</th>
                             </tr>
@@ -802,7 +802,12 @@
                                     {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}
                                   </span>
                                 </td>
-                                <td class="py-2 pr-3 capitalize text-slate-600 dark:text-slate-400" data-testid="said-model">{{ modelSaid(correction) }}</td>
+                                <td class="py-2 pr-3 text-slate-600 dark:text-slate-400">
+                                  <span class="capitalize" data-testid="said-model">{{ machineSaid(correction) }}</span>
+                                  @if (modelNote(correction)) {
+                                    <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="model-note">{{ modelNote(correction) }}</span>
+                                  }
+                                </td>
                                 <td class="py-2 pr-3">
                                   <span data-testid="chose"><b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-xs text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span></span>
                                   @if (correction.operator_notes) {
@@ -1009,8 +1014,8 @@
 
                     @if (drift.totals.no_prediction > 0) {
                       <p class="text-sm text-slate-600 dark:text-slate-400" data-testid="no-model-note">
-                        "Model unsure": the first-stage model was not confident enough about the part area, so no
-                        defect model ran. These samples do not count toward the error rate. You can still send your
+                        "Not classified": the region model (which only picks the part area) was not confident enough, so
+                        no defect model ran. These samples do not count toward the error rate. You can still send your
                         label for retraining; it goes to the defect model that first guess points to.
                       </p>
                     }

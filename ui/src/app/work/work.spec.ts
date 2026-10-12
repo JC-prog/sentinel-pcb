@@ -1235,7 +1235,7 @@ describe('Work', () => {
         await openDriftTab();
 
         expect(byTestId('feedback-status')?.getAttribute('data-kind')).toBe('send');
-        expect(tidy(byTestId('feedback-status'))).toContain('You corrected 2 of 2 reviewed samples. 2 are ready to send.');
+        expect(tidy(byTestId('feedback-status'))).toContain('2 reviewed samples can teach the model: 2 the model got wrong. 2 are ready to send.');
         expect(stage('to-send')).toContain('2');
 
         fake.getRunDrift.mockResolvedValue(
@@ -1400,7 +1400,11 @@ describe('Work', () => {
         expect(boxes()[0].disabled && !boxes()[0].checked).toBe(true);
         expect(selectAll().disabled).toBe(true);
         expect(sendButton().disabled).toBe(true);
-        expect(allByTestId('said-model')[1]).toBe("unsure (first guess: Gap area 40%)");
+        // the same "machine" verdict the Review Console shows: no defect prediction, so the AOI call
+        expect(allByTestId('said-model')[1]).toBe('wrong part');
+        expect(allByTestId('model-note')[0]).toBe(
+          'The defect model did not run: the region model was unsure (Gap area 40%).',
+        );
         expect(allByTestId('correction-status')).toEqual([
           'Sent, waiting for a retraining plan',
           "Can't send: no defect model to route it to",
@@ -1434,9 +1438,10 @@ describe('Work', () => {
         expect(tidy(byTestId('drift-rate'))).toBe('—');
         expect(tidy(byTestId('drift-of'))).toBe('the defect model classified none of the reviewed samples');
         expect(tidy(byTestId('kpi-no-answer'))).toBe('2');
-        expect(allByTestId('said-model')).toEqual([
-          "unsure (first guess: Text area 50%)",
-          "unsure (first guess: Text area 50%)",
+        expect(allByTestId('said-model')).toEqual(['wrong part', 'wrong part']);
+        expect(allByTestId('model-note')).toEqual([
+          'The defect model did not run: the region model was unsure (Text area 50%).',
+          'The defect model did not run: the region model was unsure (Text area 50%).',
         ]);
         expect(allByTestId('target-model')).toEqual(['pcb_text_defect (from first guess)', 'pcb_text_defect (from first guess)']);
         expect(allByTestId('chose')).toEqual(['solder insufficient (Accept Machine)', 'polarity1 (Accept Machine)']);
