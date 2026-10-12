@@ -40,10 +40,9 @@ if (Select-String -Path ".env" -Pattern '^JWT_SECRET_KEY=$' -Quiet -ErrorAction 
         Set-Content ".env" -ErrorAction Stop
 }
 
-if (Select-String -Path ".env" -Pattern '^LITELLM_OPENAI_API_KEY=$' -Quiet -ErrorAction Stop) {
-    Write-Host "    Note: put your own OpenAI key in LITELLM_OPENAI_API_KEY in .env for the OpenAI"
-    Write-Host "    features - only your local LiteLLM proxy container sees it. Ollama-only? Leave"
-    Write-Host "    it blank. Using a shared team proxy instead? See infra/litellm/README.md."
+if (Select-String -Path ".env" -Pattern '^OPENAI_API_KEY=$' -Quiet -ErrorAction Stop) {
+    Write-Host "    Note: put your own OpenAI key in OPENAI_API_KEY in .env for the OpenAI features"
+    Write-Host "    (chat, memory, guardrails, the Work tab planner). Ollama-only? Leave it blank."
 }
 
 Write-Host "==> Checking Docker (needed for the local Postgres container)"
@@ -58,8 +57,8 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose up -d --wait)"
-docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
+Write-Host "==> Starting local Postgres + Qdrant (docker compose up -d --wait)"
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # pg_isready (what --wait's healthcheck uses above) only confirms Postgres is accepting
@@ -92,7 +91,7 @@ try {
     Write-Host "    Found - the Local LLM option in Settings will work."
 } catch {
     Write-Host "    Not found. Only needed for the Local LLM option: https://ollama.com"
-    Write-Host "    The OpenAI path (via the LiteLLM proxy) does not need it."
+    Write-Host "    The OpenAI path does not need it."
 }
 
 Write-Host "==> UI: installing Node dependencies (npm install)"

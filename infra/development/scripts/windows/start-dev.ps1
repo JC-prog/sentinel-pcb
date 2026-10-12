@@ -1,4 +1,4 @@
-# Start the whole local dev stack: db/qdrant/litellm (Docker, idempotent) in this window, then
+# Start the whole local dev stack: db/qdrant (Docker, idempotent) in this window, then
 # the backend, the ONNX inference service, and the UI dev server each in their own new window -
 # all three natively with live reload.
 #
@@ -25,8 +25,8 @@ if (-not (Test-Path ".env")) {
     exit 1
 }
 
-Write-Host "==> Docker: db + qdrant + litellm (idempotent)"
-docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
+Write-Host "==> Docker: db + qdrant (idempotent)"
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Point the backend at the inference service we're about to start below, if .env doesn't already
@@ -77,6 +77,6 @@ Start-Process powershell -ArgumentList @(
 
 Write-Host ""
 Write-Host "Backend, inference, and UI are starting, each in its own window - Ctrl+C (or close the"
-Write-Host "window) to stop that one. Docker services (db/qdrant/litellm) keep running in the"
+Write-Host "window) to stop that one. Docker services (db/qdrant) keep running in the"
 Write-Host "background - stop them with:"
 Write-Host "  docker compose -f infra/development/docker-compose.yml --env-file .env down"

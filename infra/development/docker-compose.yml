@@ -24,9 +24,6 @@ services:
       # the container's route back to the host.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
-      # The LiteLLM proxy runs on the compose network as "litellm" - override .env's
-      # localhost:4000 form for this container. Bare `uv run uvicorn` uses .env's value directly.
-      OPENAI_BASE_URL: http://litellm:4000/v1
       # Same story for LangFuse (--profile langfuse below) - only matters when this container and
       # that profile are both up; LANGFUSE_ENABLED/keys still come from .env either way.
       LANGFUSE_HOST: http://langfuse-web:3000
@@ -39,8 +36,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
-      litellm:
-        condition: service_healthy
 
   # Local Postgres for dev. Not used by any application code yet (the chat app is stateless
   # today - see app/settings.py's database_url) - provisioned ahead of the multi-user/auth work
@@ -76,41 +71,12 @@ services:
     volumes:
       - sentinelchat-qdrant-data:/qdrant/storage
 
-  # LiteLLM proxy - the OpenAI-compatible endpoint the app calls instead of api.openai.com (see
-  # infra/litellm/README.md). Part of the default dev stack so local topology matches prod. Put a
-  # real provider key in .env as LITELLM_OPENAI_API_KEY for OpenAI calls to actually go through -
-  # only this container sees it. Leave it blank to work Ollama-only (calls just 401).
-  #
-  # IMPORTANT: every `docker compose` invocation against this file needs `--env-file .env` (run
-  # from the repo root) for the ${...} substitution below to see the repo-root .env - without it,
-  # Compose's project directory defaults to this file's own directory (no .env there), and
-  # OPENAI_API_KEY/LITELLM_MASTER_KEY silently resolve empty. setup-dev.sh/.ps1 already pass it.
-  # Deliberately not `env_file:` here (which doesn't have this problem) - that would import the
-  # *entire* .env verbatim, and this app's DATABASE_URL collides with a var name LiteLLM's own
-  # image reads for its own (unrelated, unwanted here) Postgres-backed features.
-  litellm:
-    image: ghcr.io/berriai/litellm:main-stable # pin a versioned -stable tag for real use
-    labels:
-      project: sentinelchat
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
-    environment:
-      OPENAI_API_KEY: ${LITELLM_OPENAI_API_KEY:-}
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-dev}
-    ports:
-      - "4000:4000"
-    volumes:
-      - ../litellm/config.dev.yaml:/app/config.yaml:ro
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
   # Services below are opt-in via profiles, so you only build/run your slice. "..." below always
   # stands for `-f infra/development/docker-compose.yml --env-file .env` (run from the repo
-  # root) - the --env-file is required, not optional; see the litellm service's comment above.
-  #   docker compose ... up -d                      # db + qdrant + litellm + app (backend default)
+  # root) - the --env-file is required, not optional: without it Compose's project directory
+  # defaults to this file's own directory (no .env there), and every ${...} substitution below
+  # (the LangFuse keys, ...) silently resolves empty. setup-dev.sh/.ps1 already pass it.
+  #   docker compose ... up -d                      # db + qdrant + app (backend default)
   #   docker compose ... --profile ui up -d         # + the containerized UI
   #   docker compose ... --profile inference up -d  # + the ONNX inference service
   #   docker compose ... --profile langfuse up -d   # + self-hosted LangFuse tracing UI
@@ -153,8 +119,8 @@ services:
   # langfuse-web's headless init below (LANGFUSE_INIT_PROJECT_*) so a dev never has to click
   # through the web UI to get an API key, and by the app itself (app/shared/config/settings.py) to
   # authenticate the CallbackHandler - set them once, both sides just work. Every other secret
-  # below is a fixed, committed dev-only default (same pattern as litellm's LITELLM_MASTER_KEY) -
-  # never reuse these values for anything but local dev.
+  # below is a fixed, committed dev-only default - never reuse these values for anything but
+  # local dev.
   #
   # A dedicated Postgres rather than reusing "db" above: docker-entrypoint-initdb.d init scripts
   # only run against a fresh, empty volume, and most devs already have a populated "db" volume -
@@ -240,7 +206,7 @@ services:
       start_period: 1s
 
   langfuse-worker:
-    image: docker.langfuse.com/langfuse/langfuse-worker:4 # pin a numbered tag for real use, like litellm above
+    image: docker.langfuse.com/langfuse/langfuse-worker:4 # pin a numbered tag for real use
     profiles: ["langfuse", "full"]
     labels:
       project: sentinelchat

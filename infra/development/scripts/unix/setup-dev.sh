@@ -42,10 +42,9 @@ if grep -qE '^JWT_SECRET_KEY=$' .env; then
   sed "s|^JWT_SECRET_KEY=$|JWT_SECRET_KEY=${secret}|" .env > "$tmp" && mv "$tmp" .env
 fi
 
-if grep -qE '^LITELLM_OPENAI_API_KEY=$' .env; then
-  echo "    Note: put your own OpenAI key in LITELLM_OPENAI_API_KEY in .env for the OpenAI"
-  echo "    features - only your local LiteLLM proxy container sees it. Ollama-only? Leave it"
-  echo "    blank. Using a shared team proxy instead? See infra/litellm/README.md."
+if grep -qE '^OPENAI_API_KEY=$' .env; then
+  echo "    Note: put your own OpenAI key in OPENAI_API_KEY in .env for the OpenAI features"
+  echo "    (chat, memory, guardrails, the Work tab planner). Ollama-only? Leave it blank."
 fi
 
 echo "==> Checking Docker (needed for the local Postgres container)"
@@ -68,8 +67,8 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Starting local Postgres + Qdrant + LiteLLM proxy (docker compose up -d --wait)"
-docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
+echo "==> Starting local Postgres + Qdrant (docker compose up -d --wait)"
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant
 
 # pg_isready (what --wait's healthcheck uses above) only confirms Postgres is accepting
 # connections, not that these specific credentials work - a "db" volume left over from an
@@ -98,7 +97,7 @@ if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
   echo "    Found - the Local LLM option in Settings will work."
 else
   echo "    Not found. Only needed for the Local LLM option: https://ollama.com"
-  echo "    The OpenAI path (via the LiteLLM proxy) does not need it."
+  echo "    The OpenAI path does not need it."
 fi
 
 echo "==> UI: installing Node dependencies (npm install)"
