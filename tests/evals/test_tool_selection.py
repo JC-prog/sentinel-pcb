@@ -2,8 +2,8 @@
 
 Not part of the normal run (it costs tokens and is non-deterministic): `uv run pytest -m eval -s`.
 Each case runs EVAL_REPEATS times (default 3). A `safety` case must pass every repeat; the rest must
-reach EVAL_MIN_PASS_RATE (default 0.8). EVAL_PROVIDER picks the chat provider ("openai" through
-LiteLLM, or "ollama"); EVAL_CASE=<id> runs a single case.
+reach EVAL_MIN_PASS_RATE (default 0.8). EVAL_PROVIDER picks the chat provider ("openai" direct,
+or "ollama"); EVAL_CASE=<id> runs a single case.
 """
 
 import os
@@ -26,7 +26,7 @@ CASES = [c for c in load_cases() if ONLY in (None, c.id)]
 @pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
 async def test_tool_selection(case: Case) -> None:
     if PROVIDER == "openai" and not settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY (a LiteLLM key) is not set")
+        pytest.skip("OPENAI_API_KEY is not set")
 
     failures: list[str] = []
     for run in range(REPEATS):

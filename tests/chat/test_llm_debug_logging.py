@@ -57,7 +57,7 @@ def test_the_factory_builds_the_model_the_conversation_provider_names(
     monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
     monkeypatch.setattr(settings, "ollama_base_url", "http://ollama.test:11434")
     monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini")
-    monkeypatch.setattr(settings, "openai_base_url", "http://litellm.test:4000/v1")
+    monkeypatch.setattr(settings, "openai_base_url", "http://llm.test/v1")
     monkeypatch.setattr(settings, "openai_api_key", "sk-proxy")
 
     local = build_chat_model("ollama")
@@ -66,7 +66,7 @@ def test_the_factory_builds_the_model_the_conversation_provider_names(
     assert (local.model, local.base_url) == ("gemma4:12b", "http://ollama.test:11434")  # type: ignore[attr-defined]
     # OpenAI always goes through the gateway, never api.openai.com directly
     assert hosted.model_name == "gpt-4o-mini"  # type: ignore[attr-defined]
-    assert hosted.openai_api_base == "http://litellm.test:4000/v1"  # type: ignore[attr-defined]
+    assert hosted.openai_api_base == "http://llm.test/v1"  # type: ignore[attr-defined]
 
 
 def test_the_agents_own_model_follows_agent_llm_settings(monkeypatch: pytest.MonkeyPatch) -> None:

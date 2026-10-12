@@ -1,7 +1,7 @@
 """NeMo Guardrails-backed GuardrailsChecker (app/chat/core/guardrails.py). Colang config lives in
 app/chat/guardrails/config/ - a single "self check input" rail combining jailbreak/prompt-injection
 detection and an off-topic (non-PCB-inspection) check into one prompt, so a checked message costs
-one extra LiteLLM round trip, not two. See config/flows.co for how the $allowed context variable
+one extra LLM round trip, not two. See config/flows.co for how the $allowed context variable
 is produced and read back below - the built-in rail only ever returns a canned refusal string, so
 reading a boolean out of it directly (rather than string-matching a response) is the only robust
 option.
@@ -33,8 +33,7 @@ def _get_rails() -> LLMRails:
     real startup cost, so this must not run at import time (mirrors app/chat/agents/case_agent/
     graph.py's get_mcp_client()). The model is injected here rather than hardcoded into
     config.yml so it always reflects the current settings.chat_guardrails_model/openai_base_url/
-    openai_api_key - the same LiteLLM proxy every other OpenAI-compatible call in this app uses,
-    never api.openai.com directly."""
+    openai_api_key - the same endpoint every other OpenAI-compatible call in this app uses."""
 
     global _rails
     if _rails is None:

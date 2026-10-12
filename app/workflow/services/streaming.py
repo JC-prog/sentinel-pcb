@@ -175,7 +175,7 @@ async def _run_full(
     from agents.orchestrator import OrchestratorAgent  # type: ignore[import-not-found]
     from state.workflow_state import WorkflowState  # type: ignore[import-not-found]
 
-    if settings.orchestrator_openai_api_key:
+    if settings.orchestrator_api_key:
         # agent1_orchestrator's planner (planner/llm_planner.py) and data/qdrant_indexer.py's
         # get_embeddings() both read OPENAI_API_KEY straight from the environment - their own
         # ported code, not settings. Mirror settings' key into it, the same carve-out CLAUDE.md
@@ -183,7 +183,7 @@ async def _run_full(
         # in the process environment. Set unconditionally (not just when request.use_llm) since
         # vector-db indexing below needs a real key for real embeddings regardless of whether
         # this particular run also uses the LLM planner.
-        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_openai_api_key)
+        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_api_key)
 
     agent = OrchestratorAgent(
         str(_WORKFLOW_ROOT),

@@ -53,7 +53,7 @@ def _log_to_file_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _guardrails_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """The chat guardrails check (app/chat/guardrails/) makes its own NeMo Guardrails LLM call
-    against the LiteLLM proxy - a real network call outside the mocked httpx.AsyncClient chat
+    against OpenAI - a real network call outside the mocked httpx.AsyncClient chat
     tests use, same risk _memory_disabled_by_default guards
     against. Disabled here by default; tests/chat/services/test_guardrails.py re-enables it
     explicitly."""
@@ -85,7 +85,7 @@ async def db_session() -> AsyncGenerator[None, None]:
             "volume most likely predates the current credentials. Reset it:\n"
             "    docker compose -f infra/development/docker-compose.yml --env-file .env down -v\n"
             "    docker compose -f infra/development/docker-compose.yml --env-file .env "
-            "up -d --wait db qdrant litellm",
+            "up -d --wait db qdrant",
             returncode=1,
         )
 

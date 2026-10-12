@@ -50,12 +50,9 @@ class Settings(BaseSettings):
 
     # Base URL for every OpenAI-compatible call - chat (app.chat.services.providers.openai), memory
     # embeddings (app/chat/memory/embeddings.py) and the Explainability & Review Agent's SDK client
-    # (app/chat/agents/case_agent/models.py). Default is OpenAI direct. Point it at a
-    # LiteLLM proxy to keep real provider keys out of this service: the shared team proxy or the
-    # local `offline-llm` compose service in dev, and the Cloud Map address
-    # (http://litellm.sentinelchat.internal:4000/v1) set by the backend task definition in prod
-    # (infra/production/litellm.tf). When it points at a proxy, openai_api_key holds a LiteLLM
-    # key rather than an sk- provider key. Must include the /v1 suffix.
+    # (app/chat/agents/case_agent/models.py). Default is OpenAI direct, and openai_api_key is a real
+    # sk- key. Override it only for another OpenAI-compatible endpoint (an Azure OpenAI deployment,
+    # a self-hosted gateway); it must include the /v1 suffix.
     openai_base_url: str = "https://api.openai.com/v1"
 
     # How many prior messages (app/chat/services/history.py) get sent to the LLM as context for a reply.
@@ -186,8 +183,8 @@ class Settings(BaseSettings):
     # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single
     # combined check. Kill switch, same pattern as the others; disabling it reproduces today's
     # behavior exactly - the message goes straight to the chat model with no check. Uses the shared
-    # openai_api_key/openai_base_url settings (the LiteLLM proxy), not a key of its own. Fails open
-    # on any error (proxy unreachable, NeMo internal failure) - same convention as every other
+    # openai_api_key/openai_base_url settings, not a key of its own. Fails open
+    # on any error (OpenAI unreachable, NeMo internal failure) - same convention as every other
     # kill-switchable agent in this repo.
     chat_guardrails_enabled: bool = True
     # A separate, independently tunable model from openai_model - the guardrails check is a small
@@ -213,9 +210,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL"),
     )
     # The chat agents' LLM (app/shared/config/llm.py): a LangChain provider name and a model name.
-    # Blank model -> openai_model. "openai" goes through openai_base_url (the LiteLLM gateway), so a
-    # model change behind the gateway is just this setting; another provider ("anthropic", "ollama",
-    # ...) needs its langchain-<name> package installed and its own credentials in the environment.
+    # Blank model -> openai_model. "openai" goes through openai_base_url, so a model change is just
+    # this setting; another provider ("anthropic", "ollama", ...) needs its langchain-<name>
+    # package installed and its own credentials in the environment.
     agent_llm_provider: str = "openai"
     agent_llm_model: str = ""
     # How long one agent LLM call may take.
@@ -229,15 +226,20 @@ class Settings(BaseSettings):
     # app/chat/agents/registry.py/access.py - structurally unreachable from the chat tool-calling
     # loop, not just settings-gated. Kill switch, same pattern as the others.
     orchestrator_agent_enabled: bool = True
-    # Its own direct OpenAI client, isolated from openai_api_key/openai_base_url above (which may
-    # point at a LiteLLM proxy key rather than a real sk-... key) - this one always calls
-    # api.openai.com directly, so it needs a real OpenAI key here regardless of what
-    # openai_base_url is set to elsewhere. Empty by default - never commit a real value.
+    # Optional override for the Work tab's planner and Agent 2 review (their ported code reads
+    # OPENAI_API_KEY from the environment). Blank -> openai_api_key, which is what you want unless
+    # the Work tab should bill a different key. Empty by default - never commit a real value.
     orchestrator_openai_api_key: str = ""
     orchestrator_openai_model: str = "gpt-5.6-luna"
     # Uploaded dataset CSVs, inspection XMLs, and image-root folders for Work-tab runs - same
     # cwd-relative convention/caveat as chat_upload_dir.
     orchestrator_data_dir: str = "data/orchestrator"
+
+    @property
+    def orchestrator_api_key(self) -> str:
+        """The key the Work tab's planner and Agent 2 review use: its own override, else the app's."""
+
+        return self.orchestrator_openai_api_key or self.openai_api_key
 
 
 settings = Settings()

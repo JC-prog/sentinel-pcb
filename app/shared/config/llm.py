@@ -6,7 +6,7 @@ without touching a caller.
 - `build_chat_model()` - the agents' own model (the inspect agent's ReAct pass), from
   `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` (blank model -> that provider's chat model).
 
-"openai" always goes through `openai_base_url`, the LiteLLM gateway, never api.openai.com directly.
+"openai" goes through `openai_base_url` (OpenAI direct unless overridden) with `openai_api_key`.
 Any other provider LangChain knows ("anthropic", ...) works for the agents too, with its
 `langchain-<name>` package installed and its credentials in the environment.
 

@@ -194,11 +194,11 @@ async def run_review(run_id: str, sample_id: str) -> WorkflowReviewOut:
         # again returns it instead of spending another VLM call on a result that couldn't be saved.
         return existing
 
-    if settings.orchestrator_openai_api_key:
+    if settings.orchestrator_api_key:
         # review_graph.py reads OPENAI_API_KEY straight from the environment (its own drop-in
         # code, not settings) - same carve-out as the planner in streaming.py; never overwrites a
         # key already in the process environment. Without one it uses its heuristic self-check.
-        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_openai_api_key)
+        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_api_key)
 
     output = await asyncio.to_thread(_execute_pipeline(), dict(case))
 

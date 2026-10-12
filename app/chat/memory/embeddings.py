@@ -25,7 +25,7 @@ class OllamaEmbeddingService:
 
 class OpenAiEmbeddingService:
     """Embeds text via OpenAI's embeddings API using the server-side settings.openai_api_key and
-    settings.openai_base_url (OpenAI direct, or a LiteLLM proxy) - see app/shared/config/settings.py."""
+    settings.openai_base_url (OpenAI direct unless overridden) - see app/shared/config/settings.py."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         payload = {"model": settings.openai_embedding_model, "input": texts}
