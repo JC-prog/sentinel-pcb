@@ -21,6 +21,8 @@ import {
   WorkflowRunDrift,
 } from './models/orchestrator.models';
 import { formatLog, logEntryText, logTime } from './work-log';
+import { WorkSettingsService } from './work-settings.service';
+import { WorkSettings } from './work-settings/work-settings';
 import { WorkService } from './work.service';
 
 /** How many log lines are drawn at once. The full log is always kept (and downloadable); drawing
@@ -67,7 +69,7 @@ export const IPC_CLASSES = [
  * reachable from the Chat tab and never calls /api/chat/stream - see
  * work.service.ts/work-orchestrator-client.ts. */
 @Component({
-  imports: [FormsModule],
+  imports: [FormsModule, WorkSettings],
   selector: 'app-work',
   styleUrl: './work.css',
   templateUrl: './work.html',
@@ -77,12 +79,6 @@ export class Work implements OnDestroy {
   protected readonly xmlFile = signal<File | null>(null);
   protected readonly imageRootFiles = signal<File[]>([]);
   protected readonly outputFilename = signal('result.json');
-
-  protected readonly featureThreshold = signal(0.7);
-  protected readonly defectThreshold = signal(0.7);
-  protected readonly useLlm = signal(false);
-  protected readonly llmModel = signal('');
-  protected readonly llmFallback = signal(true);
 
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
@@ -279,7 +275,17 @@ export class Work implements OnDestroy {
   // it fails, e.g. orchestrator_agent_enabled is off), so the label only appears once it's known.
   protected readonly llmConfigured = signal<boolean | null>(null);
 
-  constructor(protected readonly workService: WorkService) {
+  /** One line of the active policy and planner choices, so they stay visible with the panel closed. */
+  protected readonly settingsSummary: Signal<string> = computed(() => {
+    const s = this.workSettings;
+    const planner = s.useLlm() ? `LLM planner (${s.llmModel() || 'default model'})` : 'deterministic planner';
+    return `Thresholds ${s.featureThreshold().toFixed(2)} feature / ${s.defectThreshold().toFixed(2)} defect, ${planner}`;
+  });
+
+  constructor(
+    protected readonly workService: WorkService,
+    protected readonly workSettings: WorkSettingsService,
+  ) {
     // Keep the newest line in view while following - after render, so the new row has a height.
     afterRenderEffect(() => {
       this.visibleLog();
@@ -769,11 +775,11 @@ export class Work implements OnDestroy {
         : null;
 
       this.workService.run(mode, datasetId, xmlId, imageRootId, {
-        featureThreshold: this.featureThreshold(),
-        defectThreshold: this.defectThreshold(),
-        useLlm: this.useLlm(),
-        llmModel: this.llmModel(),
-        llmFallback: this.llmFallback(),
+        featureThreshold: this.workSettings.featureThreshold(),
+        defectThreshold: this.workSettings.defectThreshold(),
+        useLlm: this.workSettings.useLlm(),
+        llmModel: this.workSettings.llmModel(),
+        llmFallback: this.workSettings.llmFallback(),
       });
     } catch (error) {
       this.uploadError.set(error instanceof Error ? error.message : 'Upload failed.');

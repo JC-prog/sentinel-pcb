@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { vi } from 'vitest';
 import { Work } from './work';
 import { WorkService } from './work.service';
+import { WorkSettingsService } from './work-settings.service';
 import {
   OrchestratorInferenceResult,
   OrchestratorLogEntry,
@@ -199,6 +200,7 @@ describe('Work', () => {
   let fake: ReturnType<typeof fakeWorkService>;
 
   beforeEach(async () => {
+    localStorage.clear();
     fake = fakeWorkService();
     await TestBed.configureTestingModule({
       imports: [Work],
@@ -209,6 +211,11 @@ describe('Work', () => {
     fixture.detectChanges();
   });
 
+  function openSettings(): void {
+    (fixture.nativeElement.querySelector('[data-testid="open-settings"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
   function runButton(): HTMLButtonElement {
     return Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
       (btn as HTMLButtonElement).textContent?.includes('Run Agentic Workflow'),
@@ -216,13 +223,46 @@ describe('Work', () => {
   }
 
   it('shows the OPENAI_API_KEY status label once the status call resolves', async () => {
-    expect(fixture.nativeElement.textContent).not.toContain('OPENAI_API_KEY');
-
+    openSettings();
     await fixture.whenStable();
     fixture.detectChanges();
 
     // fakeWorkService()'s default getStatus() resolves { llm_configured: false }.
     expect(fixture.nativeElement.textContent).toContain('OPENAI_API_KEY not detected');
+  });
+
+  it('keeps the policy and planner controls off the page until Settings is opened', () => {
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.querySelector('[data-testid="feature-threshold"]')).toBeNull();
+    expect(page.querySelector('[data-testid="settings-summary"]')?.textContent).toContain(
+      'Thresholds 0.70 feature / 0.70 defect, deterministic planner',
+    );
+
+    openSettings();
+    expect(page.querySelector('[data-testid="feature-threshold"]')).not.toBeNull();
+
+    (page.querySelector('[data-testid="work-settings-backdrop"]') as HTMLElement).click();
+    fixture.detectChanges();
+    expect(page.querySelector('[data-testid="feature-threshold"]')).toBeNull();
+  });
+
+  it('sends the saved settings with the run', async () => {
+    const settings = TestBed.inject(WorkSettingsService);
+    settings.setDefectThreshold(0.85);
+    settings.setUseLlm(true);
+    settings.setLlmModel('gpt-x');
+    fixture.componentInstance.onDatasetFileChange({ target: { files: [file('dataset.csv')] } } as unknown as Event);
+    fixture.componentInstance.onXmlFileChange({ target: { files: [file('inspection.xml')] } } as unknown as Event);
+
+    await fixture.componentInstance.runFull();
+
+    expect(fake.run).toHaveBeenCalledWith(
+      'run_full',
+      'dataset-1',
+      'xml-1',
+      null,
+      expect.objectContaining({ defectThreshold: 0.85, useLlm: true, llmModel: 'gpt-x' }),
+    );
   });
 
   it('shows nothing when the status call fails, rather than a stale/wrong label', async () => {
@@ -235,6 +275,7 @@ describe('Work', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(Work);
     fixture.detectChanges();
+    openSettings();
 
     await fixture.whenStable();
     fixture.detectChanges();

@@ -98,79 +98,10 @@
       </p>
     </section>
 
-    <!-- Policy + LLM Planner -->
-    <section class="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
-      <h2 class="mb-3 text-sm font-semibold">Policy + LLM Planner</h2>
-      <div class="grid grid-cols-2 gap-x-6 gap-y-3">
-        <label class="flex flex-col gap-1 text-sm">
-          <span>Feature confidence threshold</span>
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-            [ngModel]="featureThreshold()"
-            (ngModelChange)="featureThreshold.set($event)"
-            name="featureThreshold"
-          />
-        </label>
-
-        <label class="flex flex-col gap-1 text-sm">
-          <span>Defect confidence threshold</span>
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-            [ngModel]="defectThreshold()"
-            (ngModelChange)="defectThreshold.set($event)"
-            name="defectThreshold"
-          />
-        </label>
-
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            class="accent-slate-900 dark:accent-slate-100"
-            [ngModel]="useLlm()"
-            (ngModelChange)="useLlm.set($event)"
-            name="useLlm"
-          />
-          Use real LLM Planner
-        </label>
-
-        <label class="flex flex-col gap-1 text-sm">
-          <span>OpenAI model</span>
-          <input
-            type="text"
-            placeholder="gpt-5.6-luna"
-            class="w-full rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
-            [ngModel]="llmModel()"
-            (ngModelChange)="llmModel.set($event)"
-            name="llmModel"
-          />
-        </label>
-
-        <label class="col-span-2 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            class="accent-slate-900 dark:accent-slate-100"
-            [ngModel]="llmFallback()"
-            (ngModelChange)="llmFallback.set($event)"
-            name="llmFallback"
-          />
-          Fallback to deterministic planner if LLM call fails
-        </label>
-
-        @if (llmConfigured() !== null) {
-          <p class="col-span-2 text-sm text-slate-500 dark:text-slate-400">
-            {{ llmConfigured() ? 'OPENAI_API_KEY detected' : 'OPENAI_API_KEY not detected' }}
-          </p>
-        }
-      </div>
-    </section>
+    <!-- Active settings (edited in the Work settings panel) -->
+    <p class="text-xs text-slate-500 dark:text-slate-400" data-testid="settings-summary">
+      {{ settingsSummary() }}
+    </p>
 
     @if (uploadError()) {
       <p class="rounded-lg bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">
@@ -203,6 +134,14 @@
         class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
       >
         {{ workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
+      </button>
+      <button
+        type="button"
+        data-testid="open-settings"
+        (click)="workSettings.open()"
+        class="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Settings
       </button>
       <button
         type="button"
@@ -967,3 +906,7 @@
     }
   </div>
 </div>
+
+@if (workSettings.isOpen()) {
+  <app-work-settings [llmConfigured]="llmConfigured()" />
+}
