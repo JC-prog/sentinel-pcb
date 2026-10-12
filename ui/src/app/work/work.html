@@ -294,17 +294,21 @@
           (click)="$event.stopPropagation()"
         >
           <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-300 px-4 py-3 dark:border-slate-700">
+            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" aria-hidden="true">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>
+            </span>
             <h1 id="review-console-title" class="text-lg font-bold">
               {{ consoleTab() === 'review' ? 'Explanation Review Queue' : 'Corrections & Retraining' }}
             </h1>
-            <span class="font-mono text-xs text-slate-500 dark:text-slate-400">Run: {{ runId() ?? '-' }}</span>
+            <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
               @if (consoleTab() === 'review') {
                 <button
                   type="button"
                   (click)="refreshCases()"
-                  class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                 >
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V6h-2.5"/></svg>
                   Refresh
                 </button>
                 <label class="flex items-center gap-1">
@@ -326,8 +330,9 @@
                 type="button"
                 (click)="closeConsole()"
                 aria-label="close review console"
-                class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
               >
+                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg>
                 Close
               </button>
             </div>
@@ -347,11 +352,11 @@
               class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
               [class]="
                 consoleTab() === 'review'
-                  ? 'border-slate-300 bg-white font-semibold dark:border-slate-700 dark:bg-slate-900'
+                  ? 'border-slate-300 border-t-2 border-t-sky-500 bg-white font-semibold dark:border-slate-700 dark:border-t-sky-400 dark:bg-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               "
             >
-              Explanation Review
+              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>Explanation Review</span>
             </button>
             <button
               type="button"
@@ -366,11 +371,11 @@
               class="-mb-px rounded-t border border-b-0 px-3 py-1.5"
               [class]="
                 consoleTab() === 'drift'
-                  ? 'border-slate-300 bg-white font-semibold dark:border-slate-700 dark:bg-slate-900'
+                  ? 'border-slate-300 border-t-2 border-t-sky-500 bg-white font-semibold dark:border-slate-700 dark:border-t-sky-400 dark:bg-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               "
             >
-              Corrections &amp; Retraining
+              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5"/></svg>Corrections &amp; Retraining</span>
               @if (pendingCorrections().length > 0) {
                 <span
                   data-testid="corrections-badge"
@@ -393,6 +398,12 @@
             <section class="flex min-h-0 flex-col rounded border border-slate-200 dark:border-slate-700">
               <h3 class="shrink-0 border-b border-slate-200 px-3 py-2 text-sm font-semibold dark:border-slate-700">
                 Items Needing Explanation ({{ reviewedCount() }} of {{ reviewCases().length }} reviewed)
+                <span class="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" aria-hidden="true">
+                  <span
+                    class="block h-full rounded-full bg-emerald-500 transition-[width]"
+                    [style.width.%]="reviewCases().length === 0 ? 0 : (reviewedCount() / reviewCases().length) * 100"
+                  ></span>
+                </span>
               </h3>
               <div class="min-h-0 flex-1 overflow-auto" data-testid="queue-list">
               <table class="w-full text-left text-xs">
@@ -409,8 +420,11 @@
                     <tr
                       tabindex="0"
                       class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-800 dark:hover:bg-slate-800"
-                      [class.bg-sky-100]="reviewCase.sample_id === selectedCaseId()"
-                      [class.dark:bg-sky-900]="reviewCase.sample_id === selectedCaseId()"
+                      [class.bg-sky-50]="reviewCase.sample_id === selectedCaseId()"
+                      [class.dark:bg-sky-950]="reviewCase.sample_id === selectedCaseId()"
+                      [class.border-l-4]="true"
+                      [class.border-l-sky-500]="reviewCase.sample_id === selectedCaseId()"
+                      [class.border-l-transparent]="reviewCase.sample_id !== selectedCaseId()"
                       [attr.aria-selected]="reviewCase.sample_id === selectedCaseId()"
                       [attr.data-testid]="'case-' + reviewCase.sample_id"
                       (click)="selectCase(reviewCase.sample_id)"
@@ -419,15 +433,23 @@
                       (keydown.arrowdown)="$event.preventDefault(); moveSelection(1)"
                       (keydown.arrowup)="$event.preventDefault(); moveSelection(-1)"
                     >
-                      <td class="px-3 py-1.5">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
-                      <td class="px-3 py-1.5 capitalize">{{ reviewCase.agent1_verdict }}</td>
-                      <td class="px-3 py-1.5 capitalize">
-                        {{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}
+                      <td class="px-3 py-2 font-medium">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
+                      <td class="px-3 py-2">
+                        <span class="inline-block rounded-full bg-sky-100 px-2 py-0.5 capitalize text-sky-800 dark:bg-sky-950 dark:text-sky-200">{{ reviewCase.agent1_verdict }}</span>
+                      </td>
+                      <td class="px-3 py-2">
+                        <span class="inline-block rounded-full bg-violet-100 px-2 py-0.5 capitalize text-violet-800 dark:bg-violet-950 dark:text-violet-200">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span>
                         @if (reviewCase.review?.conflict) {
-                          <span class="text-amber-700 dark:text-amber-300" title="Machine and AI differ" aria-label="Machine and AI differ">⚠</span>
+                          <span class="ml-1 inline-block align-middle text-amber-600 dark:text-amber-400" title="Machine and AI differ" aria-label="Machine and AI differ"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg></span>
                         }
                       </td>
-                      <td class="px-3 py-1.5">{{ reviewCase.decision ? 'Reviewed' : 'Pending' }}</td>
+                      <td class="px-3 py-2">
+                        @if (reviewCase.decision) {
+                          <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"><svg class="h-3 w-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>Reviewed</span>
+                        } @else {
+                          <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-200"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>Pending</span>
+                        }
+                      </td>
                     </tr>
                   } @empty {
                     <tr>
@@ -445,17 +467,19 @@
             <div class="min-h-0 space-y-3 overflow-y-auto pr-1" data-testid="detail-pane">
               @if (selectedCase(); as reviewCase) {
                 <div data-testid="review-detail" class="space-y-3">
-                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Selected Inspection</h3>
-                    <p class="font-semibold">
-                      Sample: {{ reviewCase.sample_id }} | Board: {{ reviewCase.board_id || '-' }} | Component:
-                      {{ reviewCase.component_ref || '-' }} | Feature: {{ reviewCase.feature_type || '-' }}
+                  <section class="rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
+                    <h3 class="mb-1.5 text-xs text-slate-600 dark:text-slate-400">Selected Inspection</h3>
+                    <p class="flex flex-wrap items-center gap-2">
+                      <span class="rounded-md bg-slate-900 px-2 py-0.5 font-semibold text-white dark:bg-slate-100 dark:text-slate-900">Sample: {{ reviewCase.sample_id }}</span>
+                      <span class="rounded-md bg-slate-100 px-2 py-0.5 dark:bg-slate-800"><span class="text-slate-600 dark:text-slate-400">Board</span> {{ reviewCase.board_id || '-' }}</span>
+                      <span class="rounded-md bg-slate-100 px-2 py-0.5 dark:bg-slate-800"><span class="text-slate-600 dark:text-slate-400">Component</span> {{ reviewCase.component_ref || '-' }}</span>
+                      <span class="rounded-md bg-slate-100 px-2 py-0.5 dark:bg-slate-800"><span class="text-slate-600 dark:text-slate-400">Feature</span> {{ reviewCase.feature_type || '-' }}</span>
                     </p>
                   </section>
 
                   <div class="grid gap-3 sm:grid-cols-2">
                     <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
-                      <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Golden Image</h3>
+                      <h3 class="mb-1 flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="m3.5 14.5 4-4 3 3 2-2 4 4"/></svg>Golden Image</h3>
                       <div class="flex h-52 items-center justify-center overflow-hidden rounded bg-slate-50 dark:bg-slate-800/50">
                         @if (goldenImageUrl(); as url) {
                           <img [src]="url" alt="golden reference" class="max-h-full max-w-full object-contain" />
@@ -467,7 +491,7 @@
                       </div>
                     </section>
                     <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
-                      <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Defect Image</h3>
+                      <h3 class="mb-1 flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="m3.5 14.5 4-4 3 3 2-2 4 4"/></svg>Defect Image</h3>
                       <div class="flex h-52 items-center justify-center overflow-hidden rounded bg-slate-50 dark:bg-slate-800/50">
                         @if (defectImageUrl(); as url) {
                           <img [src]="url" alt="defect crop" class="max-h-full max-w-full object-contain" />
@@ -480,20 +504,42 @@
                     </section>
                   </div>
 
-                  <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Machine / AI Results</h3>
-                    <p class="flex flex-wrap gap-x-6">
-                      <span><b>Machine defect:</b> <span class="capitalize">{{ reviewCase.agent1_verdict }}</span></span>
-                      <span><b>AI defect:</b> <span class="capitalize">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span></span>
-                      <span>
+                  <section aria-label="Machine and AI results" class="grid gap-3 text-sm sm:grid-cols-2">
+                    <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 dark:border-sky-900 dark:bg-sky-950/40">
+                      <p class="flex items-center gap-1.5 text-xs font-medium text-sky-800 dark:text-sky-200"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><path d="M8 2.5v2.5M12 2.5v2.5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/></svg>Machine</p>
+                      <p class="mt-1"><b>Machine defect:</b> <span class="capitalize">{{ reviewCase.agent1_verdict }}</span></p>
+                    </div>
+                    <div class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5 dark:border-violet-900 dark:bg-violet-950/40">
+                      <p class="flex items-center gap-1.5 text-xs font-medium text-violet-800 dark:text-violet-200"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/></svg>AI</p>
+                      <p class="mt-1"><b>AI defect:</b> <span class="capitalize">{{ reviewCase.review?.agent2_verdict ?? 'Unknown' }}</span></p>
+                      <p class="mt-1 flex items-center gap-2">
                         <b>Confidence:</b>
                         {{ reviewCase.review ? reviewCase.review.confidence.toFixed(3) : '-' }}
-                      </span>
-                    </p>
+                        @if (reviewCase.review) {
+                          <span class="h-1.5 w-16 overflow-hidden rounded-full bg-violet-200 dark:bg-violet-900" aria-hidden="true">
+                            <span class="block h-full bg-violet-600 dark:bg-violet-400" [style.width.%]="reviewCase.review.confidence * 100"></span>
+                          </span>
+                        }
+                      </p>
+                    </div>
+                    @if (reviewCase.review) {
+                      <p
+                        class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium sm:col-span-2"
+                        [class]="reviewCase.review.conflict
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                          : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'"
+                      >
+                        @if (reviewCase.review.conflict) {
+                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg>Machine and AI disagree. Check the images before deciding.
+                        } @else {
+                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>Machine and AI agree.
+                        }
+                      </p>
+                    }
                   </section>
 
                   <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                    <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Explanation Agent Output</h3>
+                    <h3 class="mb-1 flex items-center gap-1.5 text-xs font-medium text-violet-700 dark:text-violet-300"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/></svg>Explanation Agent Output</h3>
                     <div class="max-h-40 min-h-16 overflow-y-auto whitespace-pre-wrap text-sm">
                       @if (reviewCase.review; as review) {
                         <p>{{ review.diagnosis || 'No detailed diagnosis provided by Agent 2.' }}</p>
@@ -510,41 +556,56 @@
                   </section>
 
                   <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                    <h3 class="mb-2 text-xs text-slate-500 dark:text-slate-400">User Final Decision</h3>
-                    <div role="radiogroup" aria-label="Final decision" class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1">
-                      <label class="flex items-center gap-1">
+                    <h3 class="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="3"/><path d="M4 16.5c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/></svg>User Final Decision</h3>
+                    <div role="radiogroup" aria-label="Final decision" class="mb-3 grid gap-2 sm:grid-cols-3">
+                      <label
+                        class="flex items-center gap-1.5 rounded-lg border px-3 py-2 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                        [class]="decisionSource() === 'MACHINE' ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/40' : 'border-slate-300 dark:border-slate-700'"
+                      >
                         <input
                           type="radio"
                           name="decisionSource"
+                          class="accent-sky-600"
                           [checked]="decisionSource() === 'MACHINE'"
                           (change)="decisionSource.set('MACHINE')"
                         />
+                        <svg class="h-3.5 w-3.5 text-sky-700 dark:text-sky-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><path d="M8 2.5v2.5M12 2.5v2.5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/></svg>
                         Accept Machine
                       </label>
-                      <label class="flex items-center gap-1">
+                      <label
+                        class="flex items-center gap-1.5 rounded-lg border px-3 py-2 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                        [class]="decisionSource() === 'AI' ? 'border-violet-500 bg-violet-50 dark:bg-violet-950/40' : 'border-slate-300 dark:border-slate-700'"
+                      >
                         <input
                           type="radio"
                           name="decisionSource"
+                          class="accent-violet-600"
                           [disabled]="!reviewCase.review"
                           [checked]="decisionSource() === 'AI'"
                           (change)="decisionSource.set('AI')"
                         />
+                        <svg class="h-3.5 w-3.5 text-violet-700 dark:text-violet-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/></svg>
                         Accept AI
                       </label>
-                      <label class="flex items-center gap-1">
+                      <label
+                        class="flex items-center gap-1.5 rounded-lg border px-3 py-2 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                        [class]="decisionSource() === 'MANUAL' ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40' : 'border-slate-300 dark:border-slate-700'"
+                      >
                         <input
                           type="radio"
                           name="decisionSource"
+                          class="accent-amber-600"
                           [checked]="decisionSource() === 'MANUAL'"
                           (change)="decisionSource.set('MANUAL')"
                         />
+                        <svg class="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="3"/><path d="M4 16.5c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/></svg>
                         Manual:
                         <select
                           [ngModel]="manualClass()"
                           (ngModelChange)="manualClass.set($event); decisionSource.set('MANUAL')"
                           name="manualClass"
                           aria-label="manual IPC class"
-                          class="rounded border border-slate-300 bg-transparent px-2 py-1 capitalize dark:border-slate-700"
+                          class="min-w-0 flex-1 rounded border border-slate-300 bg-transparent px-1 py-0.5 text-sm capitalize dark:border-slate-700"
                         >
                           @for (ipcClass of ipcClasses; track ipcClass) {
                             <option [value]="ipcClass">{{ ipcClass }}</option>
@@ -552,8 +613,8 @@
                         </select>
                       </label>
                     </div>
-                    <div class="flex items-center gap-3">
-                      <label class="flex flex-1 items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <label class="flex min-w-[12rem] flex-1 items-center gap-2">
                         Notes:
                         <input
                           type="text"
@@ -567,8 +628,9 @@
                         type="button"
                         [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
                         (click)="submitDecision()"
-                        class="rounded border border-slate-300 px-4 py-2 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                        class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
                       >
+                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>
                         {{ reviewBusy() ? 'Saving…' : 'Confirm Decision' }}
                       </button>
                       @if (hasNextPending()) {
@@ -577,7 +639,7 @@
                           data-testid="confirm-next"
                           [disabled]="reviewBusy() || (decisionSource() === 'AI' && !reviewCase.review)"
                           (click)="submitDecision(true)"
-                          class="rounded border border-slate-300 px-4 py-2 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                          class="shrink-0 rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
                         >
                           Confirm &amp; next pending
                         </button>
