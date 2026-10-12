@@ -1,10 +1,12 @@
 """Routes only - see app/chat/services/streaming.py for the tool-calling loop's actual logic and
 app/chat/services/repository.py for conversation persistence."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.chat.core.chat import ConversationNotFound
 from app.chat.services import ChatStreamRequest, history
@@ -17,6 +19,31 @@ from app.shared.config.settings import settings
 from app.shared.db import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _chosen_model(requested: str | None) -> str | None:
+    """The requested chat model if the server allows it, else None (the server's default) - a model
+    that was removed from CHAT_MODELS since the browser stored it must not break chat."""
+
+    if requested is None:
+        return None
+    if requested in settings.selectable_chat_models:
+        return requested
+    logger.warning("chat model %r is not allowed; using the default", requested)
+    return None
+
+
+class ChatModelsOut(BaseModel):
+    default: str
+    models: list[str]
+
+
+@router.get("/api/chat/models")
+async def chat_models(user: Annotated[User, Depends(get_current_user)]) -> ChatModelsOut:
+    """What Settings offers for the chat reply's model."""
+
+    return ChatModelsOut(default=settings.openai_model, models=settings.selectable_chat_models)
 
 
 @router.post("/api/chat/stream")
@@ -49,6 +76,7 @@ async def chat_stream(
             request.image_ids,
             request.xml_ids,
             user,
+            _chosen_model(request.model),
         ),
         media_type="text/event-stream",
     )

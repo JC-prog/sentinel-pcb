@@ -79,6 +79,59 @@ def test_chat_stream_uses_openai_by_default(
     assert _parse_sse(body)[-1] == ("done", {})
 
 
+def _record_chat_models(monkeypatch: pytest.MonkeyPatch, reply: str) -> list[str | None]:
+    """Replaces the supervisor's model factory; returns the `model` it was asked for, per turn."""
+
+    asked: list[str | None] = []
+    scripted = says(reply)
+
+    def build(provider: str | None = None, **kwargs: object) -> object:
+        asked.append(kwargs.get("model"))  # type: ignore[arg-type]
+        return scripted
+
+    monkeypatch.setattr("app.chat.agents.supervisor.build_chat_model", build)
+    return asked
+
+
+def test_chat_models_lists_the_default_first(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "chat_models", ["gpt-4o", "gpt-4o-mini"])
+
+    response = authenticated_client.get("/api/chat/models")
+
+    assert response.status_code == 200
+    assert response.json() == {"default": "gpt-4o-mini", "models": ["gpt-4o-mini", "gpt-4o"]}
+
+
+def test_chat_models_requires_login(client: TestClient) -> None:
+    assert client.get("/api/chat/models").status_code == 401
+
+
+def test_the_chat_reply_uses_the_model_picked_in_settings(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "chat_models", ["gpt-4o-mini", "gpt-4o"])
+    asked = _record_chat_models(monkeypatch, "ok")
+
+    _stream(authenticated_client, "c1", "hi", model="gpt-4o")
+
+    assert asked == ["gpt-4o"]
+
+
+def test_a_model_the_server_does_not_allow_falls_back_to_the_default(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "chat_models", ["gpt-4o-mini"])
+    asked = _record_chat_models(monkeypatch, "ok")
+
+    _stream(authenticated_client, "c1", "hi", model="some-expensive-model")
+    _stream(authenticated_client, "c2", "hi")
+
+    assert asked == [None, None]
+
+
 def test_chat_stream_uses_openai_when_selected(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

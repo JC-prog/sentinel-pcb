@@ -15,6 +15,9 @@ class ChatStreamRequest(BaseModel):
     # like image_ids is - ephemeral to the tool call, not part of the message history.
     xml_ids: list[str] = []
     provider: LlmProvider = "openai"
+    # The chat model picked in Settings (one of GET /api/chat/models). None or an unknown value uses
+    # the server's default - a stale choice in someone's browser must not stop chat working.
+    model: str | None = None
 
 
 class ConversationSummary(BaseModel):

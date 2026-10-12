@@ -65,12 +65,16 @@ def build_chat_model(
     *,
     temperature: float | None = 0.0,
     timeout: float | None = None,
+    model: str | None = None,
 ) -> BaseChatModel:
+    """`model` overrides the configured one (the chat reply's model, picked in Settings)."""
+
     if provider is None:
         provider = settings.agent_llm_provider
-        model = settings.agent_llm_model or _default_model(provider)
+        chosen = settings.agent_llm_model or _default_model(provider)
     else:
-        model = _default_model(provider)
+        chosen = _default_model(provider)
+    chosen = model or chosen
 
     kwargs: dict[str, Any] = {"callbacks": [LlmDebugLogger()]}
     if temperature is not None:
@@ -80,7 +84,7 @@ def build_chat_model(
     model_obj: BaseChatModel
     if provider == "openai":
         model_obj = init_chat_model(
-            model,
+            chosen,
             model_provider="openai",
             api_key=SecretStr(settings.openai_api_key),
             base_url=settings.openai_base_url,
@@ -88,7 +92,7 @@ def build_chat_model(
             **kwargs,
         )
         return model_obj
-    model_obj = init_chat_model(model, model_provider=provider, timeout=timeout, **kwargs)
+    model_obj = init_chat_model(chosen, model_provider=provider, timeout=timeout, **kwargs)
     return model_obj
 
 

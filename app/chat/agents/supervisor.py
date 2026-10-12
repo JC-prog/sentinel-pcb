@@ -78,13 +78,19 @@ async def run_turn(
     messages: list[BaseMessage],
     ctx: ToolContext,
     tools: list[ChatTool],
+    model: str | None = None,
 ) -> AsyncIterator[SupervisorEvent]:
     """`messages` is the whole prompt: system message, history, the new user message. Errors from
     the model itself propagate - the caller reports them."""
 
     by_name = {t.name: t for t in tools}
     agent = create_agent(
-        build_chat_model(provider, temperature=None, timeout=settings.chat_llm_timeout_seconds),
+        build_chat_model(
+            provider,
+            temperature=None,
+            timeout=settings.chat_llm_timeout_seconds,
+            model=model,
+        ),
         tools=[t.tool for t in tools],
         context_schema=ToolContext,
     )

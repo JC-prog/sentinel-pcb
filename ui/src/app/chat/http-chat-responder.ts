@@ -73,6 +73,7 @@ export class HttpChatResponder implements ChatResponder {
         const xmlIds = await Promise.all(xmlFiles.map((file) => this.uploadXml(file)));
 
         const provider = this.settings.provider();
+        const model = this.settings.model();
         const response = await this.authService.fetchWithAuth(
           `${environment.apiBaseUrl}/api/chat/stream`,
           {
@@ -84,6 +85,7 @@ export class HttpChatResponder implements ChatResponder {
               image_ids: imageIds,
               xml_ids: xmlIds,
               provider,
+              ...(model !== null ? { model } : {}),
             }),
             signal: controller.signal,
           },

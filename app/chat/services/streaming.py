@@ -57,6 +57,7 @@ async def chat_sse(
     image_ids: list[str],
     xml_ids: list[str],
     user: User,
+    model: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream (frames: see the module docstring).
 
@@ -138,7 +139,9 @@ async def chat_sse(
 
     final_text = ""
     try:
-        async for event in run_turn(provider=provider, messages=messages, ctx=ctx, tools=tools):
+        async for event in run_turn(
+            provider=provider, messages=messages, ctx=ctx, tools=tools, model=model
+        ):
             if isinstance(event, TextChunk):
                 yield _sse("delta", {"text": event.text})
             elif isinstance(event, ToolStarted):

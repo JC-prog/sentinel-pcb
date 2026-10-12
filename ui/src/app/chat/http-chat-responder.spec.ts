@@ -194,4 +194,21 @@ describe('HttpChatResponder', () => {
     expect(requestBody.provider).toBe('openai');
     expect(requestBody.openai_api_key).toBeUndefined();
   });
+
+  it('sends the picked chat model, and none when the server default is used', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBeUndefined();
+
+    settings.setModel('gpt-4o');
+    fetchMock.mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe('gpt-4o');
+  });
 });

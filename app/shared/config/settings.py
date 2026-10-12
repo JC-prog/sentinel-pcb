@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # never commit a real value.
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    # The models a user may pick for the chat reply in Settings (CHAT_MODELS, a JSON array). Only
+    # the supervisor's answer follows the choice; memory extraction, guardrails and the agents keep
+    # their own models. openai_model is always offered, first, as the default.
+    chat_models: list[str] = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"]
 
     # Base URL for every OpenAI-compatible call - chat (app.chat.services.providers.openai), memory
     # embeddings (app/chat/memory/embeddings.py) and the Explainability & Review Agent's SDK client
@@ -226,6 +230,12 @@ class Settings(BaseSettings):
     # Uploaded dataset CSVs, inspection XMLs, and image-root folders for Work-tab runs - same
     # cwd-relative convention/caveat as chat_upload_dir.
     orchestrator_data_dir: str = "data/orchestrator"
+
+    @property
+    def selectable_chat_models(self) -> list[str]:
+        """The default chat model first, then the other allowed ones, without duplicates."""
+
+        return list(dict.fromkeys([self.openai_model, *self.chat_models]))
 
     @property
     def orchestrator_api_key(self) -> str:

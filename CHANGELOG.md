@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: the Settings window lets you pick the model for the assistant's replies from the models the
+  server allows (`CHAT_MODELS`, default `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1`; the
+  `OPENAI_MODEL` default is always offered first). The choice is remembered in the browser and only
+  changes the reply: memory extraction, the guardrails check and the agents keep their own models.
+  `GET /api/chat/models` lists the options; an unknown model falls back to the default.
 - Work tab: the Review Console now has three tabs. **Model feedback** is a report that adds the
   **region model** (accuracy, confidence, what you changed it to), a funnel of where flagged samples
   went, and how useful Agent 2 was. **Retraining queue** is the work list: your corrections grouped by
