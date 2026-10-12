@@ -96,6 +96,28 @@ def test_tools_disabled_gives_the_model_no_tools_at_all(
     assert model.offered == []
 
 
+def test_the_done_frame_reports_the_turns_token_usage(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reply = ai("Hello")
+    reply.usage_metadata = {"input_tokens": 120, "output_tokens": 8, "total_tokens": 128}
+    install(monkeypatch, ScriptedModel(replies=[reply]))
+
+    frames = _parse_sse(_stream(authenticated_client, "hi"))
+
+    assert frames[-1] == ("done", {"usage": {"input_tokens": 120, "output_tokens": 8}})
+
+
+def test_the_done_frame_has_no_usage_when_the_provider_reported_none(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install(monkeypatch, says("ack"))
+
+    frames = _parse_sse(_stream(authenticated_client, "hi"))
+
+    assert frames[-1] == ("done", {})
+
+
 def test_a_tool_call_round_trip_streams_progress_and_the_final_answer(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

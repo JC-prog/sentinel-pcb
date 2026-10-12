@@ -69,10 +69,22 @@ export interface ReviewDone {
   note: string | null;
 }
 
+/** create_case: the inspection was saved as a numbered Case. */
+export interface CaseCreated {
+  status: 'created';
+  case_number: string;
+  /** The case's status: 'accepted' or 'review_required'. */
+  verdict: string;
+  region: string | null;
+  defect: string | null;
+  defect_confidence: number | null;
+}
+
 /** A tool's structured result, shown as a card on the assistant message that follows it. Mirrors
  * the backend's `event: tool_result` SSE frame (app/chat/services/streaming.py). */
 export type ToolResult =
   | { name: 'inspect_image'; result: InspectionResult }
+  | { name: 'create_case'; result: CaseCreated }
   | { name: 'relabel_case'; result: RelabelProposal }
   | { name: 'confirm_relabel'; result: RelabelDone }
   | { name: 'review_case'; result: ReviewProposal }
@@ -80,6 +92,7 @@ export type ToolResult =
 
 export const TOOL_RESULT_NAMES: readonly ToolResult['name'][] = [
   'inspect_image',
+  'create_case',
   'relabel_case',
   'confirm_relabel',
   'review_case',
@@ -95,6 +108,18 @@ export interface ChatMessage {
   imageUrls?: string[];
   /** Cards for the tools that ran while this reply was produced (inspection result, relabel). */
   toolResults?: ToolResult[];
+  /** How many files (images + inspection XML) the user attached. Unlike imageUrls this survives a
+   * reload, so the message can still say something was attached once the thumbnails are gone. */
+  attachmentCount?: number;
+  /** The reply failed before it finished; the UI offers a retry. Whatever text arrived is kept. */
+  error?: boolean;
+  /** Why it failed, in words safe to show (a session that expired, a rate limit, ...). */
+  errorMessage?: string;
+  /** The reply was stopped (by the user, or by a failure part-way): the text is what had streamed. */
+  interrupted?: boolean;
+  /** Tokens the model used for this reply, summed over every model call in the turn. Absent when
+   * the provider did not report it. */
+  usage?: { inputTokens: number; outputTokens: number };
   createdAt: number;
 }
 

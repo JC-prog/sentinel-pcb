@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Annotated, Any
 
 import pytest
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 from app.chat.agents import supervisor
@@ -19,6 +19,7 @@ from app.chat.agents.supervisor import (
     TextChunk,
     ToolFinished,
     ToolStarted,
+    Usage,
 )
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, returns_json
 from app.chat.core.tools import ToolContext
@@ -85,6 +86,39 @@ async def test_a_tool_call_is_announced_run_and_its_result_reported(
     assert isinstance(finished, ToolFinished) and finished.name == "echo_user"
     assert json.loads(finished.result)["note"] == "x"
     assert (text, answer) == (TextChunk("Done."), Answer("Done."))
+
+
+def _with_usage(message: AIMessage, input_tokens: int, output_tokens: int) -> AIMessage:
+    message.usage_metadata = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+    return message
+
+
+async def test_token_usage_is_summed_over_every_model_call_in_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ScriptedModel(
+        replies=[
+            _with_usage(ai("", ("echo_user", {"note": "x"})), 100, 20),
+            _with_usage(ai("Done."), 150, 30),
+        ]
+    )
+
+    events = await _run(monkeypatch, model, [ECHO])
+
+    assert Usage(input_tokens=250, output_tokens=50) in events
+    assert events.index(Usage(250, 50)) < events.index(Answer("Done."))
+
+
+async def test_no_usage_event_when_the_provider_reports_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = await _run(monkeypatch, ScriptedModel(replies=[ai("Hello")]), [ECHO])
+
+    assert not any(isinstance(e, Usage) for e in events)
 
 
 async def test_the_context_comes_from_the_request_never_from_the_models_arguments(

@@ -1,10 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { Chat } from './chat';
 import { AuthService, AuthUser } from '../auth.service';
-import { CHAT_RESPONDER } from './chat-responder';
+import { CHAT_RESPONDER, ChatResponderError, ChatResponderEvent } from './chat-responder';
 import { ChatService } from './chat.service';
 
 class FakeActivatedRoute {
@@ -106,6 +106,370 @@ describe('Chat', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Hello');
     expect(compiled.textContent).toContain('mock reply');
+  });
+
+  it('renders assistant markdown instead of showing it raw', async () => {
+    await TestBed.configureTestingModule({
+      providers: [
+        { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'a **bold** claim\n\n- one\n- two' }) } },
+        { provide: AuthService, useValue: fakeAuthService() },
+      ],
+    }).compileComponents();
+    const probe = TestBed.inject(ChatService);
+    const id = probe.send(null, 'hi', []);
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Chat],
+      providers: [
+        provideRouter([]),
+        { provide: ChatService, useValue: probe },
+        { provide: ActivatedRoute, useValue: new FakeActivatedRoute({ id }) },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(Chat);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('span.font-semibold')?.textContent).toBe('bold');
+    expect(compiled.querySelectorAll('ul li').length).toBe(2);
+    expect(compiled.textContent).not.toContain('**');
+  });
+
+  it('shows a Stop button while a reply is streaming and stops it on click', async () => {
+    const chunks = new Subject<ChatResponderEvent>();
+    await TestBed.configureTestingModule({
+      providers: [
+        { provide: CHAT_RESPONDER, useValue: { respond: () => chunks.asObservable() } },
+        { provide: AuthService, useValue: fakeAuthService() },
+      ],
+    }).compileComponents();
+    const probe = TestBed.inject(ChatService);
+    const id = probe.send(null, 'hi', []);
+    chunks.next({ type: 'delta', text: 'working' });
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Chat],
+      providers: [
+        provideRouter([]),
+        { provide: ChatService, useValue: probe },
+        { provide: ActivatedRoute, useValue: new FakeActivatedRoute({ id }) },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(Chat);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const stop = compiled.querySelector<HTMLButtonElement>('button[aria-label="Stop generating"]');
+    expect(stop).toBeTruthy();
+
+    stop!.click();
+    fixture.detectChanges();
+
+    expect(probe.isLoading(id)()).toBe(false);
+    expect(compiled.querySelector('button[aria-label="Stop generating"]')).toBeNull();
+    expect(compiled.textContent).toContain('working');
+  });
+
+  /** Opens the Chat component on a conversation built by sending through a probe ChatService. */
+  async function openConversation(
+    respond: () => unknown,
+    prepare?: (chatService: ChatService) => string,
+  ): Promise<{ id: string; chatService: ChatService }> {
+    await TestBed.configureTestingModule({
+      providers: [
+        { provide: CHAT_RESPONDER, useValue: { respond } },
+        { provide: AuthService, useValue: fakeAuthService() },
+      ],
+    }).compileComponents();
+    const probe = TestBed.inject(ChatService);
+    const id = prepare ? prepare(probe) : probe.send(null, 'hi', []);
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Chat],
+      providers: [
+        provideRouter([]),
+        { provide: ChatService, useValue: probe },
+        { provide: ActivatedRoute, useValue: new FakeActivatedRoute({ id }) },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(Chat);
+    fixture.detectChanges();
+    return { id, chatService: probe };
+  }
+
+  function buttonWithText(text: string): HTMLButtonElement | undefined {
+    return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).find((b) =>
+      b.textContent?.includes(text),
+    );
+  }
+
+  it('shows a retry control for a failed reply and resends on click', async () => {
+    let attempt = 0;
+    const { id, chatService } = await openConversation(() =>
+      attempt++ === 0 ? throwError(() => new Error('boom')) : of({ type: 'delta', text: 'recovered' }),
+    );
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('[role="alert"]')?.textContent).toContain('went wrong');
+
+    buttonWithText('Retry')!.click();
+    fixture.detectChanges();
+
+    expect(chatService.get(id)()?.messages[1].content).toBe('recovered');
+    expect(compiled.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('offers Regenerate on the last reply and Copy / Edit on messages', async () => {
+    await openConversation(() => of({ type: 'delta', text: 'a reply' }));
+    const labels = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).map((b) => b.getAttribute('aria-label'));
+
+    expect(labels).toContain('Regenerate reply');
+    expect(labels).toContain('Edit as a new message');
+    expect(labels.filter((label) => label === 'Copy message').length).toBe(2);
+  });
+
+  it('puts a sent message back in the box when Edit is used', async () => {
+    await openConversation(() => of({ type: 'delta', text: 'a reply' }));
+    const edit = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      'button[aria-label="Edit as a new message"]',
+    );
+
+    edit!.click();
+
+    expect(fixture.componentInstance['draftText']()).toBe('hi');
+  });
+
+  it('shows one-click follow-ups under an inspection card and sends them', async () => {
+    const inspection = {
+      name: 'inspect_image',
+      result: {
+        case_created: false,
+        verdict: 'review_required',
+        review_required: true,
+        review_reasons: ['low confidence'],
+        inspection_summary: null,
+        region: null,
+        defect: null,
+        measurement_validation: null,
+      },
+    };
+    const { id, chatService } = await openConversation(() =>
+      of({ type: 'toolResult', toolResult: inspection }),
+    );
+    const chip = buttonWithText('Open a case for this inspection.');
+    expect(chip).toBeTruthy();
+
+    chip!.click();
+
+    const sent = chatService.get(id)()?.messages.filter((m) => m.role === 'user');
+    expect(sent?.map((m) => m.content)).toContain('Open a case for this inspection.');
+  });
+
+  it('sends a self-contained suggestion immediately', async () => {
+    await setup(new FakeActivatedRoute());
+    const chatService = TestBed.inject(ChatService);
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const suggestion = fixture.componentInstance['suggestions'].find((s) => s.send)!;
+
+    fixture.componentInstance.useSuggestion(suggestion);
+
+    const conversations = chatService.list()();
+    expect(conversations.length).toBe(1);
+    expect(conversations[0].messages[0].content).toBe(suggestion.prompt);
+  });
+
+  it('fills an editable suggestion without sending it', async () => {
+    await setup(new FakeActivatedRoute());
+    const chatService = TestBed.inject(ChatService);
+    const suggestion = fixture.componentInstance['suggestions'].find(
+      (s) => !s.send && !s.needsAttachment,
+    )!;
+
+    fixture.componentInstance.useSuggestion(suggestion);
+
+    expect(fixture.componentInstance['draftText']()).toBe(suggestion.prompt);
+    expect(chatService.list()().length).toBe(0);
+  });
+
+  it('opens the attach picker for a suggestion that needs an image, without sending', async () => {
+    await setup(new FakeActivatedRoute());
+    const chatService = TestBed.inject(ChatService);
+    const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )!;
+    const click = vi.spyOn(input, 'click');
+    const suggestion = fixture.componentInstance['suggestions'].find((s) => s.needsAttachment)!;
+
+    fixture.componentInstance.useSuggestion(suggestion);
+
+    expect(click).toHaveBeenCalled();
+    expect(chatService.list()().length).toBe(0);
+  });
+
+  it('routes images and XML from the single attach picker to their own lists', async () => {
+    await setup(new FakeActivatedRoute());
+    const image = new File(['x'], 'a.png', { type: 'image/png' });
+    const xml = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+    const other = new File(['x'], 'notes.txt', { type: 'text/plain' });
+
+    fixture.componentInstance.onFilesSelected({
+      target: { files: [image, xml, other], value: '' },
+    } as unknown as Event);
+
+    expect(fixture.componentInstance['pendingImages']().map((i) => i.file)).toEqual([image]);
+    expect(fixture.componentInstance['pendingXmlFiles']().map((x) => x.file)).toEqual([xml]);
+  });
+
+  it('attaches an image pasted into the message box', async () => {
+    await setup(new FakeActivatedRoute());
+    const image = new File(['x'], 'shot.png', { type: 'image/png' });
+    const preventDefault = vi.fn();
+
+    fixture.componentInstance.onPaste({
+      clipboardData: { files: [image] },
+      preventDefault,
+    } as unknown as ClipboardEvent);
+
+    expect(fixture.componentInstance['pendingImages']().map((i) => i.file)).toEqual([image]);
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it('leaves pasted text to the textarea', async () => {
+    await setup(new FakeActivatedRoute());
+    const preventDefault = vi.fn();
+
+    fixture.componentInstance.onPaste({
+      clipboardData: { files: [] },
+      preventDefault,
+    } as unknown as ClipboardEvent);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('does not send a second message while a reply is streaming', async () => {
+    const chunks = new Subject<ChatResponderEvent>();
+    const { id, chatService } = await openConversation(() => chunks.asObservable());
+    expect(chatService.isLoading(id)()).toBe(true);
+
+    fixture.componentInstance['draftText'].set('another');
+    fixture.componentInstance.send();
+
+    expect(chatService.get(id)()?.messages.filter((m) => m.role === 'user').length).toBe(1);
+  });
+
+  it('does not send when Enter confirms an IME candidate', async () => {
+    await setup(new FakeActivatedRoute());
+    const chatService = TestBed.inject(ChatService);
+    fixture.componentInstance['draftText'].set('こんにちは');
+    const preventDefault = vi.fn();
+
+    fixture.componentInstance.onTextareaKeydown({
+      key: 'Enter',
+      shiftKey: false,
+      isComposing: true,
+      keyCode: 229,
+      preventDefault,
+    } as unknown as KeyboardEvent);
+
+    expect(chatService.list()().length).toBe(0);
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('says why a dropped file was not attached', async () => {
+    await setup(new FakeActivatedRoute());
+    const note = new File(['x'], 'notes.txt', { type: 'text/plain' });
+    const image = new File(['x'], 'a.png', { type: 'image/png' });
+
+    fixture.componentInstance.onDrop(fakeDropEvent([note, image]));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['pendingImages']().length).toBe(1);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Not attached: notes.txt is not an image or an XML file.',
+    );
+  });
+
+  it('refuses a file over 20 MB before uploading it', async () => {
+    await setup(new FakeActivatedRoute());
+    const huge = new File(['x'], 'huge.png', { type: 'image/png' });
+    Object.defineProperty(huge, 'size', { value: 21 * 1024 * 1024 });
+
+    fixture.componentInstance.onDrop(fakeDropEvent([huge]));
+
+    expect(fixture.componentInstance['pendingImages']()).toEqual([]);
+    expect(fixture.componentInstance['attachmentNotice']()).toContain('huge.png is larger than 20 MB');
+  });
+
+  it('shows the specific reason a reply failed', async () => {
+    await openConversation(() =>
+      throwError(() => new ChatResponderError('Too many requests. Wait a moment and try again.')),
+    );
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')?.textContent,
+    ).toContain('Too many requests');
+  });
+
+  it('marks a stopped reply and offers to continue it', async () => {
+    const chunks = new Subject<ChatResponderEvent>();
+    const { id, chatService } = await openConversation(() => chunks.asObservable());
+    chunks.next({ type: 'delta', text: 'half an answer' });
+    chatService.stop(id);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('Reply stopped');
+    expect(buttonWithText('Please continue from where you stopped.')).toBeTruthy();
+  });
+
+  it('offers approve / override / relabel right after a case is created', async () => {
+    const created = {
+      name: 'create_case',
+      result: {
+        status: 'created',
+        case_number: 'CASE-12',
+        verdict: 'review_required',
+        region: 'Body',
+        defect: 'Bridge',
+        defect_confidence: 0.61,
+      },
+    };
+    await openConversation(() => of({ type: 'toolResult', toolResult: created }));
+
+    expect(buttonWithText('Approve case CASE-12')).toBeTruthy();
+    expect(buttonWithText('Override case CASE-12')).toBeTruthy();
+    expect(buttonWithText('The label on case CASE-12 is wrong')).toBeTruthy();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('CASE-12');
+  });
+
+  it('only offers a relabel for an accepted case', async () => {
+    const created = {
+      name: 'create_case',
+      result: {
+        status: 'created',
+        case_number: 'CASE-13',
+        verdict: 'accepted',
+        region: 'Body',
+        defect: 'Golden',
+        defect_confidence: 0.97,
+      },
+    };
+    await openConversation(() => of({ type: 'toolResult', toolResult: created }));
+
+    expect(buttonWithText('Approve case')).toBeUndefined();
+    expect(buttonWithText('The label on case CASE-13 is wrong')).toBeTruthy();
+  });
+
+  it('keeps the live region out of the streaming message list', async () => {
+    await openConversation(() => of({ type: 'delta', text: 'a reply' }));
+    const log = (fixture.nativeElement as HTMLElement).querySelector('[role="log"]')!;
+
+    expect(log.getAttribute('aria-live')).toBeNull();
+    expect(log.querySelector('[role="status"][aria-live="polite"]')).toBeTruthy();
   });
 
   it('does not send an empty message with no attached images', async () => {

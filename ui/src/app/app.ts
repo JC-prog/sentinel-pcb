@@ -1,9 +1,10 @@
-import { Component, Signal, computed } from '@angular/core';
+import { Component, Signal, computed, effect, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { BackendStatusBanner } from './backend-status-banner/backend-status-banner';
 import { ModeToggle } from './mode-toggle/mode-toggle';
+import { Icon } from './chat/icons/icon';
 import { Settings } from './chat/settings/settings';
 import { SettingsService } from './chat/settings.service';
 import { Sidebar } from './chat/sidebar/sidebar';
@@ -21,7 +22,7 @@ const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register']);
 const ROUTES_WITHOUT_MODE_TOGGLE = new Set(['/login', '/register']);
 
 @Component({
-  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner, ThemeToggle, ModeToggle],
+  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner, ThemeToggle, ModeToggle, Icon],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -29,6 +30,8 @@ const ROUTES_WITHOUT_MODE_TOGGLE = new Set(['/login', '/register']);
 export class App {
   protected readonly showSidebar: Signal<boolean>;
   protected readonly showModeToggle: Signal<boolean>;
+  /** The sidebar drawer on narrow screens; from md up the sidebar is always shown. */
+  protected readonly sidebarOpen = signal(false);
 
   constructor(
     protected readonly settingsService: SettingsService,
@@ -43,5 +46,11 @@ export class App {
     );
     this.showSidebar = computed(() => !ROUTES_WITHOUT_SIDEBAR.has(url()));
     this.showModeToggle = computed(() => !ROUTES_WITHOUT_MODE_TOGGLE.has(url()));
+
+    // Picking a conversation (or New chat) is a navigation - close the drawer behind it.
+    effect(() => {
+      url();
+      this.sidebarOpen.set(false);
+    });
   }
 }

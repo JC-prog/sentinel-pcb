@@ -11,7 +11,12 @@ from pydantic import BaseModel
 from app.chat.core.chat import ConversationNotFound
 from app.chat.services import ChatStreamRequest, history
 from app.chat.services import repository as chat_repository
-from app.chat.services.schemas import ConversationDetail, ConversationSummary, MessageOut
+from app.chat.services.schemas import (
+    ConversationDetail,
+    ConversationRename,
+    ConversationSummary,
+    MessageOut,
+)
 from app.chat.services.streaming import chat_sse
 from app.shared.auth import get_current_user
 from app.shared.auth.dependencies import SessionDep
@@ -107,6 +112,23 @@ async def get_conversation(
         updated_at=conversation.updated_at,
         messages=[MessageOut.model_validate(m) for m in conversation.messages],
     )
+
+
+@router.patch("/api/conversations/{conversation_id}")
+async def rename_conversation(
+    conversation_id: str,
+    body: ConversationRename,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> ConversationSummary:
+    title = " ".join(body.title.split())
+    if not title:
+        raise HTTPException(status_code=422, detail="title must not be empty")
+    conversation = await chat_repository.get_conversation(session, conversation_id)
+    if conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    await chat_repository.touch_conversation(session, conversation, title=title[:80])
+    return ConversationSummary.model_validate(conversation)
 
 
 @router.delete("/api/conversations/{conversation_id}", status_code=204)

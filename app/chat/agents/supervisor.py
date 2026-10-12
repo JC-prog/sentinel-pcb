@@ -59,13 +59,22 @@ class ToolFinished:
 
 
 @dataclass(frozen=True)
+class Usage:
+    """Tokens the model used for this turn, summed over every model call in it (each tool-calling
+    round re-sends the history, so a turn with tools costs more than its reply suggests)."""
+
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass(frozen=True)
 class Answer:
     text: str
     # True when the model kept calling tools past CHAT_TOOL_MAX_ROUNDS; `text` is then a fallback.
     rounds_exhausted: bool = False
 
 
-SupervisorEvent = TextChunk | ToolStarted | ToolFinished | Answer
+SupervisorEvent = TextChunk | ToolStarted | ToolFinished | Usage | Answer
 
 # "messages" streams reply text as the model produces it; "updates" reports each finished step -
 # which tool calls the model asked for, and each tool's result.
@@ -107,6 +116,7 @@ async def run_turn(
     }
 
     answer = ""
+    input_tokens = output_tokens = 0
     try:
         # InputAgentState wants list[AnyMessage]; our list[BaseMessage] is the same messages.
         agent_input: Any = {"messages": messages}
@@ -128,6 +138,9 @@ async def run_turn(
             for node, update in data.items():
                 for message in (update or {}).get("messages", []):
                     if node == "model" and isinstance(message, AIMessage):
+                        if message.usage_metadata:
+                            input_tokens += message.usage_metadata["input_tokens"]
+                            output_tokens += message.usage_metadata["output_tokens"]
                         if message.tool_calls:
                             for call in message.tool_calls:
                                 yield ToolStarted(call["name"], _label(by_name, call["name"]))
@@ -138,9 +151,14 @@ async def run_turn(
                         result = str(message.content)
                         yield ToolFinished(name, result, _card(by_name.get(name), result))
     except GraphRecursionError:
+        if input_tokens or output_tokens:
+            yield Usage(input_tokens, output_tokens)
         yield Answer(ROUNDS_EXHAUSTED, rounds_exhausted=True)
         return
 
+    # Not every provider reports usage; say nothing rather than report zero.
+    if input_tokens or output_tokens:
+        yield Usage(input_tokens, output_tokens)
     yield Answer(answer)
 
 

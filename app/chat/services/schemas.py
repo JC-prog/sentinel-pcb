@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -38,7 +38,15 @@ class MessageOut(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     image_ids: list[str]
+    # The cards the reply showed (`{"name", "result"}`, as in the tool_result SSE frames).
+    tool_results: list[dict[str, Any]] = []
+    # Stopped or failed part-way: `content` is only what had streamed.
+    interrupted: bool = False
     created_at: datetime
+
+
+class ConversationRename(BaseModel):
+    title: str
 
 
 class ConversationDetail(ConversationSummary):

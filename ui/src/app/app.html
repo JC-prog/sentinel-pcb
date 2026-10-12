@@ -10,7 +10,29 @@
     (drop)="$event.preventDefault()"
   >
     @if (showSidebar()) {
-      <app-sidebar />
+      <!-- Always beside the page from md up; below that it's a drawer behind the menu button. -->
+      <button
+        type="button"
+        class="fixed top-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        aria-label="Open menu"
+        [attr.aria-expanded]="sidebarOpen()"
+        (click)="sidebarOpen.set(true)"
+      >
+        <app-icon name="menu" [size]="18" />
+      </button>
+      @if (sidebarOpen()) {
+        <div
+          class="fixed inset-0 z-40 bg-slate-900/40 md:hidden"
+          aria-hidden="true"
+          (click)="sidebarOpen.set(false)"
+        ></div>
+      }
+      <div
+        class="md:static md:z-auto md:flex"
+        [class]="sidebarOpen() ? 'fixed inset-y-0 left-0 z-50 flex' : 'hidden'"
+      >
+        <app-sidebar />
+      </div>
     }
     <router-outlet />
   </div>
