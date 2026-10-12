@@ -151,6 +151,10 @@ REGION_TO_DEFECT_MODEL = {
     "Text": "pcb_text_defect",
 }
 
+# The region model's name in the inference service, and the three areas it picks between.
+REGION_MODEL = "pcb_region"
+REGIONS = ("Body", "Lead", "Text")
+
 CLASSIFIED = "classified"
 REGION_GUESS = "region_guess"
 # The operator corrected the region (Body / Lead / Text) in the Review Console, so the sample belongs
@@ -225,6 +229,7 @@ def correction_of(point: dict[str, Any], review: dict[str, Any] | None) -> dict[
     target, source = training_target(point, region_result)
     return {
         "sample_id": str(point.get("sample_id")),
+        "kind": "defect",
         "model_name": target,
         "model_version": sample_model_version(point) if source == CLASSIFIED else None,
         "model_source": source,
@@ -239,6 +244,55 @@ def correction_of(point: dict[str, Any], review: dict[str, Any] | None) -> dict[
         "outcome": outcome,
         "queueable": target is not None,
     }
+
+
+def _region_choice(review: dict[str, Any] | None) -> str | None:
+    """The part area the operator settled on in the Review Console, one of REGIONS, else None."""
+
+    decision = _human_decision(review)
+    value = decision.get("region_result") if decision else None
+    return next((r for r in REGIONS if isinstance(value, str) and r.lower() == value.lower()), None)
+
+
+def region_correction_of(
+    point: dict[str, Any], review: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The operator set a different part area than the region model picked: a correction for the
+    *region* model, with the operator's area as the label. None when they agreed (or never looked)."""
+
+    decision = _human_decision(review)
+    chosen = _region_choice(review)
+    guess = region_guess(point)
+    if decision is None or chosen is None or guess is None:
+        return None
+    if guess["label"].lower() == chosen.lower():
+        return None
+    stage = _stage(point.get("inference") or {}, "feature_classification") or {}
+    version = stage.get("model_version")
+    return {
+        "sample_id": str(point.get("sample_id")),
+        "kind": "region",
+        "model_name": REGION_MODEL,
+        "model_version": version if isinstance(version, str) and version else None,
+        "model_source": CLASSIFIED,
+        "region_guess": guess,
+        "region_result": chosen,
+        "agent1_label": guess["label"],  # what the region model said
+        "machine_label": (point.get("sample") or {}).get("machine_defect"),
+        "agent2_label": _agent2_label(review),
+        "final_result": chosen,
+        "selected_source": decision.get("selected_source"),
+        "operator_notes": decision.get("operator_notes"),
+        "outcome": RELABELLED,
+        "queueable": True,
+    }
+
+
+def corrections_of(point: dict[str, Any], review: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Every correction one reviewed sample carries: the defect label and/or the part area."""
+
+    found = [correction_of(point, review), region_correction_of(point, review)]
+    return [c for c in found if c is not None]
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -319,6 +373,14 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
     decided_by_source: dict[str, list[bool]] = defaultdict(list)
     mistakes: Counter[tuple[str, str]] = Counter()
     threshold = settings.adc_defect_confidence_threshold
+    corrected_samples: set[str] = set()
+    region_reviewed = region_confirmed = 0
+    region_swaps: Counter[tuple[str, str]] = Counter()
+    region_corrected_by: Counter[str] = Counter()
+    region_samples: Counter[str] = Counter()
+    region_confidence_sum: dict[str, float] = defaultdict(float)
+    region_confidence_n: Counter[str] = Counter()
+    flagged = defect_ran = stopped_at_region = 0
 
     for point in sorted(points, key=lambda p: str(p.get("sample_id"))):
         review = by_sample.get(str(point.get("sample_id")))
@@ -328,8 +390,19 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
         if name is not None:
             stats.model_version = stats.model_version or sample_model_version(point)
         stats.samples += 1
+        stage_one = region_guess(point)
+        if stage_one is not None:
+            region_samples[stage_one["label"]] += 1
+            if stage_one["confidence"] is not None:
+                region_confidence_sum[stage_one["label"]] += stage_one["confidence"]
+                region_confidence_n[stage_one["label"]] += 1
         if point.get("final_decision") == REVIEW_REQUIRED:
             stats.review_required += 1
+            flagged += 1
+            if name is not None:
+                defect_ran += 1
+            else:
+                stopped_at_region += 1
         confidence = sample_confidence(point)
         if confidence is not None:
             stats.with_confidence += 1
@@ -356,9 +429,20 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
         decided_by_source[str(decision.get("selected_source") or "UNKNOWN")].append(
             outcome == RELABELLED
         )
-        correction = correction_of(point, review)
-        if correction is not None:
-            corrections.append(correction)
+        found = corrections_of(point, review)
+        corrections.extend(found)
+        if found:
+            corrected_samples.add(str(point.get("sample_id")))
+
+        chosen_region = _region_choice(review)
+        guess = region_guess(point)
+        if chosen_region is not None and guess is not None:
+            region_reviewed += 1
+            if guess["label"].lower() == chosen_region.lower():
+                region_confirmed += 1
+            else:
+                region_swaps[(guess["label"], chosen_region)] += 1
+                region_corrected_by[guess["label"]] += 1
 
     models = sorted(groups.values(), key=lambda s: (s.model_name is None, s.model_name or ""))
     totals = {
@@ -370,11 +454,49 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
         "no_prediction": sum(m.no_prediction for m in models),
     }
     totals["corrected"] = totals["relabelled"]
+    all_conf_n = sum(region_confidence_n.values())
+    region = {
+        "reviewed": region_reviewed,
+        "confirmed": region_confirmed,
+        "corrected": region_reviewed - region_confirmed,
+        "accuracy": _rate(region_confirmed, region_reviewed),
+        "mean_confidence": (
+            round(sum(region_confidence_sum.values()) / all_conf_n, 3) if all_conf_n else None
+        ),
+        "stopped_here": stopped_at_region,
+        "by_region": [
+            {
+                "region": area,
+                "samples": region_samples.get(area, 0),
+                "corrected": region_corrected_by.get(area, 0),
+                "mean_confidence": (
+                    round(region_confidence_sum[area] / region_confidence_n[area], 3)
+                    if region_confidence_n.get(area)
+                    else None
+                ),
+            }
+            for area in sorted(set(region_samples) | set(region_corrected_by))
+        ],
+        "swaps": [
+            {"model_region": said, "chosen_region": chosen, "count": count}
+            for (said, chosen), count in sorted(
+                region_swaps.items(), key=lambda item: (-item[1], item[0])
+            )
+        ],
+    }
+    funnel = {
+        "flagged": flagged,
+        "defect_ran": defect_ran,
+        "reviewed": totals["decided"],
+        "corrected": len(corrected_samples),
+    }
     return {
         "totals": totals,
         # of the samples the model classified, the share it got wrong; None if it classified none
         "drift_rate": _rate(totals["relabelled"], totals["confirmed"] + totals["relabelled"]),
         "models": [m.to_dict() for m in models],
+        "region": region,
+        "funnel": funnel,
         "corrections": corrections,
         "decisions": _decision_stats(
             decided_by_source, mistakes, max(totals["review_required"] - totals["decided"], 0)

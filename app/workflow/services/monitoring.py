@@ -37,13 +37,17 @@ from app.shared.modelops import tickets as ticket_repo
 from app.shared.modelops import versions as version_repo
 from app.workflow.services import run_store
 from app.workflow.services.schemas import (
+    WorkflowAgent2StatsOut,
     WorkflowCorrectionOut,
     WorkflowDecisionStatsOut,
     WorkflowDriftReportOut,
     WorkflowDriftReportRequest,
+    WorkflowEvidenceUseOut,
+    WorkflowFunnelOut,
     WorkflowModelDriftOut,
     WorkflowQueueCorrectionsOut,
     WorkflowQueueCorrectionsRequest,
+    WorkflowRegionStatsOut,
     WorkflowRetrainingPlanOut,
     WorkflowRetrainingPlanRequest,
     WorkflowRetrainingTicketOut,
@@ -167,7 +171,7 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
             run_open_tickets=await _open_tickets_by_model(session, run_id),
         )
     summary = run_drift.summarize_run(points, reviews)
-    tickets = await ticket_repo.sample_refs_for_run(session, run_id)
+    tickets = await ticket_repo.tickets_for_run(session, run_id)
     return WorkflowRunDriftOut(
         run_id=run_id,
         available=True,
@@ -177,14 +181,61 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
         corrections=[
             WorkflowCorrectionOut(
                 **c,
-                queued=c["sample_id"] in tickets,
-                ticket_status=tickets.get(c["sample_id"]),
+                queued=(c["sample_id"], c["model_name"]) in tickets,
+                ticket_status=tickets.get((c["sample_id"], c["model_name"])),
             )
             for c in summary["corrections"]
         ],
+        region=WorkflowRegionStatsOut(**summary["region"]),
+        funnel=WorkflowFunnelOut(**summary["funnel"]),
+        agent2=_agent2_stats(points, reviews),
         decisions=WorkflowDecisionStatsOut(**summary["decisions"]),
         open_tickets=await _open_tickets_by_model(session),
         run_open_tickets=await _open_tickets_by_model(session, run_id),
+    )
+
+
+def _agent2_stats(
+    points: list[dict[str, Any]], reviews: list[dict[str, Any]]
+) -> WorkflowAgent2StatsOut:
+    """How often Agent 2's verdict was the operator's final decision, among the reviewed samples it
+    reviewed - overall, by where its visual evidence came from, and with or without measurements."""
+
+    from app.workflow.services import reviews as review_service
+
+    point_by_id = {str(p.get("sample_id")): p for p in points}
+    with_review = matched = 0
+    by_evidence: dict[str, list[int]] = {}
+    measured = [0, 0]
+    unmeasured = [0, 0]
+    for record in reviews:
+        decision = record.get("human_decision")
+        output = (record.get("result") or {}).get("output")
+        if not isinstance(decision, dict) or not decision.get("final_result"):
+            continue
+        if not isinstance(output, dict) or not output.get("predicted_defect"):
+            continue
+        point = point_by_id.get(str(record.get("sample_id"))) or {}
+        case = {"aoi_measurements": (point.get("sample") or {}).get("failed_inspections", {})}
+        hit = int(
+            run_drift.normalize_defect(str(output["predicted_defect"]))
+            == run_drift.normalize_defect(str(decision["final_result"]))
+        )
+        with_review += 1
+        matched += hit
+        source = review_service._evidence_source(output)
+        bucket = by_evidence.setdefault(source, [0, 0])
+        bucket[0] += 1
+        bucket[1] += hit
+        split = measured if review_service._telemetry_recorded(case, output) else unmeasured
+        split[0] += 1
+        split[1] += hit
+    return WorkflowAgent2StatsOut(
+        with_review=with_review,
+        matched=matched,
+        by_evidence={k: WorkflowEvidenceUseOut(n=v[0], matched=v[1]) for k, v in by_evidence.items()},
+        with_measurements=WorkflowEvidenceUseOut(n=measured[0], matched=measured[1]),
+        without_measurements=WorkflowEvidenceUseOut(n=unmeasured[0], matched=unmeasured[1]),
     )
 
 
@@ -256,6 +307,12 @@ async def _sync_model_versions(session: AsyncSession) -> bool:
 
 
 def _correction_reason(run_id: str, correction: dict[str, Any]) -> str:
+    if correction.get("kind") == "region":
+        return (
+            f"Labelled by the operator in run {run_id[:8]}: the region model picked "
+            f"{correction['agent1_label']} but the part area is {correction['final_result']}"
+            + (f". Notes: {correction['operator_notes']}" if correction.get("operator_notes") else "")
+        )
     guess = correction.get("region_guess") or {}
     if correction.get("agent1_label") is None:
         confidence = guess.get("confidence")
@@ -291,26 +348,39 @@ async def queue_corrections(
     point_by_id = {str(p.get("sample_id")): p for p in points}
     review_by_id = {str(r.get("sample_id")): r for r in reviews}
 
-    corrections: dict[str, dict[str, Any]] = {}
+    # What was asked for: (sample, model). A bare sample id means its defect correction.
+    wanted: list[tuple[str, str | None]] = [
+        (item.sample_id, item.model_name) for item in request.items
+    ] + [(sample_id, None) for sample_id in request.sample_ids]
+
+    corrections: dict[tuple[str, str | None], dict[str, Any]] = {}
     not_corrections: list[str] = []
-    for sample_id in dict.fromkeys(request.sample_ids):
+    for sample_id, model_name in dict.fromkeys(wanted):
         point = point_by_id.get(sample_id)
-        correction = run_drift.correction_of(point, review_by_id.get(sample_id)) if point else None
-        if correction is None:
+        found = run_drift.corrections_of(point, review_by_id.get(sample_id)) if point else []
+        match = next(
+            (
+                c
+                for c in found
+                if (c["model_name"] == model_name if model_name else c["kind"] == "defect")
+            ),
+            None,
+        )
+        if match is None:
             not_corrections.append(sample_id)
         else:
-            corrections[sample_id] = correction
+            corrections[(sample_id, match["model_name"])] = match
     if not_corrections:
         raise NotACorrection(not_corrections)
-    unresolvable = [sid for sid, c in corrections.items() if not c["queueable"]]
+    unresolvable = [sid for (sid, _), c in corrections.items() if not c["queueable"]]
     if unresolvable:
         raise UnresolvableSample(unresolvable)
 
-    queued = await ticket_repo.sample_refs_for_run(session, request.run_id)
+    queued = await ticket_repo.tickets_for_run(session, request.run_id)
     created: list[WorkflowRetrainingTicketOut] = []
-    already = [sid for sid in corrections if sid in queued]
-    for sample_id, correction in corrections.items():
-        if sample_id in queued:
+    already = [sid for (sid, model) in corrections if (sid, model) in queued]
+    for (sample_id, model), correction in corrections.items():
+        if (sample_id, model) in queued:
             continue
         try:
             ticket = await ticket_repo.create_ticket(
@@ -325,7 +395,7 @@ async def queue_corrections(
                 correct_label=correction["final_result"],
             )
         except IntegrityError:
-            # A concurrent request queued the same sample between the check and the insert.
+            # A concurrent request queued the same correction between the check and the insert.
             await session.rollback()
             already.append(sample_id)
             continue

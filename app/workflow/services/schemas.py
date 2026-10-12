@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OrchestratorUploadRecord(BaseModel):
@@ -118,6 +118,9 @@ class WorkflowCorrectionOut(BaseModel):
     retraining plan) or resolved (retrained)."""
 
     sample_id: str
+    # "defect": the defect label, for a defect model. "region": the part area, for the region model
+    # (`final_result` is then the area the operator set and `agent1_label` the area the model picked).
+    kind: str = "defect"
     model_name: str | None
     model_version: str | None
     model_source: str | None = None
@@ -157,6 +160,57 @@ class WorkflowDecisionStatsOut(BaseModel):
     top_overruled: list[WorkflowOverruledOut]
 
 
+class WorkflowRegionByAreaOut(BaseModel):
+    region: str
+    samples: int
+    corrected: int
+    mean_confidence: float | None
+
+
+class WorkflowRegionSwapOut(BaseModel):
+    """The region model picked `model_region` and the operator set `chosen_region`, `count` times."""
+
+    model_region: str
+    chosen_region: str
+    count: int
+
+
+class WorkflowRegionStatsOut(BaseModel):
+    """How the region model (stage 1) did, judged by the part area the operator settled on."""
+
+    reviewed: int
+    confirmed: int
+    corrected: int
+    accuracy: float | None
+    mean_confidence: float | None
+    stopped_here: int  # flagged samples the region model was too unsure about for a defect model
+    by_region: list[WorkflowRegionByAreaOut]
+    swaps: list[WorkflowRegionSwapOut]
+
+
+class WorkflowFunnelOut(BaseModel):
+    flagged: int
+    defect_ran: int
+    reviewed: int
+    corrected: int
+
+
+class WorkflowEvidenceUseOut(BaseModel):
+    n: int
+    matched: int
+
+
+class WorkflowAgent2StatsOut(BaseModel):
+    """How useful Agent 2 was: of the reviewed samples it reviewed, how often its verdict was the
+    operator's final decision, split by what it had to go on."""
+
+    with_review: int
+    matched: int
+    by_evidence: dict[str, WorkflowEvidenceUseOut]
+    with_measurements: WorkflowEvidenceUseOut
+    without_measurements: WorkflowEvidenceUseOut
+
+
 class WorkflowRunDriftOut(BaseModel):
     run_id: str
     # False when the stored run could not be read (Qdrant unreachable); `message` says so.
@@ -168,6 +222,9 @@ class WorkflowRunDriftOut(BaseModel):
     models: list[WorkflowModelDriftOut]
     corrections: list[WorkflowCorrectionOut]
     decisions: WorkflowDecisionStatsOut
+    region: WorkflowRegionStatsOut | None = None
+    funnel: WorkflowFunnelOut | None = None
+    agent2: WorkflowAgent2StatsOut | None = None
     # Open (not yet planned) retraining tickets per model, whatever their origin - what a plan drafted
     # now would contain. Models with none are left out.
     open_tickets: dict[str, int] = Field(default_factory=dict)
@@ -191,9 +248,26 @@ class WorkflowRetrainingPlanOut(BaseModel):
     drift_reports_linked: int
 
 
+class WorkflowCorrectionRef(BaseModel):
+    """One correction to send: the sample and the model it is a correction for. A sample can carry
+    one for a defect model and one for the region model."""
+
+    sample_id: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+
+
 class WorkflowQueueCorrectionsRequest(BaseModel):
     run_id: str = Field(min_length=1)
-    sample_ids: list[str] = Field(min_length=1)
+    # `items` names the model of each correction. A bare `sample_ids` list (the older request) means
+    # each sample's defect correction.
+    items: list[WorkflowCorrectionRef] = Field(default_factory=list)
+    sample_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _something_selected(self) -> "WorkflowQueueCorrectionsRequest":
+        if not self.items and not self.sample_ids:
+            raise ValueError("select at least one correction")
+        return self
 
 
 class WorkflowQueueCorrectionsOut(BaseModel):

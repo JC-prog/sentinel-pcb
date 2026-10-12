@@ -202,13 +202,15 @@ class RetrainingTicket(Base):
             "case_id IS NOT NULL OR sample_ref IS NOT NULL",
             name="ck_retraining_tickets_case_or_sample",
         ),
-        # A Work-tab sample can be flagged once per run: sample ids restart every run, so the run is
-        # part of the identity (tickets without a run - chat's, or flagged before runs were stored -
+        # A Work-tab sample can be flagged once per run *and model*: sample ids restart every run, so
+        # the run is part of the identity, and a sample can carry both a defect correction and a
+        # region correction (tickets without a run - chat's, or flagged before runs were stored -
         # are exempt).
         Index(
             "uq_retraining_tickets_run_sample",
             "run_id",
             "sample_ref",
+            "model_name",
             unique=True,
             postgresql_where=text("run_id IS NOT NULL"),
         ),

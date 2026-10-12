@@ -100,6 +100,20 @@ def _decide(
     assert response.status_code == 200, response.text
 
 
+def _decide_with_region(client: TestClient, sample_id: str, final: str, region: str) -> None:
+    response = client.put(
+        DECISION_URL,
+        json={
+            "run_id": RUN,
+            "sample_id": sample_id,
+            "selected_source": "MANUAL",
+            "final_result": final,
+            "region_result": region,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
 def _drift(client: TestClient, run_id: str = RUN) -> dict[str, Any]:
     response = client.get(DRIFT_URL, params={"run_id": run_id})
     assert response.status_code == 200, response.text
@@ -256,6 +270,7 @@ def test_the_tab_follows_each_decision_the_operator_saves(
     (correction,) = after["corrections"]
     assert correction == {
         "sample_id": "S2",
+        "kind": "defect",
         "model_name": "pcb_body_defect",
         "model_version": "JcProg/body@v2",
         "model_source": "classified",
@@ -565,3 +580,73 @@ def test_a_plan_says_so_when_the_inference_service_cannot_be_asked(
 
     assert plan.status_code == 409
     assert "inference service could not be reached" in plan.json()["detail"]
+
+
+async def test_a_sample_files_a_defect_and_a_region_ticket_each_only_once(
+    authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
+) -> None:
+    _store_run(run_store_repo, _routed("S1", label="MissingPart"))
+    # the operator says: a lead part (region Lead), and it is a tombstone
+    _decide_with_region(authenticated_client, "S1", "tombstone", "Lead")
+    corrections = _drift(authenticated_client)["corrections"]
+    assert sorted((c["kind"], c["model_name"]) for c in corrections) == [
+        ("defect", "pcb_lead_defect"),
+        ("region", "pcb_region"),
+    ]
+
+    payload = {
+        "run_id": RUN,
+        "items": [
+            {"sample_id": "S1", "model_name": "pcb_region"},
+            {"sample_id": "S1", "model_name": "pcb_lead_defect"},
+        ],
+    }
+    first = authenticated_client.post(QUEUE_URL, json=payload)
+    second = authenticated_client.post(QUEUE_URL, json=payload).json()
+
+    assert first.status_code == 200, first.text
+    assert sorted(t["model_name"] for t in first.json()["created"]) == ["pcb_lead_defect", "pcb_region"]
+    assert second["created"] == [] and second["already_queued"] == ["S1", "S1"]
+    tickets = await _tickets(db_async_session)
+    region = next(t for t in tickets if t.model_name == "pcb_region")
+    assert (region.observed_label, region.correct_label) == ("Body", "Lead")
+    assert "region model picked Body but the part area is Lead" in region.reason
+    after = {(c["kind"], c["queued"]) for c in _drift(authenticated_client)["corrections"]}
+    assert after == {("defect", True), ("region", True)}
+
+
+async def test_one_model_of_a_sample_can_be_sent_without_the_other(
+    authenticated_client: TestClient, run_store_repo: Any, db_async_session: AsyncSession
+) -> None:
+    _store_run(run_store_repo, _routed("S1", label="MissingPart"))
+    _decide_with_region(authenticated_client, "S1", "tombstone", "Lead")
+
+    response = authenticated_client.post(
+        QUEUE_URL,
+        json={"run_id": RUN, "items": [{"sample_id": "S1", "model_name": "pcb_region"}]},
+    )
+
+    assert response.status_code == 200, response.text
+    (ticket,) = await _tickets(db_async_session)
+    assert ticket.model_name == "pcb_region"
+    queued = {(c["kind"], c["queued"]) for c in _drift(authenticated_client)["corrections"]}
+    assert queued == {("region", True), ("defect", False)}
+
+
+def test_the_run_summary_carries_region_funnel_and_agent2_blocks(
+    authenticated_client: TestClient, run_store_repo: Any
+) -> None:
+    _store_run(run_store_repo, _routed("S1"), _stage_one_only("S2"))
+    _decide_with_region(authenticated_client, "S1", "missing part", "Lead")
+
+    body = _drift(authenticated_client)
+
+    assert body["region"]["reviewed"] == 1 and body["region"]["corrected"] == 1
+    assert body["region"]["stopped_here"] == 1
+    assert body["funnel"] == {"flagged": 2, "defect_ran": 1, "reviewed": 1, "corrected": 1}
+    assert body["agent2"]["with_review"] == 0  # no Agent 2 review was stored for these samples
+
+
+def test_a_queue_request_must_select_something(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(QUEUE_URL, json={"run_id": RUN})
+    assert response.status_code == 422

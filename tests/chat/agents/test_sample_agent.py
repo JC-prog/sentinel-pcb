@@ -405,7 +405,7 @@ async def test_get_run_drift_reports_the_operators_corrections_and_who_still_nee
     assert result["decisions"]["by_source"]["MANUAL"] == {"chosen": 1, "overruled_model": 1}
     assert result["decisions"]["pending"] == 0
     assert correction["queued"] is False and result["corrections_not_queued"] == 1
-    assert "Corrections & Retraining tab" in result["instruction"]
+    assert "Retraining queue tab" in result["instruction"]
     assert "draft_retraining_plan" not in result["instruction"]  # nothing queued yet
 
     await ticket_repo.create_ticket(

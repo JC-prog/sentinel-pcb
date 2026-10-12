@@ -121,6 +121,7 @@ def test_the_final_decision_is_the_label_and_drift_is_what_the_model_did_not_get
     assert [c["sample_id"] for c in summary["corrections"]] == ["S2", "S3"]
     assert summary["corrections"][0] == {
         "sample_id": "S2",
+        "kind": "defect",
         "model_name": "pcb_body_defect",
         "model_version": "JcProg/body@v2",
         "model_source": "classified",
@@ -266,6 +267,17 @@ def test_an_empty_run_summarises_to_nothing() -> None:
             "no_prediction": 0,
             "corrected": 0,
         },
+        "region": {
+            "reviewed": 0,
+            "confirmed": 0,
+            "corrected": 0,
+            "accuracy": None,
+            "mean_confidence": None,
+            "stopped_here": 0,
+            "by_region": [],
+            "swaps": [],
+        },
+        "funnel": {"flagged": 0, "defect_ran": 0, "reviewed": 0, "corrected": 0},
         "drift_rate": None,
         "models": [],
         "corrections": [],
@@ -362,3 +374,69 @@ def test_a_region_choice_that_matches_what_ran_keeps_the_classified_model() -> N
 
     assert correction is not None
     assert (correction["model_name"], correction["model_source"]) == ("pcb_body_defect", "classified")
+
+
+def _with_region(review: dict[str, Any], region: str) -> dict[str, Any]:
+    review["human_decision"]["region_result"] = region
+    return review
+
+
+def test_a_region_the_operator_changed_is_a_correction_for_the_region_model() -> None:
+    point = _point("S1", label="MissingPart", model="pcb_body_defect")  # the region model said Body
+    review = _with_region(_decision("S1", "missing part"), "Lead")  # agrees with the defect label
+
+    found = run_drift.corrections_of(point, review)
+
+    assert [c["kind"] for c in found] == ["region"]  # the defect label was right
+    region = found[0]
+    assert (region["model_name"], region["final_result"], region["agent1_label"]) == (
+        "pcb_region",
+        "Lead",
+        "Body",
+    )
+    assert region["queueable"] is True
+
+
+def test_a_sample_can_carry_a_defect_and_a_region_correction() -> None:
+    point = _point("S1", label="MissingPart", model="pcb_body_defect")
+    review = _with_region(_decision("S1", "tombstone"), "Lead")
+
+    found = run_drift.corrections_of(point, review)
+
+    assert sorted((c["kind"], c["model_name"]) for c in found) == [
+        ("defect", "pcb_lead_defect"),  # trained on the lead model: the operator says it is a lead part
+        ("region", "pcb_region"),
+    ]
+
+
+def test_confirming_the_region_is_not_a_correction_but_counts_as_reviewed() -> None:
+    point = _point("S1", label="MissingPart", model="pcb_body_defect")
+    review = _with_region(_decision("S1", "missing part"), "Body")
+
+    assert run_drift.corrections_of(point, review) == []
+    summary = summarize_run([point], [review])
+    assert (summary["region"]["reviewed"], summary["region"]["confirmed"]) == (1, 1)
+    assert summary["region"]["accuracy"] == 1.0
+
+
+def test_region_stats_and_funnel_describe_stage_one() -> None:
+    points = [
+        _point("S1", label="MissingPart", model="pcb_body_defect"),
+        _point("S2", label="MissingPart", model="pcb_body_defect"),
+        _point("S3", model=None),  # stopped at the region model
+    ]
+    reviews = [
+        _with_region(_decision("S1", "missing part"), "Body"),
+        _with_region(_decision("S2", "missing part"), "Lead"),
+    ]
+
+    summary = summarize_run(points, reviews)
+
+    region = summary["region"]
+    assert (region["reviewed"], region["confirmed"], region["corrected"]) == (2, 1, 1)
+    assert region["accuracy"] == 0.5
+    assert region["stopped_here"] == 1
+    assert region["swaps"] == [{"model_region": "Body", "chosen_region": "Lead", "count": 1}]
+    by_area = {r["region"]: r for r in region["by_region"]}
+    assert (by_area["Body"]["samples"], by_area["Body"]["corrected"]) == (2, 1)
+    assert summary["funnel"] == {"flagged": 3, "defect_ran": 2, "reviewed": 2, "corrected": 1}

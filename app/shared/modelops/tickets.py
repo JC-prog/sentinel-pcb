@@ -63,6 +63,18 @@ async def sample_refs_for_run(session: AsyncSession, run_id: str) -> dict[str, s
     return {ref: status for ref, status in rows.tuples() if ref is not None}
 
 
+async def tickets_for_run(session: AsyncSession, run_id: str) -> dict[tuple[str, str | None], str]:
+    """The same, keyed by (sample, model): one sample can carry a defect ticket and a region ticket,
+    each with its own status."""
+
+    rows = await session.execute(
+        select(
+            RetrainingTicket.sample_ref, RetrainingTicket.model_name, RetrainingTicket.status
+        ).where(RetrainingTicket.run_id == run_id, RetrainingTicket.sample_ref.is_not(None))
+    )
+    return {(ref, model): status for ref, model, status in rows.tuples() if ref is not None}
+
+
 async def list_open_tickets(session: AsyncSession, model_name: str) -> list[RetrainingTicket]:
     """Tickets for `model_name` not yet part of any job, oldest first."""
 

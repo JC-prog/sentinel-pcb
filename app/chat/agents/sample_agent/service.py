@@ -221,9 +221,13 @@ async def run_drift_overview(session: AsyncSession, run_id: str | None) -> dict[
         raise SampleRefused(exc.message) from exc
 
     summary = run_drift.summarize_run(points, reviews)
-    tickets = await ticket_repo.sample_refs_for_run(session, run.run_id)
+    tickets = await ticket_repo.tickets_for_run(session, run.run_id)
     corrections = [
-        {**c, "queued": c["sample_id"] in tickets, "ticket_status": tickets.get(c["sample_id"])}
+        {
+            **c,
+            "queued": (c["sample_id"], c["model_name"]) in tickets,
+            "ticket_status": tickets.get((c["sample_id"], c["model_name"])),
+        }
         for c in summary["corrections"]
     ]
     waiting = [c for c in corrections if not c["queued"] and c["queueable"]]
@@ -255,7 +259,7 @@ def _drift_instruction(waiting: int, models_with_tickets: list[str | None]) -> s
     if waiting:
         parts.append(
             f"{waiting} sample(s) the model didn't get right have not been sent for retraining yet - only "
-            "the operator can send them, in the Review Console's Corrections & Retraining tab; you cannot."
+            "the operator can send them, in the Review Console's Retraining queue tab; you cannot."
         )
     if models_with_tickets:
         names = ", ".join(str(m) for m in models_with_tickets)
