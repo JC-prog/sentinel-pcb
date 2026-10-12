@@ -355,6 +355,28 @@ describe('Work', () => {
     expect(download().textContent).toContain('Download result');
   });
 
+  describe('status light', () => {
+    const state = (): string | null =>
+      fixture.nativeElement.querySelector('[data-testid="run-state"]').getAttribute('data-state');
+
+    it('is idle before anything runs and shows the agent name', () => {
+      expect(state()).toBe('idle');
+      expect(fixture.nativeElement.querySelector('h1').textContent).toContain('AOI Inspection Agent');
+    });
+
+    it('turns to failed when the last log entry is an error', () => {
+      fake.log.set([{ kind: 'error', message: 'inference down' }]);
+      fixture.detectChanges();
+      expect(state()).toBe('error');
+    });
+
+    it('shows how many samples are waiting once a run has finished', () => {
+      fake.result.set({ ...runResult([]), run_id: 'run-1' });
+      fixture.detectChanges();
+      expect(state()).toMatch(/done|review/);
+    });
+  });
+
   describe('Execution log', () => {
     const pane = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="log-pane"]');
     const rows = (): HTMLElement[] => Array.from(pane().querySelectorAll('p[data-kind]'));

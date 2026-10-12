@@ -161,16 +161,77 @@ export class Work implements OnDestroy {
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
 
-  protected readonly summaryTiles: Signal<{ label: string; value: number }[]> = computed(() => {
+  protected readonly summaryTiles: Signal<{ label: string; value: number; tone: string }[]> = computed(() => {
     const status = this.workService.status();
+    const plain = 'border-slate-300 dark:border-slate-700';
+    // Colour only where it means something: green for accepted, amber for what needs a person.
     return [
-      { label: 'Input', value: status.input_samples },
-      { label: 'Prep ready', value: status.preparation_ready },
-      { label: 'Verified', value: status.verification_passed },
-      { label: 'Inference', value: status.inference_attempted },
-      { label: 'Accepted', value: status.accepted },
-      { label: 'Review', value: status.review_required },
+      { label: 'Input', value: status.input_samples, tone: plain },
+      { label: 'Prep ready', value: status.preparation_ready, tone: plain },
+      { label: 'Verified', value: status.verification_passed, tone: plain },
+      { label: 'Inference', value: status.inference_attempted, tone: plain },
+      {
+        label: 'Accepted',
+        value: status.accepted,
+        tone: status.accepted > 0 ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30' : plain,
+      },
+      {
+        label: 'Review',
+        value: status.review_required,
+        tone: status.review_required > 0 ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30' : plain,
+      },
     ];
+  });
+
+  /** What the agent is doing, as one word and a light - so the state is visible at a glance. */
+  protected readonly runState: Signal<{ key: string; label: string; pill: string; light: string }> = computed(() => {
+    const idle = {
+      key: 'idle',
+      label: 'Ready',
+      pill: 'border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-300',
+      light: 'bg-slate-400',
+    };
+    if (this.uploading()) {
+      return {
+        key: 'uploading',
+        label: 'Uploading files',
+        pill: 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-200',
+        light: 'bg-amber-500 animate-pulse',
+      };
+    }
+    if (this.workService.running()) {
+      return {
+        key: 'running',
+        label: 'Running',
+        pill: 'border-sky-300 text-sky-800 dark:border-sky-700 dark:text-sky-200',
+        light: 'bg-sky-500 animate-pulse',
+      };
+    }
+    const log = this.workService.log();
+    if (this.uploadError() !== null || log[log.length - 1]?.kind === 'error') {
+      return {
+        key: 'error',
+        label: 'Failed',
+        pill: 'border-red-300 text-red-800 dark:border-red-700 dark:text-red-200',
+        light: 'bg-red-500',
+      };
+    }
+    if (this.workService.result() !== null) {
+      return this.pendingCount() > 0
+        ? {
+            key: 'review',
+            label: `${this.pendingCount()} to review`,
+            pill: 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-200',
+            light: 'bg-amber-500',
+          }
+        : {
+            key: 'done',
+            label: 'Complete',
+            pill: 'border-emerald-300 text-emerald-800 dark:border-emerald-700 dark:text-emerald-200',
+            light: 'bg-emerald-500',
+          };
+    }
+    return idle;
   });
 
   protected readonly hasNextPending: Signal<boolean> = computed(() => {
