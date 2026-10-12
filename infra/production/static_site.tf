@@ -75,6 +75,11 @@ resource "aws_cloudfront_distribution" "site" {
   origin {
     domain_name = aws_lb.main.dns_name
     origin_id   = "api-alb"
+    # The ALB listener only forwards requests carrying this header (ecs.tf).
+    custom_header {
+      name  = local.origin_verify_header
+      value = random_password.origin_verify.result
+    }
     custom_origin_config {
       # The ALB has no cert (no custom domain yet - see the plan) - CloudFront still serves the
       # browser over HTTPS on its own domain regardless of the origin's protocol.

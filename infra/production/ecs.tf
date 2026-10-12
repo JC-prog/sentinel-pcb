@@ -77,7 +77,7 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.http, aws_ecs_service.qdrant]
+  depends_on = [aws_lb_listener_rule.from_cloudfront, aws_ecs_service.qdrant]
 }
 
 resource "aws_lb" "main" {
@@ -112,8 +112,31 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Anything that did not come through this stack's CloudFront distribution (which adds the header
+  # below) gets a 403 from the ALB itself.
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
+    }
   }
 }

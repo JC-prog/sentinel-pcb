@@ -126,3 +126,15 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 50
 }
+
+variable "daily_budget_usd" {
+  description = "Daily AWS spend, in USD, that triggers an alert (budget.tf). The stack costs about $5/day while it is up, so the default of 3 emails you for every day it was running."
+  type        = number
+  default     = 3
+}
+
+variable "auto_stop_schedule" {
+  description = "When to scale the three ECS services to zero, as an EventBridge Scheduler expression in UTC, e.g. \"cron(0 14 * * ? *)\" for 14:00 UTC daily. Empty (the default) creates no schedule. This stops the Fargate tasks (about two thirds of the cost); the ALB, RDS and public IPs keep billing until terraform destroy. A later terraform apply scales them back up."
+  type        = string
+  default     = ""
+}

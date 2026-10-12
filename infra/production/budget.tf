@@ -41,3 +41,25 @@ resource "aws_budgets_budget" "monthly" {
     subscriber_email_addresses = [var.budget_alert_email]
   }
 }
+
+# The monthly budget is slow to react: a forgotten stack at about $5 a day takes a week or more to
+# cross it. This one alerts on any single day that costs more than daily_budget_usd, which a running
+# stack does every day, so it turns "it's still up" into an email the next morning. Forecast alerts
+# are not available for daily budgets, hence actual only.
+resource "aws_budgets_budget" "daily" {
+  count = var.budget_alert_email == "" ? 0 : 1
+
+  name         = "${var.project_name}-daily"
+  budget_type  = "COST"
+  limit_amount = tostring(var.daily_budget_usd)
+  limit_unit   = "USD"
+  time_unit    = "DAILY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
