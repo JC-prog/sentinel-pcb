@@ -49,10 +49,15 @@ export interface OrchestratorRunRequest {
 /** One line of the Execution Log panel - either a plain log line or a planner step, in the order
  * they arrived, so the log reads the same top-to-bottom sequence the tkinter source app's
  * Execution Log text widget showed. */
-export type OrchestratorLogEntry =
+export type OrchestratorLogEntry = (
   | { kind: 'log'; text: string }
   | { kind: 'plan_step'; step: OrchestratorPlanStepEvent }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+) & {
+  /** When the browser received it (epoch ms); set by WorkService, so the log and its download can
+   * show how long a step took. */
+  at?: number;
+};
 
 /** One of orchestrator.py's per-sample stage results ("feature_classification"/
  * "defect_classification"), whichever of the two ran - see monitoring.py's module docstring for

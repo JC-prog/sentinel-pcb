@@ -51,10 +51,11 @@ describe('WorkService', () => {
     });
 
     expect(service.log()).toEqual([
-      { kind: 'log', text: 'hello' },
+      { kind: 'log', text: 'hello', at: expect.any(Number) },
       {
         kind: 'plan_step',
         step: expect.objectContaining({ decision: 'dataset_preparation' }),
+        at: expect.any(Number),
       },
     ]);
   });
@@ -107,7 +108,7 @@ describe('WorkService', () => {
     service.run('run_full', 'dataset-1', 'xml-1', null, OPTIONS);
     events$.error(new Error('boom'));
 
-    expect(service.log()).toEqual([{ kind: 'error', message: 'boom' }]);
+    expect(service.log()).toEqual([{ kind: 'error', message: 'boom', at: expect.any(Number) }]);
     expect(service.running()).toBe(false);
   });
 

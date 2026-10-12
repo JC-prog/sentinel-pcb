@@ -36,7 +36,9 @@ const INITIAL_STATUS: OrchestratorStatusEvent = {
 @Injectable({ providedIn: 'root' })
 export class WorkService {
   private readonly _status = signal<OrchestratorStatusEvent>(INITIAL_STATUS);
-  private readonly _log = signal<OrchestratorLogEntry[]>([]);
+  // Appended to in place and always notifying: a bulk run logs thousands of lines, and copying the
+  // whole array for each one is wasted work. Consumers slice or filter it, never hold it.
+  private readonly _log = signal<OrchestratorLogEntry[]>([], { equal: () => false });
   private readonly _running = signal(false);
   private readonly _result = signal<OrchestratorRunResult | null>(null);
   private readonly _reviewTick = signal(0);
@@ -99,6 +101,13 @@ export class WorkService {
     return this.client.saveReviewDecision(request);
   }
 
+  private append(entry: OrchestratorLogEntry): void {
+    this._log.update((entries) => {
+      entries.push({ ...entry, at: Date.now() });
+      return entries;
+    });
+  }
+
   clearLog(): void {
     this._log.set([]);
     this._result.set(null);
@@ -132,22 +141,22 @@ export class WorkService {
       .subscribe({
         next: (event) => {
           if (event.type === 'log') {
-            this._log.update((entries) => [...entries, { kind: 'log', text: event.text }]);
+            this.append({ kind: 'log', text: event.text });
           } else if (event.type === 'status') {
             this._status.set(event.status);
           } else if (event.type === 'planStep') {
-            this._log.update((entries) => [...entries, { kind: 'plan_step', step: event.step }]);
+            this.append({ kind: 'plan_step', step: event.step });
           } else if (event.type === 'result') {
             this._result.set(event.result);
           } else if (event.type === 'review') {
             this._reviewTick.update((tick) => tick + 1);
           } else if (event.type === 'error') {
-            this._log.update((entries) => [...entries, { kind: 'error', message: event.message }]);
+            this.append({ kind: 'error', message: event.message });
           }
         },
         error: (error: unknown) => {
           const message = error instanceof Error ? error.message : 'Run failed.';
-          this._log.update((entries) => [...entries, { kind: 'error', message }]);
+          this.append({ kind: 'error', message });
           this._running.set(false);
         },
         complete: () => this._running.set(false),

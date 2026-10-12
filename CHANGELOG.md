@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the execution log is easier to follow and keep. It scrolls to the newest line while
+  you are at the bottom and pauses when you scroll up, with a "N new lines - jump to latest" button.
+  Lines carry the time they arrived, plan steps show their planner source and flag policy rejections,
+  and errors stand out. A filter narrows it to plan steps and errors, or errors only. **Download log**
+  saves the whole run as a text file and **Copy log** puts it on the clipboard. Only the latest 500
+  lines are drawn (the download always has everything), which keeps long bulk runs responsive.
 - Work tab: the Drift & Retraining tab is rebuilt around one idea - the operator's final decision in
   the Explanation Review is the correct label. It shows how often the model was wrong in the run
   (drift: of the samples the model classified, the share it got wrong - samples it couldn't decide on,

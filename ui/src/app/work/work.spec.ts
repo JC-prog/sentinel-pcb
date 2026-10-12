@@ -307,10 +307,172 @@ describe('Work', () => {
     fixture.detectChanges();
 
     const downloadButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((btn) =>
-      (btn as HTMLButtonElement).textContent?.includes('Download'),
+      (btn as HTMLButtonElement).textContent?.includes('Download result.json'),
     ) as HTMLButtonElement;
 
-    expect(downloadButton.textContent).toContain('Download result.json');
+    expect(downloadButton).toBeDefined();
+  });
+
+  describe('Execution log', () => {
+    const pane = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="log-pane"]');
+    const rows = (): HTMLElement[] => Array.from(pane().querySelectorAll('p[data-kind]'));
+    const button = (id: string): HTMLButtonElement =>
+      fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLButtonElement;
+    const step = (overrides: Record<string, unknown> = {}): OrchestratorLogEntry => ({
+      kind: 'plan_step',
+      step: {
+        plan_version: 3,
+        decision: 'run_inference',
+        reason: 'verified samples are ready',
+        planner_source: 'llm',
+        policy: null,
+        ...overrides,
+      },
+    } as unknown as OrchestratorLogEntry);
+    // 2026-10-12 09:08:07 local time, whatever the machine's zone
+    const at = new Date(2026, 9, 12, 9, 8, 7).getTime();
+
+    function readBlob(blob: Blob): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('draws each kind distinctly: plan steps with their source, policy rejections flagged, errors marked', () => {
+      fake.log.set([
+        { kind: 'log', text: 'Run started', at },
+        step({ policy: { allowed: false, reason: 'verification not run yet' } }),
+        { kind: 'error', message: 'inference down' },
+      ]);
+      fixture.detectChanges();
+
+      const [plain, planned, failed] = rows();
+      expect(plain.textContent).toContain('09:08:07');
+      expect(plain.textContent).toContain('Run started');
+      expect(planned.textContent).toContain('Step 3');
+      expect(planned.textContent).toContain('llm');
+      expect(planned.textContent).toContain('run_inference - verified samples are ready');
+      expect(planned.textContent).toContain('(policy rejected: verification not run yet)');
+      expect(failed.textContent).toContain('ERROR: inference down');
+    });
+
+    it('filters to plan steps and errors, or errors only', () => {
+      fake.log.set([{ kind: 'log', text: 'chatter' }, step(), { kind: 'error', message: 'bad' }]);
+      fixture.detectChanges();
+      expect(rows().length).toBe(3);
+
+      fixture.componentInstance.setLogFilter('steps');
+      fixture.detectChanges();
+      expect(rows().map((row) => row.getAttribute('data-kind'))).toEqual(['plan_step', 'error']);
+
+      fixture.componentInstance.setLogFilter('errors');
+      fixture.detectChanges();
+      expect(rows().map((row) => row.getAttribute('data-kind'))).toEqual(['error']);
+    });
+
+    it('draws only the latest lines of a long log, and says the rest is in the download', () => {
+      fake.log.set(Array.from({ length: 620 }, (_, i) => ({ kind: 'log', text: `line ${i}` }) as OrchestratorLogEntry));
+      fixture.detectChanges();
+
+      expect(rows().length).toBe(500);
+      expect(rows()[0].textContent).toContain('line 120');
+      expect(rows()[499].textContent).toContain('line 619');
+      expect(fixture.nativeElement.querySelector('[data-testid="log-hidden"]').textContent).toContain(
+        'Showing the latest 500 of 620 lines',
+      );
+    });
+
+    it('downloads the whole log, not only the lines drawn', async () => {
+      const entries: OrchestratorLogEntry[] = [
+        { kind: 'log', text: 'first', at },
+        ...Array.from({ length: 600 }, (_, i) => ({ kind: 'log', text: `line ${i}`, at }) as OrchestratorLogEntry),
+        { kind: 'error', message: 'last', at },
+      ];
+      fake.log.set(entries);
+      fixture.detectChanges();
+      let saved: Blob | null = null;
+      (URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn((blob: Blob) => {
+        saved = blob;
+        return 'blob:log';
+      });
+      (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      button('download-log').click();
+
+      expect(click).toHaveBeenCalled();
+      const text = await readBlob(saved as unknown as Blob);
+      const lines = text.trimEnd().split('\n');
+      expect(lines.length).toBe(602);
+      expect(lines[0]).toBe('[09:08:07] first');
+      expect(lines[601]).toBe('[09:08:07] ERROR: last');
+    });
+
+    it('disables copy and download until something has been logged', () => {
+      expect(button('download-log').disabled).toBe(true);
+      expect(button('copy-log').disabled).toBe(true);
+
+      fake.log.set([{ kind: 'log', text: 'hi' }]);
+      fixture.detectChanges();
+      expect(button('download-log').disabled).toBe(false);
+    });
+
+    it('copies the log to the clipboard and says so', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      fake.log.set([{ kind: 'log', text: 'one', at }, { kind: 'log', text: 'two', at }]);
+      fixture.detectChanges();
+
+      button('copy-log').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(writeText).toHaveBeenCalledWith('[09:08:07] one\n[09:08:07] two\n');
+      expect(fixture.nativeElement.querySelector('[data-testid="log-notice"]').textContent).toContain('Copied 2 lines');
+    });
+
+    it('keeps the newest line in view while following', async () => {
+      fake.log.set([{ kind: 'log', text: 'a' }]);
+      fixture.detectChanges();
+      const el = pane();
+      Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(el, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      fake.log.set([...fake.log(), { kind: 'log', text: 'b' }]);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(el.scrollTop).toBe(1000);
+    });
+
+    it('stops following when the operator scrolls up, counts new lines, and jumps back', () => {
+      fake.log.set([{ kind: 'log', text: 'a' }]);
+      fixture.detectChanges();
+      const el = pane();
+      Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      el.dispatchEvent(new Event('scroll')); // far from the bottom
+      fake.log.set([...fake.log(), { kind: 'log', text: 'b' }, { kind: 'log', text: 'c' }]);
+      fixture.detectChanges();
+
+      expect(el.scrollTop).toBe(0); // not yanked back down while reading
+      expect(button('jump-to-latest').textContent).toContain('2 new lines');
+
+      button('jump-to-latest').click();
+      fixture.detectChanges();
+
+      expect(el.scrollTop).toBe(1000);
+      expect(fixture.nativeElement.querySelector('[data-testid="jump-to-latest"]')).toBeNull();
+    });
   });
 
   describe('Review Console', () => {
