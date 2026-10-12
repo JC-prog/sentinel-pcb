@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   HostListener,
@@ -19,19 +20,12 @@ import {
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
-import { formatLog, logEntryText, logTime } from './work-log';
 import { formatBytes, labelText, modelSaid, percent, sourceLabel, trainingStatus } from './work-format';
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
+import { WorkAlert } from './work-alert/work-alert';
+import { WorkExecutionLog } from './work-execution-log/work-execution-log';
 import { WorkService } from './work.service';
-
-/** How many log lines are drawn at once. The full log is always kept (and downloadable); drawing
- * thousands of rows on every new line is what makes a long bulk run sluggish. */
-export const LOG_RENDER_LIMIT = 500;
-
-/** A pane counts as "at the bottom" within this many pixels, so a fractional scroll position
- * doesn't stop it following. */
-const LOG_BOTTOM_SLACK_PX = 24;
 
 /** IPC defect classes an operator can override with - the same canonical names Agent 2 and the
  * conflict check (app/workflow/services/reviews.py's normalize_defect) use. */
@@ -55,7 +49,8 @@ export const IPC_CLASSES = [
  * reachable from the Chat tab and never calls /api/chat/stream - see
  * work.service.ts/work-orchestrator-client.ts. */
 @Component({
-  imports: [FormsModule, WorkSettings],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, WorkAlert, WorkExecutionLog, WorkSettings],
   selector: 'app-work',
   styleUrl: './work.css',
   templateUrl: './work.html',
@@ -167,39 +162,6 @@ export class Work implements OnDestroy {
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
 
-  protected readonly hasRun: Signal<boolean> = computed(() => this.workService.log().length > 0);
-
-  // The execution log pane: follows new lines until the operator scrolls up, and can be filtered.
-  protected readonly logFilter = signal<'all' | 'steps' | 'errors'>('all');
-  protected readonly logFollowing = signal(true);
-  /** How long the log was when the operator scrolled away from the bottom; null while following. */
-  private readonly logPausedAt = signal<number | null>(null);
-  protected readonly logNotice = signal<string | null>(null);
-  private readonly logPane = viewChild<ElementRef<HTMLElement>>('logPane');
-  protected readonly logTime = logTime;
-  protected readonly logEntryText = logEntryText;
-
-  private readonly filteredLog = computed(() => {
-    const filter = this.logFilter();
-    const entries = this.workService.log();
-    if (filter === 'all') {
-      return entries;
-    }
-    // Errors are always worth seeing, so the plan-step view keeps them.
-    return entries.filter((entry) =>
-      filter === 'errors' ? entry.kind === 'error' : entry.kind !== 'log',
-    );
-  });
-  protected readonly visibleLog = computed(() => this.filteredLog().slice(-LOG_RENDER_LIMIT));
-  protected readonly hiddenLogCount: Signal<number> = computed(
-    () => this.filteredLog().length - this.visibleLog().length,
-  );
-  /** Lines that arrived while the operator was reading further up. */
-  protected readonly unseenLogCount: Signal<number> = computed(() => {
-    const pausedAt = this.logPausedAt();
-    return pausedAt === null ? 0 : Math.max(this.workService.log().length - pausedAt, 0);
-  });
-
   protected readonly hasNextPending: Signal<boolean> = computed(() => {
     const selected = this.selectedCaseId();
     return this.reviewCases().some((c) => c.decision === null && c.sample_id !== selected);
@@ -212,11 +174,6 @@ export class Work implements OnDestroy {
     }
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     return `${files.length} file${files.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`;
-  });
-
-  protected readonly resultJson: Signal<string | null> = computed(() => {
-    const result = this.workService.result();
-    return result === null ? null : JSON.stringify(result, null, 2);
   });
 
   protected readonly runId: Signal<string | null> = computed(
@@ -268,7 +225,6 @@ export class Work implements OnDestroy {
   // run that has since been replaced) would otherwise overwrite fresher data.
   private casesRequest = 0;
   private driftRequest = 0;
-  private logNoticeTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
   private consoleOpener: HTMLElement | null = null;
   private readonly consoleDialog = viewChild<ElementRef<HTMLElement>>('consoleDialog');
@@ -284,15 +240,6 @@ export class Work implements OnDestroy {
     protected readonly workService: WorkService,
     protected readonly workSettings: WorkSettingsService,
   ) {
-    // Keep the newest line in view while following - after render, so the new row has a height.
-    afterRenderEffect(() => {
-      this.visibleLog();
-      const pane = this.logPane()?.nativeElement;
-      if (pane && untracked(() => this.logFollowing())) {
-        pane.scrollTop = pane.scrollHeight;
-      }
-    });
-
     // Move focus into the Review Console when it opens, so keyboard and screen reader users land in it.
     afterRenderEffect(() => {
       const dialog = this.consoleDialog()?.nativeElement;
@@ -347,70 +294,8 @@ export class Work implements OnDestroy {
     await this.runMode('run_full');
   }
 
-  /** Stops following when the operator scrolls up, and resumes when they reach the bottom again. */
-  onLogScroll(): void {
-    const pane = this.logPane()?.nativeElement;
-    if (!pane) {
-      return;
-    }
-    const atBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < LOG_BOTTOM_SLACK_PX;
-    if (atBottom) {
-      this.logFollowing.set(true);
-      this.logPausedAt.set(null);
-    } else if (this.logFollowing()) {
-      this.logFollowing.set(false);
-      this.logPausedAt.set(this.workService.log().length);
-    }
-  }
-
-  jumpToLatestLog(): void {
-    this.logFollowing.set(true);
-    this.logPausedAt.set(null);
-    const pane = this.logPane()?.nativeElement;
-    if (pane) {
-      pane.scrollTop = pane.scrollHeight;
-    }
-  }
-
-  setLogFilter(filter: 'all' | 'steps' | 'errors'): void {
-    this.logFilter.set(filter);
-    this.jumpToLatestLog();
-  }
-
-  /** Saves the whole log (not just the lines drawn) as a text file. */
-  downloadLog(): void {
-    const entries = this.workService.log();
-    if (entries.length === 0) {
-      return;
-    }
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    this.saveFile(
-      new Blob([formatLog(entries)], { type: 'text/plain' }),
-      `execution-log-${this.runId() ?? 'run'}-${stamp}.txt`,
-    );
-  }
-
-  async copyLog(): Promise<void> {
-    const entries = this.workService.log();
-    if (entries.length === 0) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(formatLog(entries));
-      this.logNotice.set(`Copied ${entries.length} line${entries.length === 1 ? '' : 's'}`);
-    } catch {
-      this.logNotice.set('Could not copy - use Download log instead');
-    }
-    if (this.logNoticeTimer !== null) {
-      clearTimeout(this.logNoticeTimer);
-    }
-    this.logNoticeTimer = setTimeout(() => this.logNotice.set(null), 2500);
-  }
-
   clearLog(): void {
     this.workService.clearLog();
-    this.logFollowing.set(true);
-    this.logPausedAt.set(null);
     this.resetReviews();
     this.actionError.set(null);
     this.actionMessage.set(null);
@@ -418,9 +303,6 @@ export class Work implements OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
-    if (this.logNoticeTimer !== null) {
-      clearTimeout(this.logNoticeTimer);
-    }
     this.revokeImages();
   }
 
@@ -758,29 +640,6 @@ export class Work implements OnDestroy {
     this.actionMessage.set(null);
     this.chosenCorrectionIds.set(new Set());
     this.revokeImages();
-  }
-
-  downloadResult(): void {
-    const json = this.resultJson();
-    if (json === null) {
-      return;
-    }
-    this.saveFile(
-      new Blob([json], { type: 'application/json' }),
-      this.outputFilename().trim() || 'result.json',
-    );
-  }
-
-  private saveFile(blob: Blob, filename: string): void {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    // Revoking on the same tick races the browser actually starting the download - some
-    // browsers haven't read the blob yet, so the save can silently fail or produce a truncated
-    // file. Deferring a tick gives the download a chance to begin first.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   private async runMode(mode: OrchestratorRunMode): Promise<void> {

@@ -373,6 +373,13 @@ describe('Work', () => {
     // 2026-10-12 09:08:07 local time, whatever the machine's zone
     const at = new Date(2026, 9, 12, 9, 8, 7).getTime();
 
+    function setFilter(value: 'all' | 'steps' | 'errors'): void {
+      const select = fixture.nativeElement.querySelector('[data-testid="log-filter"]') as HTMLSelectElement;
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    }
+
     function readBlob(blob: Blob): Promise<string> {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -409,12 +416,10 @@ describe('Work', () => {
       fixture.detectChanges();
       expect(rows().length).toBe(3);
 
-      fixture.componentInstance.setLogFilter('steps');
-      fixture.detectChanges();
+      setFilter('steps');
       expect(rows().map((row) => row.getAttribute('data-kind'))).toEqual(['plan_step', 'error']);
 
-      fixture.componentInstance.setLogFilter('errors');
-      fixture.detectChanges();
+      setFilter('errors');
       expect(rows().map((row) => row.getAttribute('data-kind'))).toEqual(['error']);
     });
 
