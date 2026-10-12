@@ -33,6 +33,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
       Resource = [
         aws_secretsmanager_secret.db_password.arn, # backend: DATABASE_URL
         aws_secretsmanager_secret.openai.arn,      # backend: OPENAI_API_KEY
+        aws_secretsmanager_secret.jwt.arn,         # backend: JWT_SECRET_KEY
       ]
     }]
   })

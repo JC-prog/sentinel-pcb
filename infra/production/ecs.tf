@@ -32,10 +32,14 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
         # No OPENAI_BASE_URL override - OpenAI-compatible calls go straight to api.openai.com
         # (settings.openai_base_url's default) using the OPENAI_API_KEY secret below.
+        # The UI and API are both served over HTTPS from the CloudFront domain (static_site.tf), so
+        # the auth cookies must carry the Secure flag (settings.cookie_secure defaults to False).
+        { name = "COOKIE_SECURE", value = "True" },
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
         { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
+        { name = "JWT_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.jwt.arn}:JWT_SECRET_KEY::" },
       ]
       logConfiguration = {
         logDriver = "awslogs"

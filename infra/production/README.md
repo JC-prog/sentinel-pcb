@@ -41,6 +41,11 @@ secret (Secrets Manager keeps it for its recovery window), and creates `sentinel
 backend task definition changes (no `OPENAI_BASE_URL`, a new secret reference), so ECS rolls the
 backend. Check the plan before applying.
 
+The backend also gets a generated `JWT_SECRET_KEY` (`auth.tf`, the `sentinelchat/jwt` secret) and
+`COOKIE_SECURE=True`; without the first, tokens would be signed with an empty secret. The backend
+task is 1 vCPU / 2 GiB by default (`task_cpu`, `task_memory`), since dataset preparation and Agent 2
+reviews run in it. A new JWT secret signs every user out; replacing `random_password.jwt` rotates it.
+
 Then, to actually ship code:
 
 **Backend:**

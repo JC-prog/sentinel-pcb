@@ -20,15 +20,15 @@ variable "container_port" {
 }
 
 variable "task_cpu" {
-  description = "Fargate task vCPU units (256 = 0.25 vCPU)."
+  description = "Fargate task vCPU units for the backend (1024 = 1 vCPU). The Work tab's dataset preparation (pandas, OpenCV) and Agent 2's LangGraph review run in this process, which a quarter vCPU cannot carry."
   type        = number
-  default     = 256
+  default     = 1024
 }
 
 variable "task_memory" {
-  description = "Fargate task memory, in MiB."
+  description = "Fargate task memory for the backend, in MiB. 1024 vCPU units allows 2048-8192."
   type        = number
-  default     = 512
+  default     = 2048
 }
 
 variable "desired_count" {
