@@ -134,7 +134,7 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
   <div class="diagram-scroll">
     <figure>
       <svg class="schematic" viewBox="0 0 1240 900" role="img"
-           aria-label="Diagram: the browser reaches one CloudFront distribution, which serves the Angular build from a private S3 bucket by default and forwards /api/* to an Application Load Balancer. The ALB sits inside the default VPC's public subnets alongside the backend ECS Fargate service, which reaches RDS PostgreSQL, an inference ECS service, and a LiteLLM ECS service, each gated by a security group that allows traffic only from the tier in front of it. The LiteLLM service egresses to the public OpenAI API since there is no NAT Gateway. CloudWatch Logs and Secrets Manager provide logging and secret injection to the ECS services. Two components the application depends on, Qdrant for long-term memory and Ollama for the local LLM option, are drawn as dashed gap boxes with unterminated stub connectors, since neither is provisioned anywhere in this Terraform.">
+           aria-label="Diagram: the browser reaches one CloudFront distribution, which serves the Angular build from a private S3 bucket by default and forwards /api/* to an Application Load Balancer. The ALB sits inside the default VPC's public subnets alongside the backend ECS Fargate service, which reaches RDS PostgreSQL and an inference ECS service, each gated by a security group that allows traffic only from the tier in front of it. The backend calls the public OpenAI API directly since there is no NAT Gateway. CloudWatch Logs and Secrets Manager provide logging and secret injection to the ECS services. Two components the application depends on, Qdrant for long-term memory and Ollama for the local LLM option, are drawn as dashed gap boxes with unterminated stub connectors, since neither is provisioned anywhere in this Terraform.">
         <defs>
           <pattern id="grid2" width="22" height="22" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="1" class="grid-dot"/>
@@ -203,18 +203,16 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <text x="780" y="458" font-size="9.5" class="sub">no NAT GW to reach it otherwise)</text>
         <text x="780" y="478" font-size="9" class="filecap">ecs.tf</text>
 
-        <!-- fanout Backend -> RDS / Inference / LiteLLM -->
+        <!-- fanout Backend -> RDS / Inference / OpenAI (public egress) -->
         <path d="M900,490 L900,515 L892,523 L715,523 L707,531 L707,560" class="wire-live"/>
         <path d="M900,490 L900,530 L917,530 L917,560" class="wire-live"/>
-        <path d="M900,490 L900,515 L908,523 L1097,523 L1105,531 L1105,560" class="wire-live"/>
-        <use href="#via2" x="900" y="490"/><use href="#via2" x="707" y="560"/><use href="#via2" x="917" y="560"/><use href="#via2" x="1105" y="560"/>
+        <path d="M900,490 L900,515 L908,523 L1097,523 L1105,531 L1105,740" class="wire-live"/>
+        <use href="#via2" x="900" y="490"/><use href="#via2" x="707" y="560"/><use href="#via2" x="917" y="560"/><use href="#via2" x="1105" y="740"/>
 
         <rect x="620" y="513" width="175" height="20" rx="10" class="gate"/>
         <text x="707" y="526.5" text-anchor="middle" class="gatetext">SG: rds &larr; ecs_tasks :5432</text>
         <rect x="827" y="521" width="180" height="20" rx="10" class="gate"/>
         <text x="917" y="534.5" text-anchor="middle" class="gatetext">SG: inference_tasks &larr; ecs_tasks</text>
-        <rect x="1000" y="513" width="210" height="20" rx="10" class="gate"/>
-        <text x="1105" y="526.5" text-anchor="middle" class="gatetext">SG: litellm_tasks &larr; ecs_tasks</text>
 
         <!-- ===== RDS ===== -->
         <rect x="615" y="560" width="185" height="100" rx="3" class="box-live"/>
@@ -231,23 +229,13 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <text x="841" y="628" font-size="8.5" class="sub" style="fill:var(--gap-strong)">backend doesn't call it yet</text>
         <text x="841" y="650" font-size="9" class="filecap">inference.tf</text>
 
-        <!-- ===== LiteLLM ECS ===== -->
-        <rect x="1015" y="560" width="175" height="100" rx="3" class="box-live"/>
-        <text x="1031" y="584" font-size="12.5" class="title-sans">ECS Fargate</text>
-        <text x="1031" y="598" font-size="12.5" class="title-sans">&mdash; litellm</text>
-        <text x="1031" y="616" font-size="9" class="sub">config.prod.yaml &rarr; OpenAI</text>
-        <text x="1031" y="628" font-size="9" class="sub">image from ghcr.io, not ECR</text>
-        <text x="1031" y="650" font-size="9" class="filecap">litellm.tf</text>
-
-        <!-- LiteLLM -> OpenAI (public egress) -->
-        <path d="M1105,660 L1105,700 L1122,700 L1122,740" class="wire-live"/>
-        <use href="#via2" x="1105" y="660"/>
-        <text x="960" y="694" class="branchlabel">public egress, no NAT GW</text>
+        <text x="1018" y="640" class="branchlabel">public egress,</text>
+        <text x="1018" y="653" class="branchlabel">no NAT GW</text>
 
         <rect x="1045" y="740" width="155" height="80" rx="3" class="box-live"/>
         <text x="1061" y="768" font-size="12.5" class="title-sans">OpenAI API</text>
         <text x="1061" y="784" font-size="9.5" class="sub">public internet</text>
-        <text x="1061" y="800" font-size="9" class="sub">upstream of litellm</text>
+        <text x="1061" y="800" font-size="9" class="sub">called by the backend</text>
 
         <!-- ===== gap: Qdrant ===== -->
         <path d="M715,690 L715,733" class="wire-gap"/>
@@ -270,21 +258,19 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <!-- ===== utility column: CloudWatch + Secrets Manager ===== -->
         <rect x="280" y="420" width="260" height="90" rx="3" class="box-live"/>
         <text x="296" y="444" font-size="12.5" class="title-sans">CloudWatch Logs</text>
-        <text x="296" y="460" font-size="9.5" class="sub">3 log groups &middot; 14-day retention</text>
+        <text x="296" y="460" font-size="9.5" class="sub">2 log groups &middot; 14-day retention</text>
         <text x="296" y="472" font-size="9.5" class="sub">awslogs driver &middot; JSON in prod</text>
-        <text x="296" y="492" font-size="9" class="filecap">ecs.tf, inference.tf, litellm.tf</text>
+        <text x="296" y="492" font-size="9" class="filecap">ecs.tf, inference.tf</text>
 
         <rect x="280" y="540" width="260" height="90" rx="3" class="box-live"/>
         <text x="296" y="564" font-size="12.5" class="title-sans">Secrets Manager</text>
-        <text x="296" y="580" font-size="9.5" class="sub">database-url &middot; litellm</text>
-        <text x="296" y="592" font-size="9.5" class="sub">(OPENAI_API_KEY + master key)</text>
-        <text x="296" y="612" font-size="9" class="filecap">rds.tf, litellm.tf</text>
+        <text x="296" y="580" font-size="9.5" class="sub">database-url &middot; openai</text>
+        <text x="296" y="592" font-size="9.5" class="sub">(OPENAI_API_KEY)</text>
+        <text x="296" y="612" font-size="9" class="filecap">rds.tf, openai.tf</text>
 
         <path d="M760,420 L540,452" class="wire-utility" marker-end="url(#arrowUtil)"/>
         <path d="M825,600 L540,467" class="wire-utility" marker-end="url(#arrowUtil)"/>
-        <path d="M1015,600 L540,482" class="wire-utility" marker-end="url(#arrowUtil)"/>
         <path d="M540,562 L760,440" class="wire-utility" marker-end="url(#arrowUtil)"/>
-        <path d="M540,592 L1015,620" class="wire-utility" marker-end="url(#arrowUtil)"/>
       </svg>
       <figcaption>
         Everything solid copper is a resource <code style="font-family:var(--font-mono)">terraform apply</code> in
@@ -303,9 +289,9 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
       <li><strong>Qdrant is not provisioned anywhere.</strong> Long-term memory and the embedded PCB-case store both depend on it; in production today they'd have nowhere to reach (the app degrades gracefully, so this fails silently rather than crashing &mdash; memory just never works).</li>
       <li><strong>No Ollama instance.</strong> The "Local LLM" option in Settings has no <code>OLLAMA_BASE_URL</code> to point at in production.</li>
       <li><strong>Chat image uploads are on local container disk</strong>, not S3 &mdash; fine at <code>desired_count = 1</code>, breaks the moment the backend scales to more than one task.</li>
-      <li><strong>No autoscaling anywhere</strong> &mdash; backend, inference, and litellm all run a single Fargate task.</li>
+      <li><strong>No autoscaling anywhere</strong> &mdash; backend and inference each run a single Fargate task.</li>
       <li><strong>No custom domain or ACM certificate</strong> &mdash; CloudFront and the ALB sit on their default AWS domains.</li>
-      <li><strong>LiteLLM is master-key-only</strong> &mdash; the backend and any shared team proxy share one key; no per-consumer budgets yet.</li>
+      <li><strong>One shared OpenAI key</strong> &mdash; held in Secrets Manager and injected into the backend task; no per-consumer budgets or spend caps.</li>
     </ul>
   </div>
 
@@ -321,12 +307,11 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <tr><td class="component">ECS Fargate &mdash; backend</td><td>Compute</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">ecs.tf</td></tr>
         <tr><td class="component">RDS PostgreSQL 16</td><td>Database</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">rds.tf</td></tr>
         <tr><td class="component">ECS Fargate &mdash; inference</td><td>Compute</td><td class="status"><span class="dot dot-live"></span>Live (unused)</td><td class="where">inference.tf</td></tr>
-        <tr><td class="component">ECS Fargate &mdash; litellm</td><td>Compute / gateway</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">litellm.tf</td></tr>
         <tr><td class="component">Cloud Map private DNS</td><td>Service discovery</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">service_discovery.tf</td></tr>
-        <tr><td class="component">CloudWatch Logs</td><td>Observability</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">ecs.tf, inference.tf, litellm.tf</td></tr>
-        <tr><td class="component">Secrets Manager</td><td>Config / secrets</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">rds.tf, litellm.tf</td></tr>
+        <tr><td class="component">CloudWatch Logs</td><td>Observability</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">ecs.tf, inference.tf</td></tr>
+        <tr><td class="component">Secrets Manager</td><td>Config / secrets</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">rds.tf, openai.tf</td></tr>
         <tr><td class="component">ECR (backend, inference)</td><td>Image registry</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">ecr.tf</td></tr>
-        <tr><td class="component">OpenAI API</td><td>External</td><td class="status"><span class="dot dot-live"></span>Live (public)</td><td class="where">upstream of litellm.tf</td></tr>
+        <tr><td class="component">OpenAI API</td><td>External</td><td class="status"><span class="dot dot-live"></span>Live (public)</td><td class="where">ecs.tf (OPENAI_API_KEY secret)</td></tr>
         <tr><td class="component">Qdrant</td><td>Vector database</td><td class="status"><span class="dot dot-gap"></span>Not provisioned</td><td class="where">no .tf file references it</td></tr>
         <tr><td class="component">Ollama</td><td>Local model host</td><td class="status"><span class="dot dot-gap"></span>Not deployed</td><td class="where">no .tf file references it</td></tr>
       </tbody>

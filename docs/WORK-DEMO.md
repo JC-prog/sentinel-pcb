@@ -35,7 +35,7 @@ Models tab ─► an Admin approves the plan
 1. **Start everything** (repo root): `bash infra/development/scripts/unix/start-dev.sh` or
    `powershell -File infra\development\scripts\windows\start-dev.ps1`. If Docker was restarted, bring
    the services back first:
-   `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm`.
+   `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant`.
 2. **Check** `curl localhost:8000/health` and `curl localhost:8001/health` (the inference service must
    list four models). Open `http://localhost:4200`.
 3. **Log in as an Admin** - the first account ever registered is Admin automatically. You need Admin
@@ -192,7 +192,7 @@ They go to the defect model the region model guessed, the same routing Agent 1 w
 
 | Symptom | Fix |
 | --- | --- |
-| Backend won't start: `Connect call failed ... 5433` | Docker services are down - run the `docker compose ... up -d --wait db qdrant litellm` command above. |
+| Backend won't start: `Connect call failed ... 5433` | Docker services are down - run the `docker compose ... up -d --wait db qdrant` command above. |
 | Every sample says *couldn't decide* and drift shows "—" | Feature threshold is 0.7, so no defect model ran - that's the Variant. For the main demo re-run with **0.3**. |
 | Images not found / Verified 0 | Choose the folder `Sample_data_2/Sample_data_2` as the Image Folder. |
 | Drift tab: "the stored run could not be read" | Qdrant is down - start it and click **Refresh**. |

@@ -48,10 +48,10 @@ bash infra/development/scripts/unix/start-dev.sh                    # macOS/Linu
 powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows
 ```
 
-You need these running: Postgres, Qdrant, LiteLLM (Docker), the backend (`:8000`), the **inference
+You need these running: Postgres and Qdrant (Docker), the backend (`:8000`), the **inference
 service (`:8001`)**, the UI (`http://localhost:4200`), and **Ollama** with a tool-calling model if you
 use the local LLM (`OLLAMA_MODEL`, default `gemma4:12b`). For OpenAI instead, set
-`LITELLM_OPENAI_API_KEY` in `.env` (see ONBOARDING).
+`OPENAI_API_KEY` in `.env` (see ONBOARDING).
 
 Quick checks: `curl localhost:8000/health`, `curl localhost:8001/health` (should list four models),
 and `http://localhost:6333/dashboard` (Qdrant).

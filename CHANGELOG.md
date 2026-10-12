@@ -164,6 +164,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- LiteLLM proxy. The app now calls OpenAI directly with `OPENAI_API_KEY` (a real `sk-` key);
+  `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and only needs setting for another
+  OpenAI-compatible endpoint. Removed `infra/litellm/`, the `litellm` compose service and its
+  `LITELLM_*` variables, the production Fargate service, task definition, log group, security group,
+  Cloud Map entry and `sentinelchat/litellm` secret. **Upgrading:** in `.env`, delete
+  `OPENAI_BASE_URL=http://localhost:4000/v1`, put your real key in `OPENAI_API_KEY` (it used to hold
+  `sk-litellm-dev`), and drop `LITELLM_OPENAI_API_KEY`; then
+  `docker compose -f infra/development/docker-compose.yml --env-file .env down --remove-orphans`.
+  In production, `terraform apply` creates `sentinelchat/openai` and rolls the backend; review the
+  plan first. The dev proxy used to alias `gpt-4o` to `gpt-4o-mini`, so the Explainability agent now
+  bills real `gpt-4o`. The Work tab's planner and Agent 2 use `ORCHESTRATOR_OPENAI_API_KEY` if set,
+  else `OPENAI_API_KEY` (new `settings.orchestrator_api_key`).
 - Chat: the weather and time agents (`get_weather`, `current_time`), the intent router, and the case
   agent - `find_similar_cases`, `get_case`, `list_cases`, `review_case`, the heavy diagnosis pipeline
   (`explainability_review`, `investigate_case`, `POST /api/agents/explainability-review`, its CLIP /

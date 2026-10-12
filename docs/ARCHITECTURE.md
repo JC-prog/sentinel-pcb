@@ -35,7 +35,6 @@ flowchart TD
 
     subgraph app["Application"]
         be["FastAPI backend<br/>chat, auth, uploads, agents"]
-        lite["LiteLLM proxy<br/>OpenAI-compatible gateway"]
         inf["Inference service<br/>ONNX classifiers"]
     end
 
@@ -52,7 +51,7 @@ flowchart TD
     browser -->|"/api/*"| cf --> be
     be --> pg
     be --> qd
-    be --> lite --> openai
+    be --> openai
     be -.->|per-conversation choice| ollama
     be -->|Inspect & Relabel agents| inf
     be -.->|traces| langfuse
@@ -68,7 +67,6 @@ Solid lines are always-on paths; dotted lines are conditional or not yet connect
 |---|---|---|
 | **UI** (`ui/`) | Angular, standalone components, signals | Chat interface, login/register, settings, image attach (paperclip or drag-drop), light/dark theme. Streams the assistant reply chunk by chunk. |
 | **Backend** (`app/`) | FastAPI, SQLAlchemy async, Pydantic | One service, organised as three independent feature modules over shared infrastructure - `app/chat/` (chat SSE streaming, conversation persistence, image uploads, the tool-calling loop and its agents, long-term memory), `app/workflow/` (the Work tab's bulk orchestrator and explainability-review agents), `app/modelops/` (the Models tab: model versions, drift reports, the retraining queue) and `app/shared/` (auth, config, DB base/session, the model-operations tables and rules, the inference-service client). See "Module boundaries" below. **Stateless** - no request state shared between instances (except uploads on local disk today, a known gap). |
-| **LiteLLM proxy** (`infra/litellm/`) | LiteLLM, OpenAI-compatible | The single egress point to OpenAI. The backend always talks to this, never `api.openai.com` directly, so real provider keys stay out of app config. Model aliases (`gpt-4o-mini`, `gpt-4o`, `text-embedding-3-small`) match what the app sends. |
 | **Inference service** (`inference/`) | FastAPI, ONNX Runtime | Standalone image classification. `POST /classify` with a `model` name, `username`, and an image. Models are declared in `inference/models.toml` and their ONNX files baked into the image at build time - currently the two-stage PCB ADC classifier (`pcb_region`, `pcb_body_defect`, `pcb_lead_defect`, `pcb_text_defect`). Called by the backend's ADC Inspection Agent via `app/shared/inference/`. |
 | **PostgreSQL** | Postgres 16 | User accounts and auth, conversations and messages (short-term memory). Schema is Alembic-migrated (`alembic/`). |
 | **Qdrant** | Qdrant | Long-term cross-conversation memory vectors. Accessed only through the `MemoryStore` interface, so the backing store can be swapped without touching callers. The Work tab also keeps its run/review/decision records here, as payload-only collections (`adc_*`, no vectors) via `app/workflow/services/run_store.py`. |
@@ -163,7 +161,7 @@ retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_s
 
 Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
 `app/shared/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
-`settings.openai_api_key`/LiteLLM-proxy convention - a deliberate exception, since it was dropped
+`settings.openai_api_key` convention - a deliberate exception, since it was dropped
 in unchanged rather than adapted.
 
 ### Inspect Agent
@@ -227,7 +225,7 @@ Nothing here retrains or promotes - see the Models tab below. `MONITORING_AGENT_
 Every chat model is built in one place, `app/shared/config/llm.py`: the conversation's choice
 (`build_chat_model("ollama"|"openai")`) for the supervisor and memory's fact extraction, and the
 agents' own from `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` for the inspect agent's ReAct pass (blank
-model falls back to the provider's chat model). `openai` goes through the LiteLLM gateway. Every model
+model falls back to the provider's chat model). `openai` goes through `openai_base_url` (OpenAI direct by default). Every model
 logs its requests and responses at DEBUG. Changing model - or provider, with its `langchain-<name>` package installed - is a
 setting. With `LANGFUSE_ENABLED` and keys set (`app/shared/config/langfuse.py`), each inspection is
 one trace with every model and tool call nested under it, attributed to the user and conversation;
@@ -293,18 +291,19 @@ database.
 
 ## 5. LLM access
 
-Every OpenAI-compatible call - chat, memory fact-extraction, memory embeddings, and the agent's
-GPT-4o reasoning and vision - goes through the LiteLLM proxy at `OPENAI_BASE_URL`. This gives
-one place to add providers, swap models, or cap spend, and keeps real provider keys isolated to
-one process.
+Every OpenAI-compatible call - chat, memory fact-extraction, memory embeddings, the chat
+guardrails check, the agent's GPT-4o reasoning and vision, and the Work tab's LLM planner - goes
+straight to OpenAI at `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) with
+`OPENAI_API_KEY`. Models are chosen by name in settings (`OPENAI_MODEL`, `AGENT_LLM_MODEL`,
+`CHAT_GUARDRAILS_MODEL`, ...), so a model change is a setting. Override the base URL only for
+another OpenAI-compatible endpoint.
 
-| | Endpoint | Upstream OpenAI key |
+| | Key | Where it lives |
 |---|---|---|
-| Local dev | LiteLLM container in the compose stack | **each developer's own**, in their git-ignored `.env` as `LITELLM_OPENAI_API_KEY` |
-| Production | LiteLLM Fargate service, reached over private DNS | **one shared key** in AWS Secrets Manager |
+| Local dev | **each developer's own** | their git-ignored `.env` as `OPENAI_API_KEY` |
+| Production | **one shared key** | AWS Secrets Manager (`sentinelchat/openai`), injected into the backend task as `OPENAI_API_KEY` |
 
-Ollama (the "Local LLM" option) is a separate path - the backend calls it directly, no proxy,
-no key. See [`infra/litellm/README.md`](../infra/litellm/README.md).
+Ollama (the "Local LLM" option) is a separate path - the backend calls it directly, no key.
 
 ---
 
@@ -312,7 +311,7 @@ no key. See [`infra/litellm/README.md`](../infra/litellm/README.md).
 
 ### Local (`infra/development/`)
 
-`docker compose` runs Postgres, Qdrant, and the LiteLLM proxy; the backend runs from `uv` and
+`docker compose` runs Postgres and Qdrant; the backend runs from `uv` and
 the UI from `npm start`. `ui` and `inference` are opt-in Compose profiles so a developer only
 runs their slice. One setup script provisions everything - see [`ONBOARDING.md`](../ONBOARDING.md).
 
@@ -326,12 +325,10 @@ flowchart TD
     alb --> be["ECS Fargate: backend :8000"]
 
     be --> rds[("RDS PostgreSQL 16")]
-    be -->|Cloud Map DNS| lite["ECS Fargate: litellm :4000"]
     be -->|Cloud Map DNS| inf["ECS Fargate: inference :8001"]
-    lite --> oai["OpenAI API"]
+    be --> oai["OpenAI API"]
 
-    sm["Secrets Manager<br/>DATABASE_URL, LiteLLM keys"] -.->|injected at start| be
-    sm -.-> lite
+    sm["Secrets Manager<br/>DATABASE_URL, OPENAI_API_KEY"] -.->|injected at start| be
 ```
 
 Notes:
@@ -340,12 +337,10 @@ Notes:
   everything is one HTTPS origin - no mixed content, no production CORS.
 - Everything runs in the account's **default VPC public subnets** - no NAT Gateway, no custom
   domain yet. Security groups are the real boundary: each tier accepts traffic only from the
-  tier in front of it (`internet -> ALB -> backend -> {RDS, inference, litellm}`).
-- `litellm` and `inference` have **no public route** - the backend reaches them by Cloud Map
-  private DNS (`*.sentinelchat.internal`).
-- Backend and inference images live in **ECR**; the LiteLLM image is pulled from `ghcr.io`
-  directly and its config is passed into the task definition (a model change is
-  `terraform apply`, not an image build).
+  tier in front of it (`internet -> ALB -> backend -> {RDS, inference}`).
+- `inference` has **no public route** - the backend reaches it by Cloud Map private DNS
+  (`*.sentinelchat.internal`). The backend calls OpenAI directly over the internet.
+- Backend and inference images live in **ECR**.
 - Logs go to **CloudWatch** via the `awslogs` driver (`LOG_FORMAT=json` in prod). Terraform
   state lives in S3 with lockfile-based locking.
 
@@ -384,7 +379,7 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
   `orchestrator_agent` behind its own routes. The chat-side inspect agent only handles one
   image (plus optional XML) per call.
 - No custom domain or TLS certificate - CloudFront and the ALB use default AWS domains.
-- LiteLLM auth is master-key-only (no per-consumer virtual keys or budgets yet).
+- One shared OpenAI key, no per-consumer budgets or spend caps.
 - No autoscaling on any ECS service; each runs a single task.
 - In production, the "Local LLM" (Ollama) option is not available - no Ollama instance is deployed.
 
@@ -397,7 +392,6 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 | [`README.md`](../README.md) | product summary, dependency table |
 | [`ONBOARDING.md`](../ONBOARDING.md) | exact dev environment setup |
 | [`DEVELOPMENT.md`](../DEVELOPMENT.md) | module boundaries, branching/PR workflow, known gotchas |
-| [`infra/litellm/README.md`](../infra/litellm/README.md) | the LLM gateway, per-dev vs prod keys |
 | [`infra/production/README.md`](../infra/production/README.md) | AWS deploy workflow and rationale |
 | [`inference/README.md`](../inference/README.md) | the inference service in detail |
 | [`CHANGELOG.md`](../CHANGELOG.md) | what has shipped |

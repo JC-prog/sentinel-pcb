@@ -12,7 +12,7 @@ powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
 [`ONBOARDING.md`](ONBOARDING.md) is the exact step-by-step: software to install first, what the
-script does, the one `.env` value you may need to set (`LITELLM_OPENAI_API_KEY`), how to run and
+script does, the one `.env` value you may need to set (`OPENAI_API_KEY`), how to run and
 verify the app, per-section extras, and troubleshooting. Re-run the setup script any time after
 pulling changes; it's idempotent.
 
@@ -78,9 +78,9 @@ cd ui && npx ng test --watch=false && npx ng build
   key (`settings.openai_api_key`, set via `OPENAI_API_KEY`) - no per-request bring-your-own-key; the
   UI's Settings panel only lets a user pick Ollama vs OpenAI, not supply a key. Every
   OpenAI-compatible call (chat, memory embeddings, the agents) goes to `settings.openai_base_url`
-  (`OPENAI_BASE_URL`), which is a LiteLLM proxy in every real setup, not `api.openai.com` - see
-  `infra/litellm/README.md`. `OPENAI_API_KEY` is then a LiteLLM key. Memory's embeddings are the one
-  thing still called directly over HTTP (`app/chat/memory/embeddings.py`).
+  (`OPENAI_BASE_URL`), which defaults to `api.openai.com` - set it only for another OpenAI-compatible
+  endpoint. `OPENAI_API_KEY` is a real `sk-` key. Memory's embeddings are the one thing called
+  directly over HTTP (`app/chat/memory/embeddings.py`).
 - **Frontend** (`ui/`): Angular, standalone components, signals for state (no NgRx/service
   subjects). `ChatResponder` (`ui/src/app/chat-responder.ts`) is the frontend's equivalent swap
   point - `HttpChatResponder` talks to the real backend, `MockChatResponder` is a fallback/test
@@ -203,8 +203,7 @@ cd ui && npx ng test --watch=false && npx ng build
   startup for local/test convenience; a real deploy's schema is Alembic's migration history.
 - **Infra** (`infra/`): `infra/Dockerfile` is the one backend image definition, used by both
   `infra/development/docker-compose.yml` (local dev) and the AWS deploy in `infra/production/`
-  (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `litellm` (a
-  local LiteLLM proxy, so dev topology matches prod) + `app` by default; `ui`, `inference`, and
+  (Terraform - see its own README). The dev compose stack runs `db` + `qdrant` + `app` by default; `ui`, `inference`, and
   `langfuse` (self-hosted LLM tracing - `app/shared/config/langfuse.py`) are opt-in via
   `--profile <name>` so you only build/run your slice.
 

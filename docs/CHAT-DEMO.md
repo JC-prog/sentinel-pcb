@@ -41,9 +41,9 @@ bash infra/development/scripts/unix/start-dev.sh                    # macOS/Linu
 powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows
 ```
 
-Needed: Postgres, Qdrant, LiteLLM (Docker), the backend (`:8000`), the **inference service
+Needed: Postgres and Qdrant (Docker), the backend (`:8000`), the **inference service
 (`:8001`)**, the UI (`http://localhost:4200`), and either **Ollama** with a tool-calling model
-(`OLLAMA_MODEL`, default `gemma4:12b`) or `LITELLM_OPENAI_API_KEY` set in `.env` for OpenAI.
+(`OLLAMA_MODEL`, default `gemma4:12b`) or `OPENAI_API_KEY` set in `.env` for OpenAI.
 
 Quick checks: `curl localhost:8000/health` and `curl localhost:8001/health` (should list four models).
 
@@ -244,7 +244,7 @@ per user and recalled across chats."
 | *Can it save something without asking?* | No. Writes are propose -> confirm, and the confirm must come in a later turn from the same user - checked in the backend. |
 | *Can the model fake the user or a file?* | No. The user, session and attached uploads are injected by the backend; the model never sees or supplies them. |
 | *What if the LLM is down?* | The inspection still runs unassisted (fixed order, templated summary) - the verdict never depended on it. If the *inference service* is down, you get an error and nothing is stored. |
-| *Local vs OpenAI?* | Same tools, same cards. OpenAI calls go through a LiteLLM proxy, never directly. |
+| *Local vs OpenAI?* | Same tools, same cards. OpenAI calls go straight to OpenAI with the server-side key; the browser never sees it. |
 
 ---
 
