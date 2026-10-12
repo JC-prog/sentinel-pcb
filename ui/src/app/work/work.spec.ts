@@ -705,6 +705,35 @@ describe('Work', () => {
       expect(text()).not.toContain('CSTALE');
     });
 
+    it('keeps the queue rows mounted and the dialog size fixed when another case is selected', async () => {
+      await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
+      await openConsole();
+      const q = (id: string) => fixture.nativeElement.querySelector(`[data-testid="case-${id}"]`) as HTMLElement;
+      const s1 = q('S1');
+      const s2 = q('S2');
+      expect(popup()?.className).toContain('h-[85vh]');
+
+      await openCase('S2');
+      await openCase('S1');
+
+      expect(q('S1')).toBe(s1);
+      expect(q('S2')).toBe(s2);
+    });
+
+    it('moves the selection with the arrow keys', async () => {
+      await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
+      await openCase('S1');
+      const row = fixture.nativeElement.querySelector('[data-testid="case-S1"]') as HTMLElement;
+
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(
+        (fixture.nativeElement.querySelector('[data-testid="case-S2"]') as HTMLElement).getAttribute('aria-selected'),
+      ).toBe('true');
+    });
+
     it('lets the keyboard open a case from the queue', async () => {
       await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
       await openConsole();

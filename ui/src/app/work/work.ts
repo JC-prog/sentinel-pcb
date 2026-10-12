@@ -629,6 +629,23 @@ export class Work implements OnDestroy {
     }
   }
 
+  /** Arrow keys in the queue: selects the neighbouring row and keeps focus on it. */
+  async moveSelection(step: 1 | -1): Promise<void> {
+    const cases = this.filteredCases();
+    const index = cases.findIndex((c) => c.sample_id === this.selectedCaseId());
+    const next = cases[Math.min(Math.max(index + step, 0), cases.length - 1)];
+    if (!next || next.sample_id === this.selectedCaseId()) {
+      return;
+    }
+    const selecting = this.selectCase(next.sample_id);
+    queueMicrotask(() => {
+      const row = document.querySelector<HTMLElement>(`[data-testid="case-${next.sample_id}"]`);
+      row?.focus();
+      row?.scrollIntoView?.({ block: 'nearest' });
+    });
+    await selecting;
+  }
+
   /** Opens one case in the console's detail pane, pre-filling the form from a saved decision. */
   async selectCase(sampleId: string): Promise<void> {
     const reviewCase = this.reviewCases().find((c) => c.sample_id === sampleId);

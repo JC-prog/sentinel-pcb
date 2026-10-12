@@ -290,7 +290,7 @@
           #consoleDialog
           tabindex="-1"
           (keydown)="trapConsoleFocus($event)"
-          class="flex outline-none max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          class="flex h-[85vh] max-h-full w-full max-w-6xl flex-col outline-none overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
           (click)="$event.stopPropagation()"
         >
           <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-300 px-4 py-3 dark:border-slate-700">
@@ -387,16 +387,16 @@
             id="console-panel"
             role="tabpanel"
             aria-labelledby="tab-review"
-            class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+            class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-4 overflow-hidden p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
           >
             <!-- Items needing explanation -->
-            <section class="rounded border border-slate-200 dark:border-slate-700">
-              <h3 class="border-b border-slate-200 px-3 py-2 text-sm font-semibold dark:border-slate-700">
+            <section class="flex min-h-0 flex-col rounded border border-slate-200 dark:border-slate-700">
+              <h3 class="shrink-0 border-b border-slate-200 px-3 py-2 text-sm font-semibold dark:border-slate-700">
                 Items Needing Explanation ({{ reviewedCount() }} of {{ reviewCases().length }} reviewed)
               </h3>
-              <div class="overflow-x-auto">
+              <div class="min-h-0 flex-1 overflow-auto" data-testid="queue-list">
               <table class="w-full text-left text-xs">
-                <thead class="text-slate-500 dark:text-slate-400">
+                <thead class="sticky top-0 bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-400">
                   <tr>
                     <th class="px-3 py-1 font-medium">Item</th>
                     <th class="px-3 py-1 font-medium">Machine</th>
@@ -416,6 +416,8 @@
                       (click)="selectCase(reviewCase.sample_id)"
                       (keydown.enter)="selectCase(reviewCase.sample_id)"
                       (keydown.space)="$event.preventDefault(); selectCase(reviewCase.sample_id)"
+                      (keydown.arrowdown)="$event.preventDefault(); moveSelection(1)"
+                      (keydown.arrowup)="$event.preventDefault(); moveSelection(-1)"
                     >
                       <td class="px-3 py-1.5">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
                       <td class="px-3 py-1.5 capitalize">{{ reviewCase.agent1_verdict }}</td>
@@ -440,18 +442,7 @@
             </section>
 
             <!-- Selected inspection -->
-            <div class="space-y-3">
-              @if (reviewError()) {
-                <app-work-alert kind="error" role="alert">
-                  {{ reviewError() }}
-                </app-work-alert>
-              }
-              @if (reviewMessage()) {
-                <app-work-alert kind="success" role="status">
-                  {{ reviewMessage() }}
-                </app-work-alert>
-              }
-
+            <div class="min-h-0 space-y-3 overflow-y-auto pr-1" data-testid="detail-pane">
               @if (selectedCase(); as reviewCase) {
                 <div data-testid="review-detail" class="space-y-3">
                   <section class="rounded border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
@@ -465,9 +456,9 @@
                   <div class="grid gap-3 sm:grid-cols-2">
                     <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
                       <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Golden Image</h3>
-                      <div class="flex min-h-40 items-center justify-center">
+                      <div class="flex h-52 items-center justify-center overflow-hidden rounded bg-slate-50 dark:bg-slate-800/50">
                         @if (goldenImageUrl(); as url) {
-                          <img [src]="url" alt="golden reference" class="max-h-64 max-w-full" />
+                          <img [src]="url" alt="golden reference" class="max-h-full max-w-full object-contain" />
                         } @else {
                           <p class="text-xs text-slate-600 dark:text-slate-400">
                             {{ imagesLoading() ? 'Loading image…' : 'No image available' }}
@@ -477,9 +468,9 @@
                     </section>
                     <section class="rounded border border-slate-200 p-2 dark:border-slate-700">
                       <h3 class="mb-1 text-xs text-slate-500 dark:text-slate-400">Defect Image</h3>
-                      <div class="flex min-h-40 items-center justify-center">
+                      <div class="flex h-52 items-center justify-center overflow-hidden rounded bg-slate-50 dark:bg-slate-800/50">
                         @if (defectImageUrl(); as url) {
-                          <img [src]="url" alt="defect crop" class="max-h-64 max-w-full" />
+                          <img [src]="url" alt="defect crop" class="max-h-full max-w-full object-contain" />
                         } @else {
                           <p class="text-xs text-slate-600 dark:text-slate-400">
                             {{ imagesLoading() ? 'Loading image…' : 'No image available' }}
@@ -595,7 +586,15 @@
                   </section>
                 </div>
               } @else {
-                <p class="text-sm text-slate-500 dark:text-slate-400">Select an item to review.</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Select an item to review.</p>
+              }
+
+              <!-- Outcome of the last action sits below the form, so it never pushes the case down -->
+              @if (reviewError()) {
+                <app-work-alert kind="error" role="alert">{{ reviewError() }}</app-work-alert>
+              }
+              @if (reviewMessage()) {
+                <app-work-alert kind="success" role="status">{{ reviewMessage() }}</app-work-alert>
               }
             </div>
           </div>
