@@ -124,8 +124,7 @@ When it finishes, note the outputs:
 terraform output
 ```
 
-You will use `cloudfront_domain`, `ui_bucket_name`, `cloudfront_distribution_id` and
-`alb_dns_name`.
+You will use `cloudfront_domain`, `ui_bucket_name` and `cloudfront_distribution_id`.
 
 ---
 
@@ -138,12 +137,12 @@ aws ecs describe-services --region "$AWS_REGION" --cluster sentinelchat-cluster 
   --services sentinelchat-backend sentinelchat-inference sentinelchat-qdrant \
   --query 'services[].{name:serviceName,running:runningCount,desired:desiredCount}' --output table
 
-curl -s "http://$(terraform output -raw alb_dns_name)/health"
+curl -s "$(terraform output -raw cloudfront_domain)/api/health"
 ```
 
 Each service should show `running` equal to `desired` (1), and the curl should answer
-`{"status":"ok"}`. (`/health` is reachable on the ALB directly; through CloudFront only `/api/*`
-goes to the backend.)
+`{"status":"ok"}`. (The ALB only accepts traffic from CloudFront, so curling `alb_dns_name` directly
+times out or answers 403 - that is the lock-down working. Check through the CloudFront URL.)
 
 If a service has `running = 0`, read why:
 

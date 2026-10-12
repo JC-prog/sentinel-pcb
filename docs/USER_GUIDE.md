@@ -65,8 +65,11 @@ reference; sections 3-8 explain each row.
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
 
-**Model.** The assistant runs on **OpenAI**, through the server's key; there is nothing to choose
-in the chat settings.
+**Model.** The assistant runs on **OpenAI**, through the server's key. **Settings** lets you pick
+which model writes the chat reply from the list the server offers (the operator's `CHAT_MODELS`; the
+server's default is first). The choice only affects the reply: memory, guardrails and the inspection
+agents keep their own models, and tool behaviour (what gets saved, the confirm step) is the same
+whichever you pick.
 
 **If a prompt does nothing useful**
 - *"Inspect this board"* with **no image attached** - the inspect tool is only offered when an image

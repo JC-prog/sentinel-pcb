@@ -2,9 +2,10 @@
 
 A ChatGPT-style chat UI (Angular) backed by a FastAPI SSE streaming backend, running on OpenAI
 with a key the server operator configures, user accounts, and both short-term (per-conversation) and long-term
-(cross-conversation) chat memory. The assistant can also call tools mid-conversation - the
-current time, live weather for a named location, and (when you attach an image - via the
-paperclip button or by dragging a file onto the chat window) PCB defect inspection and diagnosis -
+(cross-conversation) chat memory. The assistant can also call tools mid-conversation -
+PCB defect inspection of an attached image (via the paperclip button or by dragging a file onto
+the chat window), recording a QA's label corrections and case reviews, looking up what the Work
+tab stored about a sample or run, and reporting model drift and drafting retraining plans -
 deciding on its own when one is actually needed. A **Work** tab runs bulk datasets through the
 two-stage classifier with an explanation-review step, and a **Models** tab manages model versions
 and retraining. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for what to type/attach/click to

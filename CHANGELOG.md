@@ -9,6 +9,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Review Console's **Model feedback** tab is now charts first. A one-line read-out
+  (how the defect model did, with the next step as a button) sits above headline rings, then:
+  the outcome donut; **Stage 1 - Region model** (accuracy, kept vs corrected per part area) and
+  **Stage 2 - Defect models** (one stacked bar of right / wrong / not classified / not reviewed per
+  model, with confidence bars) as two separate sections, so the region model is never mistaken for
+  a defect model; where the flagged samples went; who made the final call; how useful Agent 2 was;
+  the commonest mistakes; and a grid of what the model is confused with. The numbers are also
+  available as a table. **Retraining queue** puts the status and the road to a retrained model
+  (To send -> Sent -> Awaiting Admin -> Retrained, current step marked) in one card, labels its
+  columns "Model said" / "Corrected to" / "Where it stands", colours the label mix legend to match
+  its bar, and keeps one send button in reach (per-model buttons only when there are several
+  models). Each tab says what it is for ("Step 1/2/3").
+- Chat: assistant replies are rendered as Markdown (headings, lists, tables, code, bold/italic,
+  http(s) links) by a small built-in renderer that never uses `innerHTML`; a **Stop** button cancels
+  a reply that is streaming (the text so far is kept); the "Thinking / Calling …" status now sits
+  inside the reply being written; the message box grows with its content and keeps focus after
+  sending; the thread only follows new text while you are at the bottom, with a **Jump to latest**
+  button when you have scrolled up. Sending is disabled while a reply is streaming.
+- Chat: a failed reply is shown as an error with a **Retry** button (text that arrived is kept);
+  **Regenerate**, **Copy** and **Edit** (puts a sent message back in the box as a new message) on
+  messages, with timestamps; a **Copy** button on code blocks; one paperclip attaches images and
+  inspection XML, and pasted images attach too; assistant replies use the full width; SVG icons
+  replace the emoji; focus rings and reduced-motion support. A message sent with files still says
+  "N attachments" after a reload. The empty state has eight suggestions (the self-contained ones
+  send on click; the image one opens the attach picker), and an inspection or a relabel/review
+  proposal is followed by one-click replies ("Open a case…", "Yes, confirm…"). Retry and
+  Regenerate resend the last user message, so the backend sees it twice.
+- Chat: a reply that is stopped or fails part-way is now saved (`messages.interrupted`) instead of
+  lost, and the cards a reply showed are saved with it (`messages.tool_results`), so a reopened
+  conversation or another device shows both. New migration `d4a1c6e8b2f7`. Conversations can be
+  renamed (`PATCH /api/conversations/{id}`) and searched in the sidebar, and a conversation
+  continued on another device is refreshed when opened. `create_case` now shows a **Case created**
+  card with the case number and status, followed by one-click Approve / Override / Relabel replies.
+- Chat: failures say what happened (session expired, rate limited, can't reach the server, a file
+  the server rejected) instead of one generic message; unsupported or over-20 MB files say why
+  they were not attached; Enter no longer sends while an input method is composing; screen
+  readers hear the reply's progress rather than every streamed chunk; deleting a chat asks first
+  and its buttons are always visible on touch screens; the sidebar becomes a menu drawer on narrow
+  screens; replies render nested lists, quotes and rules.
+- Chat: each reply shows the tokens the turn used (prompt plus reply, summed over its tool-calling
+  rounds) next to its timestamp, from the `usage` the backend now sends on the `done` SSE frame
+  (absent when the provider reports none).
+- Infra: a **daily** cost budget alongside the monthly one (`daily_budget_usd`, default 3), so a
+  stack left running emails you the next morning instead of after a week; and an optional
+  `auto_stop_schedule` that scales the three ECS services to zero on a schedule (`auto_stop.tf`;
+  `terraform apply` starts them again).
 - Infra: an optional monthly AWS cost budget (`infra/production/budget.tf`). Set `budget_alert_email`
   (and `monthly_budget_usd`, default 50) to get emails at 50% and 80% of actual spend and when the
   forecast passes 100%; unset, nothing is created.
@@ -175,6 +221,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Models tab: the Approve confirmation now says retraining is currently simulated (the inference
+  service's only trainer is a stub), so an Admin isn't led to expect a new model.
+- Chat: `get_sample` looking a sample id up in several runs without a run id now tells the model to
+  name the run it answered from and offer the others (a sample id restarts every run), instead of
+  leaving that to the tool description.
+- Docs: README no longer lists a current-time/weather tool (neither exists); the User Guide
+  describes the chat model picker in Settings; CLAUDE.md no longer mentions the golden-image bank
+  removed in migration `f2a7c4e9d013`.
+- Infra: the ALB accepts traffic only from CloudFront - its security group allows CloudFront's
+  origin-facing prefix list instead of `0.0.0.0/0`, and the listener answers 403 unless the
+  `X-Origin-Verify` header CloudFront adds is present - so the ALB's own DNS name no longer reaches
+  the API. The deploy health check is now `<cloudfront_domain>/api/health` (new route; `/health`
+  remains).
 - Agent 2 was re-ported from `pcb_agentic_inspector` (Oct 10): its grounding prompt weights visual
   evidence and IPC precedents instead of letting laser/ICT readings decide. Missing readings are no
   longer invented as a 0.0 um height, which had made every review say "missing part". Its vision step
