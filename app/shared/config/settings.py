@@ -51,6 +51,9 @@ class Settings(BaseSettings):
         "gpt-4.1",
         "gpt-5-mini",
         "gpt-5",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6-astra",
     ]
 
     # Base URL for every OpenAI-compatible call - chat (app.chat.services.providers.openai), memory

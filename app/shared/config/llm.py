@@ -79,6 +79,11 @@ def build_chat_model(
     kwargs: dict[str, Any] = {"callbacks": [LlmDebugLogger()]}
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if provider == "openai" and chosen.startswith("gpt-6"):
+        # On the Chat Completions API a GPT-6 model only takes function calls with reasoning off, and
+        # every chat turn here is a tool-calling turn - so ask for none rather than fail on the first
+        # tool call.
+        kwargs["reasoning_effort"] = "none"
     timeout = timeout or settings.agent_llm_timeout_seconds
 
     model_obj: BaseChatModel

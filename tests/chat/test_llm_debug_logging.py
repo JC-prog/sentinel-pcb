@@ -71,3 +71,18 @@ def test_the_agents_own_model_follows_agent_llm_settings(monkeypatch: pytest.Mon
     model = build_chat_model()
 
     assert model.model_name == "gpt-4o"  # type: ignore[attr-defined]
+
+
+def test_a_gpt_6_model_is_called_with_reasoning_off_so_tool_calls_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+
+    luna = build_chat_model("openai", model="gpt-6-luna")
+    sol = build_chat_model("openai", model="gpt-6.1-sol")
+    mini = build_chat_model("openai", model="gpt-4o-mini")
+
+    assert luna.reasoning_effort == "none"  # type: ignore[attr-defined]
+    assert sol.reasoning_effort == "none"  # type: ignore[attr-defined]
+    assert mini.reasoning_effort is None  # type: ignore[attr-defined]
+    assert luna.model_name == "gpt-6-luna"  # type: ignore[attr-defined]
