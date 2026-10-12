@@ -525,15 +525,16 @@
                       <span>Agent 1 · Model inference</span>
                     </h3>
                     <p class="mb-3" data-testid="machine-label">
-                      <b>Machine</b> <span class="text-slate-600 dark:text-slate-400">label from the folder</span>
+                      <b>Machine:</b>
                       <span class="ml-1 font-medium capitalize">{{ machineVerdict(reviewCase) ?? '—' }}</span>
                     </p>
+                    <p class="mb-1.5"><b>Model:</b></p>
                     <div class="grid gap-3 sm:grid-cols-2" data-testid="model-confidence">
                       <div data-testid="region-confidence">
-                        <p><b>Region model</b> <span class="text-slate-600 dark:text-slate-400">picks the part area</span></p>
-                        <p class="mt-0.5">
+                        <p class="flex items-baseline gap-1.5">
+                          <span class="text-slate-600 dark:text-slate-400">Region:</span>
                           <span class="font-medium">{{ reviewCase.region_label || reviewCase.feature_type || '—' }}</span>
-                          <span class="ml-1 tabular-nums" data-testid="region-confidence-value">{{ confidenceText(reviewCase.region_confidence) }}</span>
+                          <span class="tabular-nums" data-testid="region-confidence-value">{{ confidenceText(reviewCase.region_confidence) }}</span>
                         </p>
                         <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                           <div
@@ -547,13 +548,16 @@
                         }
                       </div>
                       <div data-testid="defect-confidence">
-                        <p><b>Defect model</b> <span class="text-slate-600 dark:text-slate-400">AI, names the defect</span></p>
                         @if (reviewCase.defect_model_ran === false || !reviewCase.ai_verdict) {
-                          <p class="mt-0.5 text-slate-600 dark:text-slate-400" data-testid="defect-not-run">Did not run: the region model was unsure.</p>
+                          <p class="flex items-baseline gap-1.5">
+                            <span class="text-slate-600 dark:text-slate-400">Defect:</span>
+                            <span class="text-slate-600 dark:text-slate-400" data-testid="defect-not-run">Did not run: the region model was unsure.</span>
+                          </p>
                         } @else {
-                          <p class="mt-0.5">
+                          <p class="flex items-baseline gap-1.5">
+                            <span class="text-slate-600 dark:text-slate-400">Defect:</span>
                             <span class="font-medium capitalize">{{ reviewCase.ai_verdict }}</span>
-                            <span class="ml-1 tabular-nums" data-testid="defect-confidence-value">{{ confidenceText(reviewCase.agent1_confidence) }}</span>
+                            <span class="tabular-nums" data-testid="defect-confidence-value">{{ confidenceText(reviewCase.agent1_confidence) }}</span>
                           </p>
                           <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div
