@@ -589,6 +589,19 @@ describe('Work', () => {
       return (fixture.nativeElement as HTMLElement).textContent ?? '';
     }
 
+    it('lets the keyboard open a case from the queue', async () => {
+      await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
+      await openConsole();
+      const row = fixture.nativeElement.querySelector('[data-testid="case-S2"]') as HTMLElement;
+      expect(row.getAttribute('tabindex')).toBe('0');
+
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(row.getAttribute('aria-selected')).toBe('true');
+    });
+
     function radios(): HTMLInputElement[] {
       return Array.from(fixture.nativeElement.querySelectorAll('input[name="decisionSource"]'));
     }

@@ -133,8 +133,18 @@
         (click)="runFull()"
         class="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
       >
-        {{ workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
+        {{ uploading() ? 'Uploading…' : workService.running() ? 'Running…' : '3. Run Agentic Workflow' }}
       </button>
+      @if (workService.running()) {
+        <button
+          type="button"
+          data-testid="stop-run"
+          (click)="workService.cancel()"
+          class="rounded border border-rose-400 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950"
+        >
+          Stop
+        </button>
+      }
       <button
         type="button"
         data-testid="open-settings"
@@ -405,11 +415,15 @@
                 <tbody>
                   @for (reviewCase of filteredCases(); track reviewCase.sample_id) {
                     <tr
-                      class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                      tabindex="0"
+                      class="cursor-pointer border-t border-slate-200 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-800 dark:hover:bg-slate-800"
                       [class.bg-sky-100]="reviewCase.sample_id === selectedCaseId()"
                       [class.dark:bg-sky-900]="reviewCase.sample_id === selectedCaseId()"
+                      [attr.aria-selected]="reviewCase.sample_id === selectedCaseId()"
                       [attr.data-testid]="'case-' + reviewCase.sample_id"
                       (click)="selectCase(reviewCase.sample_id)"
+                      (keydown.enter)="selectCase(reviewCase.sample_id)"
+                      (keydown.space)="$event.preventDefault(); selectCase(reviewCase.sample_id)"
                     >
                       <td class="px-3 py-1.5">{{ reviewCase.component_ref || reviewCase.sample_id }}</td>
                       <td class="px-3 py-1.5 capitalize">{{ reviewCase.agent1_verdict }}</td>

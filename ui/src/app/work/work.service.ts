@@ -1,4 +1,5 @@
 import { Injectable, Signal, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import {
   OrchestratorLogEntry,
   OrchestratorRunMode,
@@ -42,6 +43,7 @@ export class WorkService {
   private readonly _running = signal(false);
   private readonly _result = signal<OrchestratorRunResult | null>(null);
   private readonly _reviewTick = signal(0);
+  private runSubscription: Subscription | null = null;
 
   readonly status: Signal<OrchestratorStatusEvent> = this._status.asReadonly();
   readonly log: Signal<OrchestratorLogEntry[]> = this._log.asReadonly();
@@ -126,7 +128,7 @@ export class WorkService {
     this._running.set(true);
     this._result.set(null);
 
-    this.client
+    this.runSubscription = this.client
       .run({
         mode,
         dataset_id: datasetId,
@@ -157,9 +159,25 @@ export class WorkService {
         error: (error: unknown) => {
           const message = error instanceof Error ? error.message : 'Run failed.';
           this.append({ kind: 'error', message });
-          this._running.set(false);
+          this.finishRun();
         },
-        complete: () => this._running.set(false),
+        complete: () => this.finishRun(),
       });
+  }
+
+  /** Stops the run in progress: unsubscribing aborts the streaming request, so the server's run
+   * is told to stop and nothing more is appended. What was already logged stays. */
+  cancel(): void {
+    if (!this._running()) {
+      return;
+    }
+    this.runSubscription?.unsubscribe();
+    this.append({ kind: 'log', text: 'Run cancelled.' });
+    this.finishRun();
+  }
+
+  private finishRun(): void {
+    this.runSubscription = null;
+    this._running.set(false);
   }
 }

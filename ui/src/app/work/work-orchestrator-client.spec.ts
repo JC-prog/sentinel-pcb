@@ -99,6 +99,21 @@ describe('WorkOrchestratorClient', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/api/orchestrator/uploads/dataset');
   });
 
+  it('surfaces the server detail when an upload is rejected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 413,
+        json: () => Promise.resolve({ detail: 'File too large' }),
+      } as Response),
+    );
+
+    await expect(
+      new WorkOrchestratorClient(authService).uploadDataset(new File(['a'], 'dataset.csv')),
+    ).rejects.toThrow('File too large');
+  });
+
   it('uploads image-root files with their relative paths', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

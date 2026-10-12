@@ -141,4 +141,27 @@ describe('WorkService', () => {
 
     expect(runSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('cancel stops the run, keeps what was logged and lets a new run start', () => {
+    const events$ = new Subject<WorkResponderEvent>();
+    const service = new WorkService(fakeClient(events$));
+    service.run('run_full', 'dataset-1', 'xml-1', null, OPTIONS);
+    events$.next({ type: 'log', text: 'hello' });
+
+    service.cancel();
+    events$.next({ type: 'log', text: 'after cancel' });
+
+    expect(service.running()).toBe(false);
+    expect(events$.observed).toBe(false);
+    expect(service.log().map((entry) => (entry.kind === 'log' ? entry.text : ''))).toEqual([
+      'hello',
+      'Run cancelled.',
+    ]);
+  });
+
+  it('cancel does nothing when no run is in flight', () => {
+    const service = new WorkService(fakeClient(new Subject()));
+    service.cancel();
+    expect(service.log()).toEqual([]);
+  });
 });
