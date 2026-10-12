@@ -308,7 +308,7 @@
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>
             </span>
             <h1 id="review-console-title" class="text-lg font-bold">
-              {{ consoleTab() === 'review' ? 'Review Console' : consoleTab() === 'feedback' ? 'Model feedback' : 'Retraining queue' }}
+              {{ consoleTab() === 'review' ? 'Review Console' : consoleTab() === 'feedback' ? 'Model feedback' : queueTabLabel }}
             </h1>
             <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
@@ -405,7 +405,7 @@
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               "
             >
-              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>Retraining queue</span>
+              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>{{ queueTabLabel }}</span>
               @if (pendingCorrections().length > 0) {
                 <span
                   data-testid="corrections-badge"
@@ -416,6 +416,16 @@
               }
             </button>
           </div>
+
+          <p class="border-b border-slate-200 px-4 py-1.5 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400" data-testid="tab-purpose">
+            @if (consoleTab() === 'review') {
+              Step 1 - decide each flagged sample. Your decision becomes the correct label.
+            } @else if (consoleTab() === 'feedback') {
+              Step 2 - see how the model did on this run, and which model needs attention.
+            } @else {
+              Step 3 - send your corrections so the models can learn from them. An Admin approves before anything changes.
+            }
+          </p>
 
           @if (consoleTab() === 'review') {
           <div
@@ -779,19 +789,22 @@
             </div>
           </div>
           } @else if (consoleTab() === 'feedback') {
-          <!-- Model feedback: where the operator's corrections stand, sending them, and how the model did -->
+          <!-- Model feedback: charts first. A one-line read-out, the headline numbers, then how each
+               model did, where the samples went, what it gets wrong, and the stage-1 region model -->
           <div
             data-testid="drift-section"
             id="console-panel"
             role="tabpanel"
             aria-labelledby="tab-drift"
-            class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4"
+            class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
           >
             @if (runId() === null) {
-              <p data-testid="drift-no-run" class="text-sm text-slate-600 dark:text-slate-400">
-                There is no run yet. Run the agentic workflow, then confirm a final decision on each flagged sample in
-                the Review Console. Your corrections appear here, ready to send to the model.
-              </p>
+              <div class="rounded-lg border border-dashed border-slate-300 p-6 text-center dark:border-slate-700">
+                <p data-testid="drift-no-run" class="text-sm text-slate-600 dark:text-slate-400">
+                  There is no run yet. Run the agentic workflow, then confirm a final decision on each flagged sample in
+                  the Review Console. Your corrections appear here, ready to send to the model.
+                </p>
+              </div>
             } @else {
               @if (driftError()) {
                 <app-work-alert kind="error" role="alert" data-testid="drift-error">{{ driftError() }}</app-work-alert>
@@ -803,289 +816,410 @@
                     {{ drift.message }}
                   </p>
                 } @else {
-                  <!-- Corrections waiting: sending happens in the Retraining queue tab -->
-                  @if (pendingCorrections().length > 0) {
+                  <section data-testid="run-drift" aria-label="How the models did on this run" class="space-y-4">
+                    <!-- Read-out: one line, a coloured dot for the tone, the next step on the right -->
                     <div
-                      data-testid="queue-banner"
-                      class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm dark:border-sky-800 dark:bg-sky-950/30"
+                      data-testid="verdict"
+                      [attr.data-tone]="verdict().tone"
+                      class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 pb-3 dark:border-slate-800"
                     >
-                      <span>{{ pendingCorrections().length }} correction{{ pendingCorrections().length === 1 ? '' : 's' }} ready to send for retraining.</span>
-                      <button
-                        type="button"
-                        data-testid="open-queue"
-                        (click)="showQueueTab()"
-                        class="rounded-md border border-sky-600 px-3 py-1 text-sm font-medium text-sky-800 hover:bg-sky-100 dark:text-sky-200 dark:hover:bg-sky-950"
-                      >
-                        Open Retraining queue
-                      </button>
-                    </div>
-                  }
-
-                  <!-- Analytics: how the model did on this run -->
-                  <section data-testid="run-drift" aria-labelledby="analytics-title" class="space-y-4">
-                    <div>
-                      <h2 id="analytics-title" class="text-base font-semibold">How did the model do?</h2>
-                      <p class="text-sm text-slate-600 dark:text-slate-400">
-                        Your final decision counts as the correct label. Only samples flagged for review are measured,
-                        so this is not the model's overall accuracy.
-                      </p>
-                    </div>
-
-                    <!-- Headline numbers -->
-                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="drift-summary">
-                      @for (kpi of feedbackKpis(); track kpi.label) {
-                        <div class="rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700">
-                          <p class="text-xs text-slate-600 dark:text-slate-400">{{ kpi.label }}</p>
-                          <p class="text-2xl font-semibold tabular-nums">{{ kpi.value }}</p>
-                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ kpi.hint }}</p>
-                        </div>
-                      }
-                    </div>
-                    <p class="text-sm" data-testid="drift-of">
-                      @if (drift.totals.decided === 0) {
-                        nothing reviewed yet
-                      } @else if (drift.totals.confirmed + drift.totals.relabelled === 0) {
-                        the defect model classified none of the reviewed samples
-                      } @else {
-                        {{ drift.totals.relabelled }} of {{ drift.totals.confirmed + drift.totals.relabelled }} the defect model classified were wrong
-                      }
-                    </p>
-                    <p class="text-xs text-slate-600 dark:text-slate-400" data-testid="review-progress">
-                      {{ drift.totals.decided }} of {{ drift.totals.review_required }} flagged samples reviewed
-                      @if (drift.decisions.pending > 0) {
-                        - this changes as you review
-                      }
-                    </p>
-                    <p class="sr-only">Error rate <span data-testid="drift-rate">{{ percent(drift.drift_rate ?? null) }}</span></p>
-
-                    <!-- Model telemetry: how confident each defect model was on this run -->
-                    @if (modelTelemetry().length > 0) {
-                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="model-telemetry">
-                        <h3 class="mb-2 text-sm font-semibold">Model telemetry</h3>
-                        <ul class="space-y-3">
-                          @for (m of modelTelemetry(); track m.name) {
-                            <li [attr.data-model-telemetry]="m.name">
-                              <p class="mb-1 flex flex-wrap items-baseline justify-between gap-2 text-xs">
-                                <span class="font-mono">{{ m.name }}</span>
-                                <span class="text-slate-600 dark:text-slate-400">{{ m.reviewed }} reviewed</span>
-                              </p>
-                              <div class="grid gap-2 sm:grid-cols-3 text-xs">
-                                <div>
-                                  <p class="text-slate-600 dark:text-slate-400">Mean confidence</p>
-                                  <p class="font-semibold tabular-nums" data-testid="telemetry-mean">{{ m.meanConfidence }}</p>
-                                </div>
-                                <div>
-                                  <p class="text-slate-600 dark:text-slate-400">Low-confidence share</p>
-                                  <p class="font-semibold tabular-nums" data-testid="telemetry-low">{{ m.lowConfidence }}</p>
-                                </div>
-                                <div>
-                                  <p class="text-slate-600 dark:text-slate-400">Agent 2 disagreed</p>
-                                  <p class="font-semibold tabular-nums" data-testid="telemetry-agent2">{{ m.agent2Disagreed }}</p>
-                                </div>
-                              </div>
-                            </li>
-                          }
-                        </ul>
-                      </div>
-                    }
-
-                    <!-- Where the flagged samples went -->
-                    @if (funnelSteps().length > 0) {
-                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="funnel">
-                        <h3 class="mb-2 text-sm font-semibold">Where the flagged samples went</h3>
-                        <ol class="space-y-2">
-                          @for (step of funnelSteps(); track step.key) {
-                            <li [attr.data-funnel]="step.key">
-                              <div class="flex justify-between text-xs">
-                                <span>{{ step.label }}</span>
-                                <span class="font-semibold tabular-nums">{{ step.count }}</span>
-                              </div>
-                              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                <div class="h-full rounded-full bg-sky-500" [style.width.%]="step.share"></div>
-                              </div>
-                            </li>
-                          }
-                        </ol>
-                        @if (drift.region && drift.region.stopped_here > 0) {
-                          <p class="mt-2 text-xs text-slate-600 dark:text-slate-400" data-testid="funnel-stopped">
-                            {{ drift.region.stopped_here }} stopped at the region model, which was too unsure for a defect model to run.
-                          </p>
-                        }
-                      </div>
-                    }
-
-                    <!-- The region model (stage 1) -->
-                    @if (drift.region; as region) {
-                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="region-model">
-                        <h3 class="mb-2 text-sm font-semibold">Region model <span class="font-normal text-slate-600 dark:text-slate-400">picks the part area</span></h3>
-                        <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                          <div>
-                            <p class="text-slate-600 dark:text-slate-400">Accuracy</p>
-                            <p class="text-lg font-semibold tabular-nums" data-testid="region-accuracy">{{ percent(region.accuracy) }}</p>
-                          </div>
-                          <div>
-                            <p class="text-slate-600 dark:text-slate-400">Confirmed / reviewed</p>
-                            <p class="text-lg font-semibold tabular-nums" data-testid="region-confirmed">{{ region.confirmed }} / {{ region.reviewed }}</p>
-                          </div>
-                          <div>
-                            <p class="text-slate-600 dark:text-slate-400">You corrected</p>
-                            <p class="text-lg font-semibold tabular-nums" data-testid="region-corrected">{{ region.corrected }}</p>
-                          </div>
-                          <div>
-                            <p class="text-slate-600 dark:text-slate-400">Mean confidence</p>
-                            <p class="text-lg font-semibold tabular-nums" data-testid="region-mean">{{ percent(region.mean_confidence) }}</p>
-                          </div>
-                        </div>
-                        @if (region.by_region.length > 0) {
-                          <ul class="mt-3 space-y-2" data-testid="region-by-area">
-                            @for (area of region.by_region; track area.region) {
-                              <li [attr.data-region]="area.region">
-                                <div class="flex justify-between text-xs">
-                                  <span class="font-medium">{{ area.region }}</span>
-                                  <span class="text-slate-600 dark:text-slate-400">
-                                    {{ area.samples }} sample{{ area.samples === 1 ? '' : 's' }}, {{ area.corrected }} corrected, mean {{ percent(area.mean_confidence) }}
-                                  </span>
-                                </div>
-                                <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div class="h-full rounded-full bg-amber-500" [style.width.%]="area.samples === 0 ? 0 : (area.corrected / area.samples) * 100"></div>
-                                </div>
-                              </li>
+                      <span class="inline-block h-3 w-3 shrink-0 rounded-full" [class]="toneDotClass(verdict().tone)" aria-hidden="true"></span>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-base font-semibold" data-testid="drift-of">{{ verdict().headline }}</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                          <span data-testid="verdict-advice">{{ verdict().advice }}</span>
+                          <span class="ml-1 text-xs" data-testid="review-progress">
+                            {{ drift.totals.decided }} of {{ drift.totals.review_required }} flagged samples reviewed
+                            @if (drift.decisions.pending > 0) {
+                              - this changes as you review
                             }
-                          </ul>
+                          </span>
+                        </p>
+                        <p class="sr-only">Error rate <span data-testid="drift-rate">{{ percent(drift.drift_rate ?? null) }}</span></p>
+                      </div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        @if (drift.decisions.pending > 0) {
+                          <button
+                            type="button"
+                            data-testid="continue-review"
+                            (click)="consoleTab.set('review')"
+                            class="rounded-md border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            Continue review ({{ drift.decisions.pending }} left)
+                          </button>
                         }
-                        @if (region.swaps.length > 0) {
-                          <div class="mt-3" data-testid="region-swaps">
-                            <p class="mb-1 text-xs font-medium">Said, then set by you</p>
-                            <ul class="space-y-0.5 text-xs">
-                              @for (swap of region.swaps; track swap.model_region + '>' + swap.chosen_region) {
-                                <li class="flex justify-between border-t border-slate-100 py-0.5 dark:border-slate-800">
-                                  <span>{{ swap.model_region }} &rarr; <b>{{ swap.chosen_region }}</b></span>
-                                  <span class="tabular-nums">&times; {{ swap.count }}</span>
-                                </li>
-                              }
-                            </ul>
-                          </div>
-                        } @else if (region.reviewed > 0) {
-                          <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">You agreed with every part area the region model picked.</p>
+                        @if (pendingCorrections().length > 0) {
+                          <button
+                            type="button"
+                            data-testid="open-queue"
+                            (click)="showQueueTab()"
+                            class="rounded-md bg-sky-600 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-700"
+                          >
+                            Review and send {{ pendingCorrections().length }} correction{{ pendingCorrections().length === 1 ? '' : 's' }}
+                          </button>
                         }
                       </div>
+                    </div>
+                    @if (pendingCorrections().length > 0) {
+                      <p data-testid="queue-banner" class="sr-only">
+                        {{ pendingCorrections().length }} correction{{ pendingCorrections().length === 1 ? '' : 's' }} ready to send for retraining.
+                      </p>
                     }
 
-                    <!-- How useful Agent 2 was -->
-                    @if (agent2Rows().length > 0) {
-                      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="agent2-usefulness">
-                        <h3 class="mb-2 text-sm font-semibold">How useful was Agent 2? <span class="font-normal text-slate-600 dark:text-slate-400">its verdict was your final decision</span></h3>
-                        <ul class="space-y-2 text-xs">
-                          @for (row of agent2Rows(); track row.key) {
-                            <li [attr.data-agent2]="row.key">
-                              <div class="flex justify-between">
-                                <span>{{ row.label }}</span>
-                                <span class="tabular-nums"><b>{{ row.rate }}</b> <span class="text-slate-600 dark:text-slate-400">({{ row.matched }} of {{ row.n }})</span></span>
-                              </div>
-                              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                <div class="h-full rounded-full bg-violet-500" [style.width.%]="row.n === 0 ? 0 : (row.matched / row.n) * 100"></div>
-                              </div>
-                            </li>
+                    <!-- Headline numbers; the first two are rings -->
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="drift-summary">
+                      @for (kpi of feedbackKpis(); track kpi.label) {
+                        <div class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-800">
+                          @if (kpi.ring !== null) {
+                            <svg viewBox="0 0 36 36" class="h-12 w-12 shrink-0 -rotate-90" aria-hidden="true">
+                              <circle cx="18" cy="18" r="15.9155" fill="none" stroke-width="4" class="viz-track" />
+                              <circle
+                                cx="18" cy="18" r="15.9155" fill="none" stroke-width="4" stroke-linecap="round"
+                                class="viz-series"
+                                [attr.stroke-dasharray]="kpi.ring + ' ' + (100 - kpi.ring)"
+                              />
+                            </svg>
                           }
-                        </ul>
-                      </div>
-                    }
+                          <div class="min-w-0">
+                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ kpi.label }}</p>
+                            <p class="text-2xl font-semibold leading-tight">{{ kpi.value }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ kpi.hint }}</p>
+                          </div>
+                        </div>
+                      }
+                    </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
-                      <!-- Outcome split -->
+                    <!-- Row: what happened to the flagged samples, and how each model did -->
+                    <div class="grid items-start gap-4 lg:grid-cols-5">
                       @if (drift.totals.review_required > 0) {
-                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="outcome-bar">
-                          <h3 class="mb-2 text-sm font-semibold">What happened to the flagged samples</h3>
+                        <figure class="rounded-lg border border-slate-200 p-3 lg:col-span-2 dark:border-slate-800" data-testid="outcome-bar">
+                          <figcaption class="mb-2 text-sm font-semibold">What happened to the flagged samples</figcaption>
                           <div class="flex items-center gap-4">
-                            <svg viewBox="0 0 36 36" class="h-28 w-28 shrink-0 -rotate-0" role="img" aria-label="flagged samples by outcome">
-                              <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" class="text-slate-100 dark:text-slate-800" stroke-width="5" />
+                            <svg viewBox="0 0 36 36" class="h-32 w-32 shrink-0" role="img" aria-label="flagged samples by outcome">
+                              <circle cx="18" cy="18" r="15.9155" fill="none" class="viz-track" stroke-width="5" />
                               @for (arc of outcomeDonut(); track arc.key) {
                                 <circle
                                   cx="18" cy="18" r="15.9155" fill="none" stroke-width="5"
-                                  [attr.stroke]="arc.stroke"
+                                  [style.stroke]="arc.stroke"
                                   [attr.stroke-dasharray]="arc.dash"
                                   [attr.stroke-dashoffset]="arc.offset"
-                                />
+                                >
+                                  <title>{{ arc.label }}: {{ arc.count }}</title>
+                                </circle>
                               }
-                              <text x="18" y="19.5" text-anchor="middle" font-size="6" font-weight="600" fill="currentColor">{{ drift.totals.review_required }}</text>
+                              <text x="18" y="17.5" text-anchor="middle" font-size="7" font-weight="600" fill="currentColor">{{ drift.totals.review_required }}</text>
+                              <text x="18" y="23" text-anchor="middle" font-size="3" fill="currentColor" opacity="0.7">flagged</text>
                             </svg>
-                            <ul class="space-y-1 text-sm">
+                            <ul class="space-y-1.5 text-sm">
                               @for (segment of outcomeSegments(); track segment.key) {
-                                <li class="flex items-center gap-1.5">
+                                <li class="flex items-center gap-2">
                                   <span class="inline-block h-2.5 w-2.5 rounded-sm" [class]="segment.barClass" aria-hidden="true"></span>
-                                  {{ segment.label }}
-                                  <b [attr.data-testid]="'kpi-' + segment.key">{{ segment.count }}</b>
+                                  <span>{{ segment.label }}</span>
+                                  <b class="tabular-nums" [attr.data-testid]="'kpi-' + segment.key">{{ segment.count }}</b>
                                 </li>
                               }
                             </ul>
                           </div>
-                        </div>
+                        </figure>
                       }
 
-                      <!-- Per-model error rate -->
-                      @if (modelBars().length > 0) {
-                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                          <h3 class="mb-2 text-sm font-semibold">Error rate by defect model</h3>
-                          <ul class="space-y-2" data-testid="model-drift">
-                            @for (bar of modelBars(); track bar.name) {
-                              <li [attr.data-model]="bar.name">
+                        @if (drift.region; as region) {
+                          <figure class="rounded-lg border border-slate-200 p-3 lg:col-span-3 dark:border-slate-800" data-testid="region-model">
+                            <figcaption class="mb-3 flex flex-wrap items-baseline gap-x-2">
+                              <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-600 uppercase dark:bg-slate-800 dark:text-slate-300">Stage 1</span>
+                              <span class="text-sm font-semibold">Region model</span>
+                              <span class="text-xs font-normal text-slate-600 dark:text-slate-400">picks the part area; below this sure, no defect model runs</span>
+                            </figcaption>
+                            <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                              <div>
+                                <p class="text-slate-600 dark:text-slate-400">Accuracy</p>
+                                <p class="text-lg font-semibold" data-testid="region-accuracy">{{ percent(region.accuracy) }}</p>
+                              </div>
+                              <div>
+                                <p class="text-slate-600 dark:text-slate-400">Confirmed / reviewed</p>
+                                <p class="text-lg font-semibold" data-testid="region-confirmed">{{ region.confirmed }} / {{ region.reviewed }}</p>
+                              </div>
+                              <div>
+                                <p class="text-slate-600 dark:text-slate-400">You corrected</p>
+                                <p class="text-lg font-semibold" data-testid="region-corrected">{{ region.corrected }}</p>
+                              </div>
+                              <div>
+                                <p class="text-slate-600 dark:text-slate-400">Mean confidence</p>
+                                <p class="text-lg font-semibold" data-testid="region-mean">{{ percent(region.mean_confidence) }}</p>
+                              </div>
+                            </div>
+                            @if (regionCard(); as rc) {
+                              <div class="mt-3 flex h-3 gap-0.5" role="img" [attr.aria-label]="'Region model: ' + rc.accuracy + ' right'">
+                                <span class="viz-good block rounded-l-sm" [style.width.%]="rc.rightShare" [attr.title]="(rc.reviewed - rc.corrected) + ' kept'"></span>
+                                @if (rc.corrected > 0) {
+                                  <span class="viz-bad block rounded-r-sm" [style.width.%]="rc.wrongShare" [attr.title]="rc.corrected + ' corrected'"></span>
+                                }
+                              </div>
+                            }
+                            @if (regionColumns().length > 0) {
+                              <!-- One column per part area: kept (green) under corrected (red) -->
+                              <ul class="mt-4 flex items-end gap-3" data-testid="region-by-area">
+                                @for (area of regionColumns(); track area.region) {
+                                  <li class="flex min-w-0 flex-1 flex-col items-center" [attr.data-region]="area.region" [attr.title]="area.samples + ' samples, ' + area.corrected + ' corrected'">
+                                    <span class="mb-1 text-xs font-semibold tabular-nums">{{ area.samples }}</span>
+                                    <div class="flex h-24 w-full max-w-10 flex-col-reverse gap-0.5">
+                                      <span class="viz-good block w-full" [style.height.%]="area.keptHeight" [class]="area.corrected === 0 ? 'rounded-t-sm' : ''"></span>
+                                      @if (area.corrected > 0) {
+                                        <span class="viz-bad block w-full rounded-t-sm" [style.height.%]="area.correctedHeight"></span>
+                                      }
+                                    </div>
+                                    <span class="mt-1 truncate text-xs font-medium">{{ area.region }}</span>
+                                    <span class="text-[11px] text-slate-500 dark:text-slate-400">{{ area.corrected }} corrected · {{ percent(area.mean_confidence) }}</span>
+                                  </li>
+                                }
+                              </ul>
+                              <p class="mt-2 flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                                <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm viz-good" aria-hidden="true"></span>kept</span>
+                                <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm viz-bad" aria-hidden="true"></span>you corrected</span>
+                              </p>
+                            }
+                            @if (region.swaps.length > 0) {
+                              <div class="mt-3" data-testid="region-swaps">
+                                <p class="mb-1 text-xs font-medium">Said, then set by you</p>
+                                <ul class="space-y-0.5 text-xs">
+                                  @for (swap of region.swaps; track swap.model_region + '>' + swap.chosen_region) {
+                                    <li class="flex justify-between border-t border-slate-100 py-0.5 dark:border-slate-800">
+                                      <span>{{ swap.model_region }} &rarr; <b>{{ swap.chosen_region }}</b></span>
+                                      <span class="tabular-nums">&times; {{ swap.count }}</span>
+                                    </li>
+                                  }
+                                </ul>
+                              </div>
+                            } @else if (region.reviewed > 0) {
+                              <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">You agreed with every part area the region model picked.</p>
+                            }
+                          </figure>
+                        }
+                    </div>
+
+                    <!-- Row: stage 2, the defect models -->
+                    <div class="grid gap-4 lg:grid-cols-5">
+                      <figure class="rounded-lg border border-slate-200 p-3 lg:col-span-5 dark:border-slate-800" data-testid="model-telemetry">
+                        <figcaption class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                          <span class="flex flex-wrap items-baseline gap-x-2">
+                            <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-600 uppercase dark:bg-slate-800 dark:text-slate-300">Stage 2</span>
+                            <span class="text-sm font-semibold">Defect models</span>
+                            <span class="text-xs font-normal text-slate-600 dark:text-slate-400">the body, lead or text model names the defect, once the region model has picked the part area</span>
+                          </span>
+                          <span class="flex flex-wrap items-center gap-x-3 text-xs text-slate-600 dark:text-slate-400" aria-label="legend">
+                            @for (segment of outcomeSegments(); track segment.key) {
+                              <span class="inline-flex items-center gap-1">
+                                <span class="inline-block h-2 w-2 rounded-sm" [class]="segment.barClass" aria-hidden="true"></span>{{ segment.label }}
+                              </span>
+                            }
+                          </span>
+                        </figcaption>
+                        <ul data-testid="model-drift" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          @for (card of modelCards(); track card.name) {
+                            <li [attr.data-model]="card.name" [attr.data-model-telemetry]="card.name" class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                <p class="text-sm font-medium">{{ card.title }} <span class="font-mono text-xs font-normal text-slate-500 dark:text-slate-400">{{ card.name }}</span></p>
+                                <span class="rounded-full px-2 py-0.5 text-xs font-medium" [class]="toneChipClass(card.status.tone)">{{ card.status.label }}</span>
+                              </div>
+                              <!-- Right / wrong / not classified / not reviewed, to scale -->
+                              <div class="mt-1.5 flex items-center gap-2">
+                                <div class="flex h-3 flex-1 gap-0.5 overflow-hidden rounded-sm bg-transparent" role="img" [attr.aria-label]="card.title + ' outcomes'">
+                                  @for (seg of card.segments; track seg.key) {
+                                    @if (seg.count > 0) {
+                                      <span
+                                        class="block h-full min-w-[3px]"
+                                        [class]="seg.barClass"
+                                        [style.width.%]="seg.share"
+                                        [attr.title]="seg.label + ': ' + seg.count"
+                                      ></span>
+                                    }
+                                  }
+                                </div>
+                                @if (card.rate !== null) {
+                                  <span class="flex items-baseline gap-1 whitespace-nowrap">
+                                    <span class="text-sm font-semibold tabular-nums" data-testid="corrected">{{ card.rate.toFixed(0) }}%</span>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">wrong</span>
+                                  </span>
+                                }
+                              </div>
+                              <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                                @if (card.rate !== null) {
+                                  {{ card.detail }}
+                                } @else {
+                                  It did not classify any of the {{ card.reviewed }} reviewed sample{{ card.reviewed === 1 ? '' : 's' }}.
+                                }
+                              </p>
+                              <!-- How sure it was -->
+                              <dl class="mt-2 grid grid-cols-3 gap-3 text-xs">
+                                <div>
+                                  <div class="flex justify-between"><dt class="text-slate-600 dark:text-slate-400">Avg. confidence</dt><dd class="font-semibold text-slate-900 tabular-nums dark:text-slate-100" data-testid="telemetry-mean">{{ card.meanConfidence }}</dd></div>
+                                  <div class="mt-1 h-1.5 overflow-hidden rounded-full viz-track-bg"><div class="h-full rounded-full viz-1" [style.width.%]="card.meanPct"></div></div>
+                                </div>
+                                <div>
+                                  <div class="flex justify-between"><dt class="text-slate-600 dark:text-slate-400">Often unsure</dt><dd class="font-semibold text-slate-900 tabular-nums dark:text-slate-100" data-testid="telemetry-low">{{ card.lowConfidence }}</dd></div>
+                                  <div class="mt-1 h-1.5 overflow-hidden rounded-full viz-track-bg"><div class="h-full rounded-full viz-1" [style.width.%]="card.lowPct"></div></div>
+                                </div>
+                                <div>
+                                  <div class="flex justify-between"><dt class="text-slate-600 dark:text-slate-400">Agent 2 disagreed</dt><dd class="font-semibold text-slate-900 tabular-nums dark:text-slate-100" data-testid="telemetry-agent2">{{ card.agent2Disagreed }}</dd></div>
+                                  <div class="mt-1 h-1.5 overflow-hidden rounded-full viz-track-bg"><div class="h-full rounded-full viz-1" [style.width.%]="card.agent2Pct"></div></div>
+                                </div>
+                              </dl>
+                            </li>
+                          }
+                        </ul>
+                      </figure>
+                    </div>
+
+                    <!-- Row: where the samples went, who made the call, and Agent 2 -->
+                    <div class="grid gap-4 lg:grid-cols-3">
+                      @if (funnelSteps().length > 0) {
+                        <figure class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="funnel">
+                          <figcaption class="mb-2 text-sm font-semibold">Where the flagged samples went</figcaption>
+                          <ol class="space-y-2">
+                            @for (step of funnelSteps(); track step.key; let fi = $index) {
+                              <li [attr.data-funnel]="step.key">
                                 <div class="flex justify-between text-xs">
-                                  <span class="font-mono">{{ bar.name }}</span>
-                                  <span class="text-slate-600 dark:text-slate-400">{{ bar.detail }}</span>
+                                  <span>{{ step.label }}</span>
+                                  <span><b class="tabular-nums">{{ step.count }}</b>
+                                    @if (fi > 0) {
+                                      <span class="text-slate-500 dark:text-slate-400"> · {{ step.ofFlagged }} of flagged</span>
+                                    }
+                                  </span>
                                 </div>
-                                <div class="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div class="h-full rounded-full bg-red-500" [style.width.%]="bar.rate"></div>
+                                <div class="mt-1 h-3 overflow-hidden rounded-r-sm viz-track-bg">
+                                  <div class="h-full rounded-r" [class]="'viz-ord-' + fi" [style.width.%]="step.share" [attr.title]="step.label + ': ' + step.count"></div>
                                 </div>
-                                <p class="mt-0.5 text-xs font-semibold" data-testid="corrected">{{ bar.rate.toFixed(0) }}%</p>
                               </li>
                             }
-                          </ul>
-                        </div>
+                          </ol>
+                          @if (drift.region && drift.region.stopped_here > 0) {
+                            <p class="mt-2 text-xs text-slate-600 dark:text-slate-400" data-testid="funnel-stopped">
+                              {{ drift.region.stopped_here }} stopped at the region model, which was too unsure for a defect model to run.
+                            </p>
+                          }
+                        </figure>
                       }
 
-                      <!-- Who made the final call -->
                       @if (decisionSources().length > 0) {
-                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="review-activity">
-                          <h3 class="mb-2 text-sm font-semibold">How you decided</h3>
-                          <ul class="space-y-2 text-sm">
+                        <figure class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="review-activity">
+                          <figcaption class="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                            <span class="text-sm font-semibold">How you decided</span>
+                            <span class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm viz-good" aria-hidden="true"></span>agreed with the model</span>
+                              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm viz-bad" aria-hidden="true"></span>overruled it</span>
+                            </span>
+                          </figcaption>
+                          <ul class="space-y-3">
                             @for (row of decisionSources(); track row.label) {
                               <li>
                                 <div class="flex justify-between text-xs">
-                                  <span>{{ row.label }}</span>
+                                  <span class="font-medium">{{ row.label }}</span>
                                   <span class="text-slate-600 dark:text-slate-400">{{ row.chosen }} chosen, {{ row.overruled }} overruled the model</span>
                                 </div>
-                                <div class="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div class="h-full rounded-full bg-sky-500" [style.width.%]="row.share"></div>
+                                <div class="mt-1 flex h-3 gap-0.5" [style.width.%]="row.share">
+                                  @if (row.chosen - row.overruled > 0) {
+                                    <span class="viz-good block h-full rounded-l-sm" [style.flex-grow]="row.chosen - row.overruled" [attr.title]="(row.chosen - row.overruled) + ' agreed with the model'"></span>
+                                  }
+                                  @if (row.overruled > 0) {
+                                    <span class="viz-bad block h-full rounded-r-sm" [style.flex-grow]="row.overruled" [attr.title]="row.overruled + ' overruled the model'"></span>
+                                  }
                                 </div>
                               </li>
                             }
                           </ul>
-                        </div>
+                        </figure>
                       }
-
-                      <!-- Most common mistakes -->
-                      @if (mistakeBars().length > 0) {
-                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                          <h3 class="mb-2 text-sm font-semibold">Most common mistakes</h3>
-                          <ul class="space-y-2 text-sm" data-testid="top-overruled">
-                            @for (miss of mistakeBars(); track miss.from + '>' + miss.to) {
-                              <li>
-                                <div class="flex justify-between gap-2 text-xs">
-                                  <span>
-                                    model said <i class="capitalize">{{ miss.from }}</i> &rarr; correct label
-                                    <b class="capitalize">{{ miss.to }}</b>
-                                  </span>
-                                  <span class="whitespace-nowrap">&times; {{ miss.count }}</span>
-                                </div>
-                                <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div class="h-full rounded-full bg-amber-500" [style.width.%]="miss.share"></div>
-                                </div>
-                              </li>
-                            }
-                          </ul>
-                        </div>
-                      }
+                        @if (agent2Rows().length > 0) {
+                          <figure class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="agent2-usefulness">
+                            <figcaption class="mb-2 text-sm font-semibold">How useful was Agent 2? <span class="block text-xs font-normal text-slate-600 dark:text-slate-400">how often its verdict became your final decision</span></figcaption>
+                            <ul class="space-y-3 text-xs">
+                              @for (row of agent2Rows(); track row.key) {
+                                <li [attr.data-agent2]="row.key">
+                                  <div class="flex justify-between">
+                                    <span>{{ row.label }}</span>
+                                    <span class="tabular-nums"><b>{{ row.rate }}</b><span class="ml-1 text-slate-600 dark:text-slate-400">({{ row.matched }} of {{ row.n }})</span></span>
+                                  </div>
+                                  <div class="mt-1 h-2.5 overflow-hidden rounded-r viz-track-bg">
+                                    <div class="h-full rounded-r viz-1" [style.width.%]="row.n === 0 ? 0 : (row.matched / row.n) * 100"></div>
+                                  </div>
+                                </li>
+                              }
+                            </ul>
+                          </figure>
+                        }
                     </div>
+
+                    <!-- Row: what it gets wrong - the commonest mistakes, and what it is confused with -->
+                    @if (mistakeBars().length > 0 || confusion()) {
+                      <div class="grid gap-4 lg:grid-cols-2">
+                        @if (mistakeBars().length > 0) {
+                          <figure class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                            <figcaption class="mb-2 text-sm font-semibold">Most common mistakes</figcaption>
+                            <ul class="space-y-2.5 text-sm" data-testid="top-overruled">
+                              @for (miss of mistakeBars(); track miss.from + '>' + miss.to) {
+                                <li>
+                                  <div class="flex justify-between gap-2 text-xs">
+                                    <span>
+                                      model said <i class="capitalize">{{ miss.from }}</i> &rarr; correct label
+                                      <b class="capitalize">{{ miss.to }}</b>
+                                    </span>
+                                    <span class="whitespace-nowrap font-semibold tabular-nums">&times; {{ miss.count }}</span>
+                                  </div>
+                                  <div class="mt-1 h-2.5 overflow-hidden rounded-r viz-track-bg">
+                                    <div class="h-full rounded-r viz-1" [style.width.%]="miss.share" [attr.title]="miss.count + ' times'"></div>
+                                  </div>
+                                </li>
+                              }
+                            </ul>
+                          </figure>
+                        }
+
+                        @if (confusion(); as matrix) {
+                          <figure class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="confusion-matrix">
+                            <figcaption class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                              <span class="text-sm font-semibold">What it gets confused with</span>
+                              <span class="text-xs text-slate-600 dark:text-slate-400">rows: what the model said · columns: the correct label</span>
+                            </figcaption>
+                            <div class="overflow-x-auto">
+                              <table class="w-full border-separate border-spacing-0.5 text-center text-xs">
+                                <thead>
+                                  <tr>
+                                    <th class="w-24 min-w-24"></th>
+                                    @for (col of matrix.cols; track col) {
+                                      <th scope="col" class="px-1 pb-1 font-medium capitalize text-slate-600 dark:text-slate-400">{{ col }}</th>
+                                    }
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (row of matrix.rows; track row.label) {
+                                    <tr>
+                                      <th scope="row" class="pr-2 text-right font-medium capitalize text-slate-600 dark:text-slate-400">{{ row.label }}</th>
+                                      @for (cell of row.cells; track cell.col) {
+                                        <td
+                                          class="h-8 rounded-sm tabular-nums"
+                                          [class]="cell.count === 0 ? 'viz-track-bg text-transparent' : 'viz-seq-' + cell.level"
+                                          [attr.data-count]="cell.count"
+                                          [attr.title]="'Said ' + row.label + ', correct label ' + cell.col + ': ' + cell.count"
+                                        >{{ cell.count }}</td>
+                                      }
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                            <p class="mt-2 flex items-center justify-end gap-1.5 text-xs text-slate-600 dark:text-slate-400" aria-hidden="true">
+                              fewer
+                              <span class="inline-block h-2.5 w-5 rounded-sm viz-seq-1"></span>
+                              <span class="inline-block h-2.5 w-5 rounded-sm viz-seq-2"></span>
+                              <span class="inline-block h-2.5 w-5 rounded-sm viz-seq-3"></span>
+                              <span class="inline-block h-2.5 w-5 rounded-sm viz-seq-4"></span>
+                              <span class="inline-block h-2.5 w-5 rounded-sm viz-seq-5"></span>
+                              more
+                            </p>
+                          </figure>
+                        }
+                      </div>
+                    }
 
                     @if (drift.totals.no_prediction > 0) {
                       <p class="text-sm text-slate-600 dark:text-slate-400" data-testid="no-model-note">
@@ -1099,14 +1233,48 @@
                         No decisions yet - confirm a final decision on a flagged sample in the Review Console.
                       </p>
                     }
-                  </section>
 
+                    <!-- The same numbers as a table: for screen readers, copying, or when a chart is hard to read -->
+                    @if (modelCards().length > 0) {
+                      <details class="rounded-lg border border-slate-200 dark:border-slate-800" data-testid="chart-table">
+                        <summary class="cursor-pointer px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50">Show the numbers as a table</summary>
+                        <div class="overflow-x-auto border-t border-slate-200 p-3 dark:border-slate-800">
+                          <table class="w-full text-left text-xs">
+                            <thead class="text-slate-600 dark:text-slate-400">
+                              <tr>
+                                <th class="py-1 pr-3 font-medium">Model</th>
+                                <th class="py-1 pr-3 font-medium">Flagged</th>
+                                <th class="py-1 pr-3 font-medium">Reviewed</th>
+                                <th class="py-1 pr-3 font-medium">Right</th>
+                                <th class="py-1 pr-3 font-medium">Wrong</th>
+                                <th class="py-1 pr-3 font-medium">Not classified</th>
+                                <th class="py-1 pr-3 font-medium">Avg. confidence</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              @for (card of modelCards(); track card.name) {
+                                <tr class="border-t border-slate-100 dark:border-slate-800">
+                                  <td class="py-1 pr-3">{{ card.title }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.flagged }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.reviewed }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.right }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.wrong }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.notClassified }}</td>
+                                  <td class="py-1 pr-3 tabular-nums">{{ card.meanConfidence }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    }
+                  </section>
                 }
               }
             }
           </div>
           } @else {
-          <!-- Retraining queue: send the corrections, one group per model -->
+          <!-- Retraining queue: where things stand, then the corrections to send, one group per model -->
           <div
             data-testid="queue-section"
             id="console-panel"
@@ -1115,10 +1283,12 @@
             class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4"
           >
             @if (runId() === null) {
-              <p data-testid="queue-no-run" class="text-sm text-slate-600 dark:text-slate-400">
-                There is no run yet. Run the agentic workflow and confirm a decision on each flagged sample in
-                the Review Console; the corrections you make wait here, grouped by the model they teach.
-              </p>
+              <div class="rounded-lg border border-dashed border-slate-300 p-6 text-center dark:border-slate-700">
+                <p data-testid="queue-no-run" class="text-sm text-slate-600 dark:text-slate-400">
+                  There is no run yet. Run the agentic workflow and confirm a decision on each flagged sample in
+                  the Review Console; the corrections you make wait here, grouped by the model they teach.
+                </p>
+              </div>
             } @else {
               @if (driftError()) {
                 <app-work-alert kind="error" role="alert" data-testid="queue-error">{{ driftError() }}</app-work-alert>
@@ -1127,11 +1297,11 @@
                 @if (!drift.available) {
                   <p data-testid="queue-unavailable" class="text-sm text-slate-600 dark:text-slate-400">{{ drift.message }}</p>
                 } @else {
-                  <!-- Where things stand, and the next step -->
+                  <!-- Where things stand, the next step, and the road to a better model -->
                   <div
                     data-testid="feedback-status"
                     [attr.data-kind]="feedbackStatus().kind"
-                    class="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
+                    class="rounded-xl border p-4"
                     [class]="
                       feedbackStatus().kind === 'review'
                         ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
@@ -1140,59 +1310,73 @@
                           : 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
                     "
                   >
-                    <p class="flex items-center gap-2 text-sm font-medium">
-                      @if (feedbackStatus().kind === 'review') {
-                        <svg class="h-4 w-4 text-amber-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg>
-                      } @else {
-                        <svg class="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>
-                      }
-                      {{ feedbackStatus().text }}
-                    </p>
-                    <div class="flex items-center gap-2">
-                      @if (feedbackStatus().kind === 'review') {
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                      <p class="flex items-start gap-2 text-sm font-medium">
+                        @if (feedbackStatus().kind === 'review') {
+                          <svg class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg>
+                        } @else if (feedbackStatus().kind === 'send') {
+                          <svg class="mt-0.5 h-4 w-4 shrink-0 text-sky-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
+                        } @else {
+                          <svg class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>
+                        }
+                        <span>{{ feedbackStatus().text }}</span>
+                      </p>
+                      <div class="flex items-center gap-2">
+                        @if (feedbackStatus().kind === 'review') {
+                          <button
+                            type="button"
+                            data-testid="go-review"
+                            (click)="consoleTab.set('review')"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-amber-600 px-3 py-1 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950"
+                          >
+                            Back to review
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h11M11 6l4 4-4 4"/></svg>
+                          </button>
+                        }
                         <button
                           type="button"
-                          data-testid="go-review"
-                          (click)="consoleTab.set('review')"
-                          class="inline-flex items-center gap-1.5 rounded-md border border-amber-600 px-3 py-1 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950"
+                          (click)="refreshDrift()"
+                          [disabled]="driftLoading()"
+                          class="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                         >
-                          Back to review
-                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h11M11 6l4 4-4 4"/></svg>
+                          {{ driftLoading() ? 'Refreshing…' : 'Refresh' }}
                         </button>
-                      }
-                      <button
-                        type="button"
-                        (click)="refreshDrift()"
-                        [disabled]="driftLoading()"
-                        class="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                      >
-                        Refresh
-                      </button>
+                      </div>
                     </div>
+
+                    <!-- The road from your decision to a better model -->
+                    <ol data-testid="feedback-tracker" class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      @for (stage of feedbackStages(); track stage.key; let i = $index) {
+                        <li
+                          class="relative rounded-lg border bg-white/70 px-3 py-2 dark:bg-slate-900/60"
+                          [attr.data-stage]="stage.key"
+                          [attr.aria-current]="currentStage() === stage.key ? 'step' : null"
+                          [class]="
+                            currentStage() === stage.key
+                              ? 'border-sky-500 ring-1 ring-sky-500'
+                              : stage.count > 0
+                                ? 'border-slate-400 dark:border-slate-500'
+                                : 'border-slate-200 dark:border-slate-800'
+                          "
+                        >
+                          <p class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                            <span class="flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200" aria-hidden="true">{{ i + 1 }}</span>
+                            {{ stage.label }}
+                          </p>
+                          <p class="text-2xl font-semibold tabular-nums" [class.text-slate-400]="stage.count === 0">{{ stage.count }}</p>
+                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ stage.hint }}</p>
+                        </li>
+                      }
+                    </ol>
                   </div>
 
-                  <!-- Follow-through: from your decision to a better model -->
-                  <ol data-testid="feedback-tracker" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    @for (stage of feedbackStages(); track stage.key) {
-                      <li
-                        class="rounded-lg border px-3 py-2"
-                        [attr.data-stage]="stage.key"
-                        [class]="stage.count > 0 ? 'border-slate-400 dark:border-slate-500' : 'border-slate-200 dark:border-slate-800'"
-                      >
-                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ stage.label }}</p>
-                        <p class="text-2xl font-semibold tabular-nums" [class.text-slate-400]="stage.count === 0">{{ stage.count }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ stage.hint }}</p>
-                      </li>
-                    }
-                  </ol>
-
-                  <!-- One group per model: its corrections, what they teach and a send button -->
+                  <!-- One group per model: its corrections, what they teach, and what to send -->
                   <section data-testid="training-data" aria-labelledby="send-title" class="space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h2 id="send-title" class="text-base font-semibold">Corrections to send</h2>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
-                          Each model learns from its own group. Untick any you do not want to send.
+                          Each model learns only from its own group. Untick any you do not want to send.
                         </p>
                       </div>
                       @if (pendingCorrections().length > 0) {
@@ -1204,19 +1388,31 @@
                             [checked]="allCorrectionsSelected()"
                             (change)="toggleAllCorrections()"
                           />
-                          All groups
+                          Select all
                         </label>
                       }
                     </div>
 
                     @if (corrections().length === 0) {
-                      <p data-testid="no-corrections" class="text-sm text-slate-600 dark:text-slate-400">
+                      <div class="rounded-lg border border-dashed border-slate-300 p-5 text-center dark:border-slate-700">
+                        <p data-testid="no-corrections" class="text-sm text-slate-600 dark:text-slate-400">
+                          @if (drift.totals.decided === 0) {
+                            Nothing reviewed yet.
+                          } @else {
+                            Nothing to send - the models got every reviewed sample right.
+                          }
+                        </p>
                         @if (drift.totals.decided === 0) {
-                          Nothing reviewed yet.
-                        } @else {
-                          Nothing to send - the models got every reviewed sample right.
+                          <button
+                            type="button"
+                            data-testid="empty-go-review"
+                            (click)="consoleTab.set('review')"
+                            class="mt-3 rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                          >
+                            Go to the review
+                          </button>
                         }
-                      </p>
+                      </div>
                     }
 
                     @for (group of correctionGroups(); track group.modelName ?? 'none') {
@@ -1236,6 +1432,8 @@
                               <h3 class="text-sm font-semibold">{{ group.title }}</h3>
                               @if (group.modelName) {
                                 <p class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ group.modelName }}</p>
+                              } @else {
+                                <p class="text-xs text-slate-500 dark:text-slate-400">These cannot be sent: there is no model to teach.</p>
                               }
                             </div>
                           </div>
@@ -1256,14 +1454,18 @@
                         <!-- What this batch would teach the model -->
                         @if (group.mix.length > 0) {
                           <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800" data-testid="group-mix">
+                            <p class="mb-1 text-xs text-slate-600 dark:text-slate-400">It would learn these labels:</p>
                             <div class="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="img" aria-label="label mix">
-                              @for (m of group.mix; track m.label) {
-                                <span class="block h-full" [style.width.%]="m.share" [style.background-color]="'hsl(' + ($index * 57 + 200) + ' 65% 55%)'"></span>
+                              @for (m of group.mix; track m.label; let mi = $index) {
+                                <span class="block h-full" [style.width.%]="m.share" [style.background-color]="mixColor(mi)"></span>
                               }
                             </div>
                             <ul class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
-                              @for (m of group.mix; track m.label) {
-                                <li><span class="capitalize">{{ m.label }}</span> <b class="tabular-nums">{{ m.count }}</b></li>
+                              @for (m of group.mix; track m.label; let mi = $index) {
+                                <li class="flex items-center gap-1.5">
+                                  <span class="inline-block h-2.5 w-2.5 rounded-sm" [style.background-color]="mixColor(mi)" aria-hidden="true"></span>
+                                  <span class="capitalize">{{ m.label }}</span> <b class="tabular-nums">{{ m.count }}</b>
+                                </li>
                               }
                             </ul>
                             @if (group.hint) {
@@ -1276,16 +1478,16 @@
                           <table class="w-full text-left text-sm" data-testid="corrections">
                             <thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
                               <tr>
-                                <th class="w-8 px-3 py-1.5"></th>
+                                <th class="w-8 px-3 py-1.5"><span class="sr-only">Send</span></th>
                                 <th class="py-1.5 pr-3 font-medium">Sample</th>
-                                <th class="py-1.5 pr-3 font-medium">Said</th>
-                                <th class="py-1.5 pr-3 font-medium">You chose</th>
-                                <th class="py-1.5 pr-3 font-medium">Status</th>
+                                <th class="py-1.5 pr-3 font-medium">Model said</th>
+                                <th class="py-1.5 pr-3 font-medium">Corrected to</th>
+                                <th class="py-1.5 pr-3 font-medium">Where it stands</th>
                               </tr>
                             </thead>
                             <tbody>
                               @for (correction of group.corrections; track correction.sample_id + '|' + correction.model_name) {
-                                <tr class="border-t border-slate-200 dark:border-slate-800" [attr.data-sample]="correction.sample_id">
+                                <tr class="border-t border-slate-200 align-top dark:border-slate-800" [attr.data-sample]="correction.sample_id">
                                   <td class="px-3 py-2">
                                     @if (correction.queued) {
                                       <span class="text-emerald-600 dark:text-emerald-400" role="img" aria-label="already sent">✓</span>
@@ -1317,22 +1519,29 @@
                                       <span class="block text-xs italic text-slate-500 dark:text-slate-400">{{ correction.operator_notes }}</span>
                                     }
                                   </td>
-                                  <td class="py-2 pr-3" data-testid="correction-status">{{ trainingStatus(correction) }}</td>
+                                  <td class="py-2 pr-3">
+                                    <span
+                                      class="inline-block rounded-full px-2 py-0.5 text-xs"
+                                      [class]="correctionStatusClass(correction)"
+                                      data-testid="correction-status"
+                                      >{{ trainingStatus(correction) }}</span
+                                    >
+                                  </td>
                                 </tr>
                               }
                             </tbody>
                           </table>
                         </div>
 
-                        @if (group.pending.length > 0) {
-                          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-2 dark:border-slate-800">
-                            <p class="text-xs text-slate-600 dark:text-slate-400">An Admin approves the plan before this model changes.</p>
+                        @if (group.pending.length > 0 && correctionGroups().length > 1) {
+                          <!-- With several models, one can be sent on its own; with one, the bar below is the same action -->
+                          <div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-3 py-2 dark:border-slate-800">
                             <button
                               type="button"
                               [attr.data-testid]="'send-group-' + (group.modelName ?? 'none')"
                               [disabled]="monitoringBusy() || groupSelected(group).length === 0"
                               (click)="sendForRetraining(group)"
-                              class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                              class="inline-flex items-center gap-2 rounded-md border border-sky-600 px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-500 dark:text-sky-200 dark:hover:bg-sky-950 dark:disabled:border-slate-700 dark:disabled:text-slate-400"
                             >
                               Send {{ groupSelected(group).length }} to {{ group.title }}
                             </button>
@@ -1348,29 +1557,10 @@
                       <app-work-alert kind="success" role="status" data-testid="action-message">{{ actionMessage() }}</app-work-alert>
                     }
 
-                    @if (pendingCorrections().length > 0) {
-                      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <button
-                          type="button"
-                          data-testid="send-for-retraining"
-                          [disabled]="!canQueueCorrections()"
-                          (click)="sendForRetraining()"
-                          class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
-                        >
-                          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
-                          Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
-                        </button>
-                        <p class="text-xs text-slate-600 dark:text-slate-400">
-                          An Admin must approve before the model changes.
-                          <a routerLink="/models" class="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300">Open Models tab</a>
-                        </p>
-                      </div>
-                    }
-
                     @if (planModels().length > 0) {
                       <!-- Only when samples of this run were sent but no plan covers them (e.g. the plan
                            step failed) -->
-                      <div class="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30" data-testid="retraining-plan">
+                      <div class="rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30" data-testid="retraining-plan">
                         @for (entry of planModels(); track entry.name) {
                           <div class="flex items-center justify-between gap-2" [attr.data-plan-model]="entry.name">
                             <span>
@@ -1393,6 +1583,27 @@
                             </button>
                           </div>
                         }
+                      </div>
+                    }
+
+                    <!-- The one action, always in reach while there is something to send -->
+                    @if (pendingCorrections().length > 0) {
+                      <div class="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+                        <p class="text-xs text-slate-600 dark:text-slate-400">
+                          {{ selectedCorrections().length }} of {{ pendingCorrections().length }} selected.
+                          An Admin must approve the plan before any model changes.
+                          <a routerLink="/models" class="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300">Open Models tab</a>
+                        </p>
+                        <button
+                          type="button"
+                          data-testid="send-for-retraining"
+                          [disabled]="!canQueueCorrections()"
+                          (click)="sendForRetraining()"
+                          class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                        >
+                          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
+                          Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
+                        </button>
                       </div>
                     }
                   </section>

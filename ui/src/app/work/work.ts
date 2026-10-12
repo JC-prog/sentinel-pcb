@@ -23,7 +23,60 @@ import {
   WorkflowRunDrift,
 } from './models/orchestrator.models';
 import { aiSaid, formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
-import { CorrectionGroup, correctionKey, groupCorrections } from './work-feedback';
+import {
+  CorrectionGroup,
+  Tone,
+  Verdict,
+  correctionKey,
+  correctionStatusClass,
+  feedbackVerdict,
+  groupCorrections,
+  mixColor,
+  modelLabel,
+  modelStatus,
+  toneChipClass,
+  toneDotClass,
+} from './work-feedback';
+
+/** What the Work tab's third Review Console tab is called. One place, so a rename is one line. */
+const QUEUE_TAB_LABEL = 'Retraining queue';
+
+/** One card on the Model feedback tab: a model's error rate and how sure it was, in one place. */
+export interface ModelCard {
+  name: string;
+  title: string;
+  reviewed: number;
+  corrected: number;
+  /** 0-100, or null when the model classified nothing. */
+  rate: number | null;
+  detail: string;
+  meanConfidence: string;
+  lowConfidence: string;
+  agent2Disagreed: string;
+  /** 0-100 for the three small confidence bars. */
+  meanPct: number;
+  lowPct: number;
+  agent2Pct: number;
+  status: { tone: Tone; label: string };
+  /** The flagged samples as right / wrong / not classified / not reviewed, for the stacked bar. */
+  segments: { key: string; label: string; count: number; share: number; barClass: string }[];
+  flagged: number;
+  right: number;
+  wrong: number;
+  notClassified: number;
+}
+
+/** One cell of the "what it gets confused with" grid; level 0 is empty, 1-5 darkens with count. */
+export interface ConfusionCell {
+  col: string;
+  count: number;
+  level: number;
+}
+
+export interface ConfusionMatrix {
+  cols: string[];
+  rows: { label: string; cells: ConfusionCell[] }[];
+}
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
 import { WorkAlert } from './work-alert/work-alert';
@@ -125,10 +178,10 @@ export class Work implements OnDestroy {
       return [];
     }
     const parts = [
-      { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'bg-emerald-500' },
-      { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'bg-red-500' },
-      { key: 'no-answer', label: 'Not classified', count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
-      { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'bg-slate-300 dark:bg-slate-600' },
+      { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'viz-good' },
+      { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'viz-bad' },
+      { key: 'no-answer', label: 'Not classified', count: drift.totals.no_prediction, barClass: 'viz-warn' },
+      { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'viz-none' },
     ];
     const total = parts.reduce((sum, part) => sum + part.count, 0);
     return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
@@ -178,7 +231,7 @@ export class Work implements OnDestroy {
   });
 
   /** Headline numbers for the analytics section. */
-  protected readonly feedbackKpis: Signal<{ label: string; value: string; hint: string }[]> = computed(() => {
+  protected readonly feedbackKpis: Signal<{ label: string; value: string; hint: string; ring: number | null }[]> = computed(() => {
     const drift = this.runDrift();
     if (!drift?.available) {
       return [];
@@ -190,24 +243,26 @@ export class Work implements OnDestroy {
         label: 'Reviewed',
         value: t.review_required === 0 ? '—' : `${Math.round((t.decided / t.review_required) * 100)}%`,
         hint: `${t.decided} of ${t.review_required} flagged`,
+        ring: t.review_required === 0 ? 0 : (t.decided / t.review_required) * 100,
       },
       {
         label: 'Model accuracy',
         value: answered === 0 ? '—' : `${Math.round((t.confirmed / answered) * 100)}%`,
         hint: answered === 0 ? 'nothing classified yet' : `${t.confirmed} of ${answered} right`,
+        ring: answered === 0 ? 0 : (t.confirmed / answered) * 100,
       },
-      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or not classified' },
-      { label: 'Not classified', value: String(t.no_prediction), hint: 'no defect model ran' },
+      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or not classified', ring: null },
+      { label: 'Not classified', value: String(t.no_prediction), hint: 'no defect model ran', ring: null },
     ];
   });
 
   /** The outcome split as donut arcs (circumference 100, so a share is its own dash length). */
   protected readonly outcomeDonut: Signal<{ key: string; label: string; count: number; dash: string; offset: number; stroke: string }[]> = computed(() => {
     const strokes: Record<string, string> = {
-      confirmed: '#10b981',
-      relabelled: '#ef4444',
-      'no-answer': '#fbbf24',
-      pending: '#94a3b8',
+      confirmed: 'var(--viz-good)',
+      relabelled: 'var(--viz-bad)',
+      'no-answer': 'var(--viz-warn)',
+      pending: 'var(--viz-none)',
     };
     let offset = 25; // start at 12 o'clock
     return this.outcomeSegments().map((s) => {
@@ -217,32 +272,161 @@ export class Work implements OnDestroy {
     });
   });
 
-  /** Per-model telemetry from the stored run: how confident the defect model was, how often it was
-   * barely confident, and how often Agent 2 disagreed with it. */
-  protected readonly modelTelemetry: Signal<
-    { name: string; reviewed: number; meanConfidence: string; lowConfidence: string; agent2Disagreed: string }[]
-  > = computed(() =>
+  /** One card per defect model: how often it was wrong on the reviewed samples, how sure it was,
+   * how often Agent 2 disagreed with it - and a plain verdict, so the model that needs attention
+   * is the one that stands out. */
+  protected readonly modelCards: Signal<ModelCard[]> = computed(() =>
     (this.runDrift()?.models ?? [])
       .filter((m) => m.model_name !== null)
       .map((m) => ({
         name: m.model_name as string,
+        title: modelLabel(m.model_name),
         reviewed: m.decided,
+        corrected: m.corrected,
+        rate: m.correction_rate === null ? null : m.correction_rate * 100,
+        detail: `${m.corrected} of ${m.decided} reviewed`,
         meanConfidence: m.mean_confidence === null ? '—' : `${Math.round(m.mean_confidence * 100)}%`,
         lowConfidence: m.low_confidence_rate === null ? '—' : `${Math.round(m.low_confidence_rate * 100)}%`,
         agent2Disagreed: `${m.agent2_disagreed} of ${m.review_required}`,
+        meanPct: (m.mean_confidence ?? 0) * 100,
+        lowPct: (m.low_confidence_rate ?? 0) * 100,
+        agent2Pct: m.review_required === 0 ? 0 : (m.agent2_disagreed / m.review_required) * 100,
+        status: modelStatus(m.correction_rate, m.decided),
+        segments: this.outcomeParts(m),
+        flagged: m.review_required,
+        right: m.confirmed,
+        wrong: m.relabelled,
+        notClassified: m.no_prediction,
       })),
   );
 
-  /** One bar per defect model: how often it was wrong on the reviewed samples. */
-  protected readonly modelBars: Signal<{ name: string; rate: number; detail: string }[]> = computed(() =>
-    (this.runDrift()?.models ?? [])
-      .filter((m) => m.model_name !== null && m.correction_rate !== null)
-      .map((m) => ({
-        name: m.model_name as string,
-        rate: (m.correction_rate as number) * 100,
-        detail: `${m.corrected} of ${m.decided} reviewed`,
+  /** A model's flagged samples split into right / wrong / not classified / not reviewed. The
+   * shares are of what was flagged for it, so the bar is to scale across models. */
+  private outcomeParts(m: {
+    review_required: number;
+    decided: number;
+    confirmed: number;
+    relabelled: number;
+    no_prediction: number;
+  }): ModelCard['segments'] {
+    const pending = Math.max(m.review_required - m.decided, 0);
+    const parts = [
+      { key: 'confirmed', label: 'Model right', count: m.confirmed, barClass: 'viz-good' },
+      { key: 'relabelled', label: 'Model wrong', count: m.relabelled, barClass: 'viz-bad' },
+      { key: 'no-answer', label: 'Not classified', count: m.no_prediction, barClass: 'viz-warn' },
+      { key: 'pending', label: 'Not reviewed yet', count: pending, barClass: 'viz-none' },
+    ];
+    const total = parts.reduce((sum, part) => sum + part.count, 0);
+    return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
+  }
+
+  /** The region model (stage 1) as a card next to the defect models, when it has been checked. */
+  protected readonly regionCard: Signal<{
+    reviewed: number;
+    corrected: number;
+    accuracy: string;
+    rightShare: number;
+    wrongShare: number;
+    status: { tone: Tone; label: string };
+  } | null> = computed(() => {
+    const region = this.runDrift()?.region;
+    if (!region || region.reviewed === 0) {
+      return null;
+    }
+    return {
+      reviewed: region.reviewed,
+      corrected: region.corrected,
+      accuracy: percent(region.accuracy),
+      rightShare: ((region.reviewed - region.corrected) / region.reviewed) * 100,
+      wrongShare: (region.corrected / region.reviewed) * 100,
+      status: modelStatus(region.corrected / region.reviewed, region.reviewed),
+    };
+  });
+
+  /** One column per part area for the region chart: how many samples, how many were corrected. */
+  protected readonly regionColumns: Signal<
+    { region: string; samples: number; corrected: number; keptHeight: number; correctedHeight: number; mean_confidence: number | null }[]
+  > = computed(() => {
+    const areas = this.runDrift()?.region?.by_region ?? [];
+    const max = Math.max(1, ...areas.map((a) => a.samples));
+    return areas.map((a) => ({
+      region: a.region,
+      samples: a.samples,
+      corrected: a.corrected,
+      keptHeight: ((a.samples - a.corrected) / max) * 100,
+      correctedHeight: (a.corrected / max) * 100,
+      mean_confidence: a.mean_confidence,
+    }));
+  });
+
+  /** What the model said against the correct label, for the defect corrections: the grid shows
+   * which labels it mixes up. The five commonest of each side; the rest are folded into "other". */
+  protected readonly confusion: Signal<ConfusionMatrix | null> = computed(() => {
+    const items = this.corrections().filter((c) => c.kind !== 'region');
+    if (items.length === 0) {
+      return null;
+    }
+    const said = (c: WorkflowCorrection): string => (c.agent1_label ? labelText(c.agent1_label) : 'not classified');
+    const fixed = (c: WorkflowCorrection): string => labelText(c.final_result);
+    const top = (pick: (c: WorkflowCorrection) => string): string[] => {
+      const counts = new Map<string, number>();
+      for (const c of items) {
+        counts.set(pick(c), (counts.get(pick(c)) ?? 0) + 1);
+      }
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 5)
+        .map(([label]) => label);
+    };
+    const rowLabels = top(said);
+    const colLabels = top(fixed);
+    const bucket = (labels: string[], value: string): string => (labels.includes(value) ? value : 'other');
+    const hasOtherRow = items.some((c) => !rowLabels.includes(said(c)));
+    const hasOtherCol = items.some((c) => !colLabels.includes(fixed(c)));
+    const rows = hasOtherRow ? [...rowLabels, 'other'] : rowLabels;
+    const cols = hasOtherCol ? [...colLabels, 'other'] : colLabels;
+    const counts = new Map<string, number>();
+    for (const c of items) {
+      const key = `${bucket(rowLabels, said(c))}|${bucket(colLabels, fixed(c))}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const max = Math.max(1, ...counts.values());
+    return {
+      cols,
+      rows: rows.map((label) => ({
+        label,
+        cells: cols.map((col) => {
+          const count = counts.get(`${label}|${col}`) ?? 0;
+          return { col, count, level: count === 0 ? 0 : Math.max(1, Math.ceil((count / max) * 5)) };
+        }),
       })),
-  );
+    };
+  });
+
+  /** The run in one sentence: how the defect model did, and what to do about it. */
+  protected readonly verdict: Signal<Verdict> = computed(() => {
+    const drift = this.runDrift();
+    return feedbackVerdict(
+      drift?.totals ?? { decided: 0, confirmed: 0, relabelled: 0 },
+      drift?.decisions.pending ?? 0,
+    );
+  });
+
+  /** The step of the send-and-retrain flow the operator is waiting on, for the tracker. */
+  protected readonly currentStage: Signal<string | null> = computed(() => {
+    const stages = this.feedbackStages();
+    const to = stages.find((s) => s.key === 'to-send');
+    if (to && to.count > 0) {
+      return 'to-send';
+    }
+    return stages.find((s) => s.key !== 'to-send' && s.key !== 'retrained' && s.count > 0)?.key ?? null;
+  });
+
+  protected readonly queueTabLabel = QUEUE_TAB_LABEL;
+  protected readonly toneChipClass = toneChipClass;
+  protected readonly toneDotClass = toneDotClass;
+  protected readonly mixColor = mixColor;
+  protected readonly correctionStatusClass = correctionStatusClass;
 
   /** Who made the final call, and how often that call overruled the model. */
   protected readonly decisionSources: Signal<{ label: string; chosen: number; overruled: number; share: number }[]> = computed(() => {
@@ -272,7 +456,7 @@ export class Work implements OnDestroy {
 
   /** Where the flagged samples went, stage by stage: flagged -> defect model ran -> reviewed ->
    * corrected, each with its share of the flagged. */
-  protected readonly funnelSteps: Signal<{ key: string; label: string; count: number; share: number }[]> = computed(() => {
+  protected readonly funnelSteps: Signal<{ key: string; label: string; count: number; share: number; ofFlagged: string }[]> = computed(() => {
     const funnel = this.runDrift()?.funnel;
     if (!funnel) {
       return [];
@@ -283,7 +467,11 @@ export class Work implements OnDestroy {
       { key: 'defect-ran', label: 'Defect model ran', count: funnel.defect_ran },
       { key: 'reviewed', label: 'Reviewed by you', count: funnel.reviewed },
       { key: 'corrected', label: 'Needed a correction', count: funnel.corrected },
-    ].map((step) => ({ ...step, share: (step.count / base) * 100 }));
+    ].map((step) => ({
+      ...step,
+      share: (step.count / base) * 100,
+      ofFlagged: funnel.flagged === 0 ? '—' : `${Math.round((step.count / funnel.flagged) * 100)}%`,
+    }));
   });
 
   /** Agent 2's usefulness as percentages the template can show. */

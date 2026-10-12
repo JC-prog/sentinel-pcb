@@ -107,3 +107,133 @@ export function groupCorrections(corrections: readonly WorkflowCorrection[]): Co
       };
     });
 }
+
+export type Tone = 'good' | 'warn' | 'bad' | 'neutral';
+
+/** The run in one sentence for the Model feedback tab: how the defect model did, and what that
+ * means for what to do next. */
+export interface Verdict {
+  tone: Tone;
+  headline: string;
+  advice: string;
+}
+
+export function feedbackVerdict(
+  totals: { decided: number; confirmed: number; relabelled: number },
+  pending: number,
+): Verdict {
+  const answered = totals.confirmed + totals.relabelled;
+  const more = pending > 0 ? ' More flagged samples are still to review, so this may change.' : '';
+  if (totals.decided === 0) {
+    return {
+      tone: 'neutral',
+      headline: 'Nothing reviewed yet',
+      advice: 'Review the flagged samples to see how the model did.',
+    };
+  }
+  if (answered === 0) {
+    return {
+      tone: 'neutral',
+      headline: 'The defect model did not classify any reviewed sample',
+      advice:
+        'The region model was not sure enough for a defect model to run. Your labels can still be sent for retraining.' +
+        more,
+    };
+  }
+  const rate = totals.relabelled / answered;
+  const percentWrong = Math.round(rate * 100);
+  if (totals.relabelled === 0) {
+    return {
+      tone: 'good',
+      headline: `The defect model was right on all ${answered} sample${answered === 1 ? '' : 's'} it classified`,
+      advice: 'Nothing to correct from this run.' + more,
+    };
+  }
+  const headline = `The defect model was wrong on ${totals.relabelled} of ${answered} sample${answered === 1 ? '' : 's'} (${percentWrong}%)`;
+  if (rate >= 0.25) {
+    return {
+      tone: 'bad',
+      headline,
+      advice: 'That is a lot. Send the corrections so the model can learn from them.' + more,
+    };
+  }
+  if (rate >= 0.1) {
+    return {
+      tone: 'warn',
+      headline,
+      advice: 'Some mistakes. Worth sending the corrections.' + more,
+    };
+  }
+  return {
+    tone: 'good',
+    headline,
+    advice: 'Mostly right. Send the corrections if you want it to learn from the misses.' + more,
+  };
+}
+
+/** How one model is doing, from its error rate on the reviewed samples. A handful of samples is
+ * too few to call - heuristics, not rules. */
+export function modelStatus(rate: number | null, decided: number): { tone: Tone; label: string } {
+  if (rate === null) {
+    return { tone: 'neutral', label: 'Not classified' };
+  }
+  if (decided < 5) {
+    return { tone: 'neutral', label: 'Too few samples to judge' };
+  }
+  if (rate >= 0.25) {
+    return { tone: 'bad', label: 'Needs attention' };
+  }
+  if (rate >= 0.1) {
+    return { tone: 'warn', label: 'Keep an eye on it' };
+  }
+  return { tone: 'good', label: 'Looks healthy' };
+}
+
+/** The same colour for a label's bar segment and its legend swatch. */
+export function mixColor(index: number): string {
+  return `hsl(${index * 57 + 200} 65% 55%)`;
+}
+
+export function toneChipClass(tone: Tone): string {
+  switch (tone) {
+    case 'good':
+      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200';
+    case 'warn':
+      return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
+    case 'bad':
+      return 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200';
+    default:
+      return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+  }
+}
+
+/** The chip colour for where a correction stands on its way to retraining. */
+export function correctionStatusClass(correction: WorkflowCorrection): string {
+  if (!correction.queueable && !correction.queued) {
+    return toneChipClass('neutral');
+  }
+  switch (correction.ticket_status) {
+    case 'open':
+      return 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200';
+    case 'acknowledged':
+      return toneChipClass('warn');
+    case 'resolved':
+      return toneChipClass('good');
+    default:
+      return toneChipClass('neutral');
+  }
+}
+
+/** The small dot that carries a tone beside a read-out (the text stays in ink). */
+export function toneDotClass(tone: Tone): string {
+  switch (tone) {
+    case 'good':
+      return 'viz-good';
+    case 'warn':
+      return 'viz-warn';
+    case 'bad':
+      return 'viz-bad';
+    default:
+      return 'viz-none';
+  }
+}

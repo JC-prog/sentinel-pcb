@@ -1273,7 +1273,7 @@ describe('Work', () => {
 
         expect(fake.getRunDrift).toHaveBeenCalledWith('run-1');
         expect(tidy(byTestId('drift-rate'))).toBe('33%');
-        expect(tidy(byTestId('drift-of'))).toBe('1 of 3 the defect model classified were wrong'); // couldn't-decide not counted
+        expect(tidy(byTestId('drift-of'))).toBe('The defect model was wrong on 1 of 3 samples (33%)'); // couldn't-decide not counted
         expect(tidy(byTestId('review-progress'))).toBe('4 of 6 flagged samples reviewed');
         expect(tidy(byTestId('kpi-confirmed'))).toBe('2');
         expect(tidy(byTestId('kpi-relabelled'))).toBe('1');
@@ -1291,7 +1291,7 @@ describe('Work', () => {
         await openDriftTab();
 
         expect(tidy(byTestId('drift-rate'))).toBe('—');
-        expect(tidy(byTestId('drift-of'))).toBe('nothing reviewed yet');
+        expect(tidy(byTestId('drift-of'))).toBe('Nothing reviewed yet');
         expect(tidy(byTestId('review-progress'))).toBe('0 of 2 flagged samples reviewed - this changes as you review');
         expect(tidy(byTestId('activity-empty'))).toContain('No decisions yet');
 
@@ -1376,6 +1376,273 @@ describe('Work', () => {
         expect(fixture.nativeElement.querySelector('[data-model="pcb_body_defect"]')).not.toBeNull();
         expect(tidy(byTestId('review-activity'))).toContain('Accept Machine');
         expect(tidy(byTestId('review-activity'))).toContain('2 chosen, 2 overruled the model');
+      });
+
+      it('leads with a plain verdict, coloured by how bad it is, and what to do about it', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' })], {
+            totals: { samples: 10, review_required: 10, decided: 10, confirmed: 6, relabelled: 4, no_prediction: 0, corrected: 4 },
+            drift_rate: 0.4,
+            decisions: { by_source: {}, pending: 0, top_overruled: [] },
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const verdict = byTestId('verdict') as HTMLElement;
+        expect(verdict.getAttribute('data-tone')).toBe('bad');
+        expect(tidy(byTestId('drift-of'))).toBe('The defect model was wrong on 4 of 10 samples (40%)');
+        expect(tidy(byTestId('verdict-advice'))).toContain('Send the corrections');
+        // the next step is a button, not a hunt through the tabs
+        expect(tidy(byTestId('open-queue'))).toBe('Review and send 1 correction');
+        expect(byTestId('continue-review')).toBeNull();
+      });
+
+      it('offers to continue the review while samples are still waiting', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([], { decisions: { by_source: {}, pending: 3, top_overruled: [] } }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        expect(tidy(byTestId('continue-review'))).toBe('Continue review (3 left)');
+        (byTestId('continue-review') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(popup()?.textContent).toContain('Items Needing Explanation');
+      });
+
+      it('puts each model on one card with its verdict, error rate and confidence', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' })], {
+            models: [
+              {
+                model_name: 'pcb_body_defect',
+                model_version: null,
+                review_required: 12,
+                decided: 10,
+                confirmed: 6,
+                corrected: 4,
+                correction_rate: 0.4,
+                mean_confidence: 0.7,
+                low_confidence_rate: 0.5,
+                agent2_disagreed: 1,
+              },
+              {
+                model_name: 'pcb_lead_defect',
+                model_version: null,
+                review_required: 6,
+                decided: 6,
+                confirmed: 6,
+                corrected: 0,
+                correction_rate: 0,
+                mean_confidence: 0.9,
+                low_confidence_rate: 0,
+                agent2_disagreed: 0,
+              },
+            ],
+          } as never),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const body = fixture.nativeElement.querySelector('[data-model="pcb_body_defect"]') as HTMLElement;
+        expect(tidy(body)).toContain('Body defect model');
+        expect(tidy(body)).toContain('Needs attention');
+        expect(tidy(body.querySelector('[data-testid="corrected"]'))).toBe('40%');
+        const lead = fixture.nativeElement.querySelector('[data-model="pcb_lead_defect"]') as HTMLElement;
+        expect(tidy(lead)).toContain('Looks healthy');
+      });
+
+      it('shows the region model (stage 1) and the defect models (stage 2) as separate charts', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' })], {
+            region: {
+              reviewed: 4,
+              confirmed: 3,
+              corrected: 1,
+              accuracy: 0.75,
+              mean_confidence: 0.82,
+              stopped_here: 0,
+              by_region: [{ region: 'Body', samples: 4, corrected: 1, mean_confidence: 0.9 }],
+              swaps: [],
+            },
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const stage1 = byTestId('region-model') as HTMLElement;
+        const stage2 = byTestId('model-telemetry') as HTMLElement;
+        expect(tidy(stage1)).toContain('Stage 1');
+        expect(tidy(stage1)).toContain('Region model');
+        expect(tidy(stage2)).toContain('Stage 2');
+        expect(tidy(stage2)).toContain('Defect models');
+        // two separate figures: the region model is never one of the defect model cards
+        expect(stage1.contains(stage2)).toBe(false);
+        expect(stage2.contains(stage1)).toBe(false);
+        expect(stage2.querySelector('[data-model="pcb_region"]')).toBeNull();
+        expect(stage2.textContent).not.toContain('Region model');
+      });
+
+      it('draws each defect model as a stacked bar of right / wrong / not classified / not reviewed', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' })], {
+            models: [
+              {
+                model_name: 'pcb_body_defect',
+                model_version: null,
+                samples: 12,
+                review_required: 12,
+                decided: 10,
+                confirmed: 6,
+                relabelled: 3,
+                no_prediction: 1,
+                corrected: 4,
+                correction_rate: 0.4,
+                agent2_disagreed: 1,
+                low_confidence_rate: 0.5,
+                mean_confidence: 0.7,
+              },
+            ],
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const row = fixture.nativeElement.querySelector('[data-model="pcb_body_defect"]') as HTMLElement;
+        const titles = Array.from(row.querySelectorAll('[title]')).map((el) => el.getAttribute('title'));
+        expect(titles).toEqual([
+          'Model right: 6',
+          'Model wrong: 3',
+          'Not classified: 1',
+          'Not reviewed yet: 2',
+        ]);
+      });
+
+      it('shows the headline numbers as rings with their values', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1' })], {
+            totals: { samples: 10, review_required: 10, decided: 8, confirmed: 5, relabelled: 2, no_prediction: 1, corrected: 3 },
+            drift_rate: 2 / 7,
+          }),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const summary = byTestId('drift-summary') as HTMLElement;
+        expect(summary.querySelectorAll('svg circle').length).toBe(4); // two rings: track + arc each
+        expect(tidy(summary)).toContain('Reviewed80%');
+      });
+
+      it('lays out what the model gets confused with as a grid of counts', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', agent1_label: 'MissingPart', final_result: 'tombstone' }),
+            correction({ sample_id: 'S2', agent1_label: 'MissingPart', final_result: 'tombstone' }),
+            correction({ sample_id: 'S3', agent1_label: 'Bridge', final_result: 'tombstone' }),
+          ]),
+        );
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const matrix = byTestId('confusion-matrix') as HTMLElement;
+        const counts = Array.from(matrix.querySelectorAll('td[data-count]')).map((c) => c.getAttribute('data-count'));
+        expect(counts.sort()).toEqual(['1', '2']);
+        expect(tidy(matrix)).toContain('missing part');
+        expect(tidy(matrix)).toContain('tombstone');
+      });
+
+      it('offers the model numbers as a table for anyone who cannot read the charts', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' })]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const table = byTestId('chart-table') as HTMLDetailsElement;
+        expect(table.tagName).toBe('DETAILS');
+        expect(tidy(table)).toContain('Body defect model');
+        expect(tidy(table)).toContain('Not classified');
+      });
+
+      it('names what each tab is for', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction()]));
+        await showRun([reviewCase()]);
+        await openConsole();
+        expect(tidy(byTestId('tab-purpose'))).toContain('Step 1');
+
+        (byTestId('tab-drift') as HTMLButtonElement).click();
+        await settle();
+        expect(tidy(byTestId('tab-purpose'))).toContain('Step 2');
+
+        (byTestId('tab-queue') as HTMLButtonElement).click();
+        await settle();
+        expect(tidy(byTestId('tab-purpose'))).toContain('Step 3');
+      });
+
+      it('marks the step the corrections are waiting on', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' })]));
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        const current = fixture.nativeElement.querySelector('[data-stage][aria-current="step"]') as HTMLElement;
+        expect(current.getAttribute('data-stage')).toBe('to-send');
+
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([correction({ sample_id: 'S1', queued: true, ticket_status: 'acknowledged' })]),
+        );
+        await fixture.componentInstance.refreshDrift();
+        fixture.detectChanges();
+        const next = fixture.nativeElement.querySelector('[data-stage][aria-current="step"]') as HTMLElement;
+        expect(next.getAttribute('data-stage')).toBe('approval');
+      });
+
+      it('shows one send button when there is one model, and a button per model when there are several', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' })]));
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        expect(byTestId('send-group-pcb_body_defect')).toBeNull(); // same action as the bar below
+        expect(sendButton()).not.toBeNull();
+
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1' }),
+            correction({ sample_id: 'S2', model_name: 'pcb_lead_defect' }),
+          ]),
+        );
+        await fixture.componentInstance.refreshDrift();
+        fixture.detectChanges();
+        expect(byTestId('send-group-pcb_body_defect')).not.toBeNull();
+        expect(byTestId('send-group-pcb_lead_defect')).not.toBeNull();
+      });
+
+      it('colours the label mix legend the same as its bar, and colours the status', async () => {
+        fake.getRunDrift.mockResolvedValue(
+          runDrift([
+            correction({ sample_id: 'S1', final_result: 'tombstone' }),
+            correction({ sample_id: 'S2', final_result: 'shifted', queued: true, ticket_status: 'resolved' }),
+          ]),
+        );
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        const mix = byTestId('group-mix') as HTMLElement;
+        const swatches = Array.from(mix.querySelectorAll('li > span[aria-hidden="true"]')) as HTMLElement[];
+        const segments = Array.from(mix.querySelectorAll('[role="img"] > span')) as HTMLElement[];
+        expect(swatches.length).toBe(segments.length);
+        expect(swatches[0].style.backgroundColor).toBe(segments[0].style.backgroundColor);
+
+        const status = fixture.nativeElement.querySelector('[data-sample="S2"] [data-testid="correction-status"]') as HTMLElement;
+        expect(status.className).toContain('emerald');
+      });
+
+      it('points back to the review when nothing has been reviewed', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([]));
+        await showRun([reviewCase()]);
+        await openQueueTab();
+
+        (byTestId('empty-go-review') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(popup()?.textContent).toContain('Items Needing Explanation');
       });
 
       it('keeps Model feedback a report: graphs and telemetry, with a pointer to the queue', async () => {
@@ -1659,7 +1926,7 @@ describe('Work', () => {
 
         // not "100% wrong": the model never answered
         expect(tidy(byTestId('drift-rate'))).toBe('—');
-        expect(tidy(byTestId('drift-of'))).toBe('the defect model classified none of the reviewed samples');
+        expect(tidy(byTestId('drift-of'))).toBe('The defect model did not classify any reviewed sample');
         expect(tidy(byTestId('kpi-no-answer'))).toBe('2');
 
         // the labels can still be sent, to the model the region guess points at
