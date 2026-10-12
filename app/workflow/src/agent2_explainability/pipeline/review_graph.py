@@ -1,6 +1,6 @@
 """
 LangGraph Review & Explainability State Machine for Agent 2.
-Reconciles baseline predictions, local VLM observations, and physical telemetry against IPC-A-610 standards.
+Reconciles baseline predictions, vision-model observations, and physical telemetry against IPC-A-610 standards.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
-import requests
 import yaml
 from dotenv import load_dotenv
 from PIL import Image
@@ -47,6 +46,8 @@ class ReviewState(TypedDict):
     retrieved_precedents: List[Dict[str, Any]]
     telemetry_data: Dict[str, Any]
     visual_evidence: str
+    # Where visual_evidence came from: "vision_model" | "fallback" | "skipped" (see inspect_visuals_node)
+    visual_evidence_source: str
 
     # Final Evaluation & Grounding
     predicted_defect: str
@@ -139,7 +140,7 @@ def extract_telemetry_node(state: ReviewState) -> Dict[str, Any]:
     # 1. Respect pre-populated or mocked telemetry_data if already populated
     existing_tel = state.get("telemetry_data")
     if existing_tel and isinstance(existing_tel, dict) and "laser_profile_height_um" in existing_tel:
-        return {"telemetry_data": existing_tel}
+        return {"telemetry_data": {"telemetry_source": "measured", **existing_tel}}
 
     aoi_data = state.get("aoi_measurements", {})
     flat_measurements: Dict[str, Any] = {}
@@ -202,7 +203,13 @@ def extract_telemetry_node(state: ReviewState) -> Dict[str, Any]:
         # Fallback heuristic: sub-5 um implies missing part / open circuit
         ict_status = "FAIL" if laser_height_val < 5.0 else "PASS"
 
+    # Deviation from the source project: the values below default to 0.0 when the AOI record carries
+    # no physical measurement, which then read as "laser height 0 um, open circuit" for every sample.
+    # `telemetry_source` says whether anything was actually measured so nothing downstream (the
+    # self-check, the Review Console) treats an absent reading as a real one.
+    has_physical = laser_h is not None or flat_measurements.get("ict_status") is not None
     telemetry = {
+        "telemetry_source": "measured" if has_physical else "not_recorded",
         "board_id": state.get("board_id"),
         "component_ref": state.get("component_ref"),
         "laser_profile_height_um": laser_height_val,
@@ -232,21 +239,30 @@ def locate_image(raw_path: Optional[str]) -> Optional[Path]:
 
 
 def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
-    """Queries local LLaVA VLM with context-aware prompt tailored to the feature crop."""
+    """Asks an OpenAI vision model about the defect crop with a prompt tailored to the feature.
+
+    Deviation from the source project (which called a local LLaVA through Ollama): the app uses
+    OpenAI only - see app/workflow/INTEGRATION_NOTES.md. `visual_evidence_source` records whether
+    the text came from the model or is a fixed sentence, so the Review Console can say so."""
     # If visual evidence was already pre-populated or mocked, retain it
     if state.get("visual_evidence") and len(state["visual_evidence"].strip()) > 5:
-        return {"visual_evidence": state["visual_evidence"]}
+        return {
+            "visual_evidence": state["visual_evidence"],
+            "visual_evidence_source": state.get("visual_evidence_source") or "vision_model",
+        }
 
     raw_defect_path = state.get("defect_image_path")
     defect_img_path = locate_image(raw_defect_path)
 
     vlm_config = CONFIG.get("models", {}).get("vlm", {})
-    ollama_url = vlm_config.get("base_url", "http://localhost:11434")
-    model_name = vlm_config.get("model_name", "llava")
+    model_name = vlm_config.get("model_name", "gpt-4o")
 
     if not defect_img_path or not defect_img_path.is_file():
         logger.warning(f"Could not locate image file for: {raw_defect_path}")
-        return {"visual_evidence": f"Defect image '{raw_defect_path}' missing. Visual inspection skipped."}
+        return {
+            "visual_evidence": f"Defect image '{raw_defect_path}' missing. Visual inspection skipped.",
+            "visual_evidence_source": "skipped",
+        }
 
     feat_type = state.get("feature_type", "Body")
     prelim = state.get("preliminary_defect", "Defect")
@@ -265,37 +281,47 @@ def inspect_visuals_node(state: ReviewState) -> Dict[str, Any]:
             f"Answer in 1-2 concise sentences."
         )
 
-    try:
-        # Downscale thumbnail to 384x384 to drop Ollama vision encoding latency from ~26s down to ~3s
-        with Image.open(defect_img_path) as img:
-            img_rgb = img.convert("RGB")
-            img_rgb.thumbnail((384, 384))
-            buf = io.BytesIO()
-            img_rgb.save(buf, format="JPEG", quality=80)
-            b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            # Downscale the thumbnail: smaller images are cheaper and faster to encode.
+            with Image.open(defect_img_path) as img:
+                img_rgb = img.convert("RGB")
+                img_rgb.thumbnail((512, 512))
+                buf = io.BytesIO()
+                img_rgb.save(buf, format="JPEG", quality=80)
+                b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-        resp = requests.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": prompt,
-                "images": [b64_img],
-                "stream": False,
-                "options": {
-                    "temperature": 0.0,
-                    "num_predict": 75  # Keeps generation short and prevents timeout
-                }
-            },
-            timeout=120.0  # Generous 120s timeout
-        )
-        if resp.status_code == 200:
-            evidence = resp.json().get("response", "").strip()
-            return {"visual_evidence": evidence}
-    except Exception as e:
-        logger.warning(f"Local Ollama VLM call skipped/failed: {e}.")
+            vision_model = ChatOpenAI(
+                model=model_name,
+                temperature=0.0,
+                max_tokens=int(vlm_config.get("max_tokens", 150)),
+                api_key=openai_key,
+            )
+            response = vision_model.invoke(
+                [
+                    HumanMessage(
+                        content=[
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"},
+                            },
+                        ]
+                    )
+                ]
+            )
+            evidence = str(response.content).strip()
+            if evidence:
+                return {"visual_evidence": evidence, "visual_evidence_source": "vision_model"}
+        except Exception as e:
+            logger.warning(f"OpenAI vision call skipped/failed: {e}.")
 
-    # Heuristic fallback if VLM is offline or times out
-    return {"visual_evidence": f"Visual inspection of {feat_type} crop for {comp} confirms anomaly flagged by AOI."}
+    # Fixed sentence if the vision model is unavailable (no key, or the call failed)
+    return {
+        "visual_evidence": f"Visual inspection of {feat_type} crop for {comp} confirms anomaly flagged by AOI.",
+        "visual_evidence_source": "fallback",
+    }
 
 
 def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
@@ -316,28 +342,22 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
     )
 
     system_prompt = (
-        "You are an industrial PCB QA Master Inspector performing physics-grounded cross-verification.\n\n"
-        "CROSS-MODAL CONTRADICTION & GROUNDING RULES:\n"
-        "1. Missing Part Verification:\n"
-        "   - If physical telemetry indicates open circuit (ICT == FAIL) and near-zero laser height (< 5.0 µm), "
-        "     the component is physically MISSING, even if optical detector notes solder paste discoloration or pad shadows.\n"
-        "   - In this case, resolve the contradiction: set predicted_defect = 'missing part', "
-        "     contradiction_detected = true, self_check_passed = true (since the physical contradiction was successfully resolved).\n"
-        "2. Nominal Seating Verification:\n"
-        "   - If laser height is nominal (~35-45 µm), coplanarity is flat (< 5.0 µm), and ICT == PASS, "
-        "     flagged optical shadows do NOT constitute a tombstone. Set predicted_defect = 'no defect', "
-        "     contradiction_detected = true, self_check_passed = true.\n"
-        "3. Shifted Placement:\n"
-        "   - If side overhang exceeds 50%, classify as 'shifted' under IPC-A-610 Class 2 regardless of electrical continuity.\n"
-        "4. Unresolvable Discrepancies:\n"
-        "   - Set self_check_passed = false ONLY when telemetry and vision cannot be reconciled and human QA review is mandatory.\n\n"
+        "You are Agent 2 (Explainability & Grounding Specialist for PCB SMT defect triage).\n\n"
+        "EVIDENCE WEIGHTING DIRECTIVE (STRICT):\n"
+        "1. HIGHEST IMPORTANCE — Tool 1 (IPC Standards & Precedents) & Tool 2 (Visual Evidence):\n"
+        "   - Give the most weight to Tool 2 (optical/VLM observations of presence, alignment, solder wetting) "
+        "and Tool 1 (historical precedents and authoritative IPC-A-610 criteria).\n"
+        "   - These two sources represent ground truth and regulatory compliance.\n\n"
+        "2. Do not consider decision using Tool 3 (Physical Measurements & Telemetry):\n"
+        "   - Do not consider Tool 3 (3D AOI laser heights, ICT values, resistance/capacitance).\n"
+        "   - Physical measurements are noisy and secondary in favor of visual evidence and precedent standards.\n\n"
         "Return ONLY a valid JSON object matching this schema:\n"
         "{\n"
         '  "predicted_defect": "missing part | shifted | foreign material | tombstone | solder insufficient | wrong part | no defect",\n'
         '  "confidence": float (0.0 to 1.0),\n'
         '  "contradiction_detected": bool,\n'
         '  "self_check_passed": bool,\n'
-        '  "diagnosis": "Detailed root-cause explanation citing physical measurements and IPC clauses.",\n'
+        '  "diagnosis": "Detailed root-cause explanation citing visual features and IPC clauses.",\n'
         '  "ipc_citations": ["IPC-A-610 clause"]\n'
         "}"
     )
@@ -349,7 +369,11 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
         "preliminary_defect": state.get("preliminary_defect"),
         "baseline_confidence": state.get("baseline_confidence"),
         "visual_evidence": state.get("visual_evidence"),
-        "physical_telemetry": state.get("telemetry_data"),
+        "physical_telemetry": (
+            state.get("telemetry_data")
+            if (state.get("telemetry_data") or {}).get("telemetry_source") != "not_recorded"
+            else "not recorded for this sample"
+        ),
         "ipc_precedents": state.get("retrieved_precedents")
     }
 
@@ -381,6 +405,21 @@ def grounding_self_check_node(state: ReviewState) -> Dict[str, Any]:
 def _heuristic_self_check(state: ReviewState) -> Dict[str, Any]:
     """Fallback deterministic logic when OpenAI is unreachable."""
     tel = state.get("telemetry_data", {})
+    if tel.get("telemetry_source") == "not_recorded":
+        # Nothing was measured, so the physical rules below have nothing to stand on: keep the
+        # baseline label and say the check could not be completed, rather than inventing a verdict.
+        baseline = normalize_label(state.get("preliminary_defect", ""))
+        return {
+            "predicted_defect": baseline,
+            "final_confidence": float(state.get("baseline_confidence", 0.0)),
+            "contradiction_detected": False,
+            "self_check_passed": False,
+            "diagnosis": (
+                "No physical measurements were recorded for this sample and the language model "
+                "was unavailable, so the baseline label is kept and needs human review."
+            ),
+            "ipc_citations": [],
+        }
     laser_h = tel.get("laser_profile_height_um", 0.0)
     overhang = tel.get("side_overhang_percent", 0.0)
     ict_status = tel.get("ict_status", "PASS")
@@ -469,6 +508,7 @@ def execute_explainability_review(input_data: Dict[str, Any]) -> Dict[str, Any]:
         "retrieved_precedents": [],
         "telemetry_data": {},
         "visual_evidence": "",
+        "visual_evidence_source": "",
         "predicted_defect": "",
         "final_confidence": 0.0,
         "diagnosis": "",

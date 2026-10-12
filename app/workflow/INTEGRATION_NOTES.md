@@ -207,6 +207,28 @@ Here that became:
   chat reads the same Qdrant collections read-only through its own reader
   (`app/chat/services/run_samples.py`, the sample agent).
 
+## Agent 2 re-port (Oct 2026) and where it deviates from `pcb_agentic_inspector`
+
+`src/agent2_explainability/pipeline/review_graph.py` and `mcp/agent2_mcp_server.py` were re-ported
+from the upstream copy dated 2026-10-10. Its grounding prompt weights visual evidence and IPC
+precedents and no longer lets physical telemetry decide the verdict. Deliberate deviations:
+
+- **OpenAI only, no Ollama.** The visual step (and the MCP `visual_evidence_tool`) call an OpenAI
+  vision model (`models.vlm.model_name`, `gpt-4o`) with `OPENAI_API_KEY`, instead of a local LLaVA.
+  Without a key (or when the call fails) it falls back to the fixed sentence and says so:
+  `visual_evidence_source` is `vision_model`, `fallback` or `skipped`.
+- **No invented telemetry.** `extract_telemetry_node` still fills missing readings with 0.0 (so the
+  state shape is unchanged) but sets `telemetry_source: "not_recorded"` when the AOI record has no
+  laser height or ICT status. The heuristic self-check then keeps the baseline label and reports
+  `self_check_passed: false`, and the LLM is told the readings were not recorded.
+- Config path resolved from the file, and no `rglob` crawl for images (kept from the first port).
+- Ported tests: `test_agent_graph`, `test_agent2_security`, `test_mcp_tools`. Not ported: `main.py`
+  (CLI), `integrate_ui.py`, `evals/`, `src/data/qdrant_store.py` and its test (the MCP server is
+  unwired, and uses a local embedded Qdrant), `test_metadata_and_telemetry` (needs `main.py`).
+  `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
+  `test_agent2_security[../../../../../../etc/passwd]` fail the same way upstream.
+  Run them from `app/workflow/`: `PYTHONPATH=<repo>:. python -m pytest tests/<file>`.
+
 ## Explicitly kept, not wired
 
 - **`src/agent2_explainability/{a2a,mcp}/`** - the A2A server and the FastMCP tool server. Present
