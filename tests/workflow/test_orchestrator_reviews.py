@@ -1,7 +1,7 @@
 """Covers the Work tab's Agent 2 review + human-in-the-loop decision routes
 (POST /api/orchestrator/reviews/run, PUT .../reviews/decision, GET .../reviews/decisions) and the
 pure helpers in app/workflow/services/reviews.py. The LangGraph pipeline itself is stubbed - it
-needs images, Ollama and (optionally) OpenAI; these tests are about what the web layer does with
+needs images and OpenAI; these tests are about what the web layer does with
 its output.
 """
 

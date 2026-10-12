@@ -352,7 +352,7 @@ async def _turn(
     return [
         event
         async for event in supervisor.run_turn(
-            provider="ollama",
+            provider="openai",
             messages=[HumanMessage("it should be golden")],
             ctx=ctx,
             tools=[RELABEL_CASE, CONFIRM_RELABEL],

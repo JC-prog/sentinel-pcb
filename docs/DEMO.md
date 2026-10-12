@@ -49,9 +49,8 @@ powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows
 ```
 
 You need these running: Postgres and Qdrant (Docker), the backend (`:8000`), the **inference
-service (`:8001`)**, the UI (`http://localhost:4200`), and **Ollama** with a tool-calling model if you
-use the local LLM (`OLLAMA_MODEL`, default `gemma4:12b`). For OpenAI instead, set
-`OPENAI_API_KEY` in `.env` (see ONBOARDING).
+service (`:8001`)**, the UI (`http://localhost:4200`), and `OPENAI_API_KEY` set in `.env`
+(see ONBOARDING).
 
 Quick checks: `curl localhost:8000/health`, `curl localhost:8001/health` (should list four models),
 and `http://localhost:6333/dashboard` (Qdrant).
@@ -94,8 +93,6 @@ it will be QA.)
 - [ ] Chat provider works: send "hello" in Chat.
 - [ ] Do **one full dry run** of Act 4-5 (the Work tab takes ~35 s plus Agent 2). Then click
       **Clear Log** so you start the demo from an empty Work tab.
-- [ ] Decide Local LLM vs OpenAI in the chat settings. The local 12B model handled every prompt
-      below correctly; a hosted model is usually faster.
 
 ---
 

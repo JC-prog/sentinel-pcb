@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-LlmProvider = Literal["ollama", "openai"]
+LlmProvider = Literal["openai"]
 
 
 class ChatStreamRequest(BaseModel):
@@ -14,7 +14,7 @@ class ChatStreamRequest(BaseModel):
     # inspect_image (app/chat/agents/inspection_agent/), optional there too. Not persisted on Message
     # like image_ids is - ephemeral to the tool call, not part of the message history.
     xml_ids: list[str] = []
-    provider: LlmProvider = "ollama"
+    provider: LlmProvider = "openai"
 
 
 class ConversationSummary(BaseModel):

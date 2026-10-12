@@ -22,14 +22,6 @@ missing, but install them first to save a round trip.
 
 uv fetches Python 3.12 itself, so you do **not** need a separate Python install.
 
-Optional, only for the "Local LLM" option or Ollama embeddings:
-
-- **[Ollama](https://ollama.com)**, then pull the models you intend to use:
-  ```bash
-  ollama pull llama3.2          # default local chat model
-  ollama pull nomic-embed-text  # default local long-term-memory embedding model
-  ```
-
 ---
 
 ## 2. Clone
@@ -55,9 +47,8 @@ It is idempotent (safe to re-run after every `git pull`). It:
 3. checks Docker is installed and running
 4. starts the `db` and `qdrant` containers:
    `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant`
-5. checks for Ollama (optional - just prints whether it found one)
-6. `npm install` in `ui/`
-7. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
+5. `npm install` in `ui/`
+6. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
 
 It finishes with `Setup complete.` and a reminder of the run commands. If it fails partway, see
 [Troubleshooting](#8-troubleshooting) and re-run it.
@@ -71,10 +62,10 @@ need to set by hand:
 
 | Key | Set it when | Value |
 |---|---|---|
-| `OPENAI_API_KEY` | your work touches the OpenAI provider, the chat agents' LLM pass, OpenAI embeddings or the Work tab's LLM planner | your **own** OpenAI API key (`sk-...`). `.env` is git-ignored. Leave blank to work Ollama-only (OpenAI calls are refused). |
+| `OPENAI_API_KEY` | always - chat, the agents, memory embeddings and Agent 2 all use it | your **own** OpenAI API key (`sk-...`). `.env` is git-ignored. Chat and the agents refuse to run without it. |
 
 Leave these alone - they already point at the local containers:
-`DATABASE_URL`, `QDRANT_URL`, `OLLAMA_BASE_URL`, `JWT_SECRET_KEY` (auto-generated in step 3).
+`DATABASE_URL`, `QDRANT_URL`, `JWT_SECRET_KEY` (auto-generated in step 3).
 Do not set `OPENAI_BASE_URL` unless you are deliberately pointing at another OpenAI-compatible
 endpoint; unset, calls go to OpenAI.
 
@@ -173,7 +164,7 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 | OpenAI chat returns a 401 / auth error | `OPENAI_API_KEY` in `.env` is blank or not a valid `sk-...` key. Fix it and restart the backend. |
 | OpenAI calls fail with `Connection refused` on `localhost:4000`, or `No connected db` | Your `.env` still has the LiteLLM-era `OPENAI_BASE_URL`. Delete that line (see "Coming from the LiteLLM-era setup" above) and restart the backend. |
 | Ran a `docker compose` command by hand and `${...}` values came out blank | You likely dropped `--env-file .env` from the command. Without it, Compose can't find the repo-root `.env` for this file's `${...}` substitutions and silently treats them as blank - always include `--env-file .env` (run from the repo root) with any `docker compose -f infra/development/docker-compose.yml ...` command. |
-| Long-term memory silently does nothing | Using Ollama embeddings? Run `ollama pull nomic-embed-text`. Or disable it with `MEMORY_ENABLED=False` in `.env`. |
+| Long-term memory silently does nothing | Check `OPENAI_API_KEY` is set and `MEMORY_ENABLED=True` in `.env`. |
 | Anything half-installed | The script is idempotent - just run it again. |
 
 ---

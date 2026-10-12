@@ -12,7 +12,7 @@ SentinelChat is a ChatGPT-style assistant with a domain twist: alongside ordinar
 diagnose **PCB (printed circuit board) inspection defects** from an attached image. It has:
 
 - a streaming chat UI (Angular) over a FastAPI backend,
-- a per-conversation choice of LLM provider (a local Ollama model, or OpenAI through a gateway),
+- chat on OpenAI, through the server-side key,
 - user accounts with roles, short-term (per-conversation) and long-term (cross-conversation) memory,
 - mid-conversation tool calling over several agents - an **inspect agent** that classifies an
   uploaded image and shows the result (a Case is only created if the user asks for one), a
@@ -44,7 +44,6 @@ flowchart TD
     end
 
     openai["OpenAI API"]
-    ollama["Ollama (optional, local model)"]
     langfuse["Langfuse (optional tracing)"]
 
     browser -->|"/* (UI)"| cf --> s3
@@ -52,7 +51,6 @@ flowchart TD
     be --> pg
     be --> qd
     be --> openai
-    be -.->|per-conversation choice| ollama
     be -->|Inspect & Relabel agents| inf
     be -.->|traces| langfuse
 ```
@@ -91,7 +89,7 @@ safety net (`scripts/create_admin_user.py` can also promote one). Chat requires 
    (`app/chat/services/history.py`, bounded by `CHAT_HISTORY_MAX_TURNS`) and, for a brand-new
    conversation, up to `MEMORY_RETRIEVAL_TOP_K` long-term memories into the system prompt.
 3. It hands the reply to the supervisor agent (`app/chat/agents/supervisor.py`, a LangGraph
-   agent over the conversation's chosen model - `build_chat_model("ollama"|"openai")`) and relays
+   agent over the OpenAI chat model - `build_chat_model("openai")`) and relays
    what it does over Server-Sent Events: `event: delta` for reply text, `tool_call` / `tool_result`
    around tools, then `done` (or `error`).
 4. The user message and the final assistant reply are persisted. Nothing in between is.
@@ -155,8 +153,9 @@ consult it. When it does run:
 
 ```
 retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_self_check
-  (hardcoded mock         (AOI measurement       (local Ollama          (GPT-4o reasoning,
-   IPC precedents)         flattening)             LLaVA VLM)            heuristic fallback)
+  (hardcoded mock         (AOI measurement       (OpenAI vision         (GPT-4o reasoning,
+   IPC precedents)         flattening, flagged     model)                heuristic fallback)
+                           when not recorded)
 ```
 
 Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
@@ -223,7 +222,7 @@ Nothing here retrains or promotes - see the Models tab below. `MONITORING_AGENT_
 ### LLM and tracing
 
 Every chat model is built in one place, `app/shared/config/llm.py`: the conversation's choice
-(`build_chat_model("ollama"|"openai")`) for the supervisor and memory's fact extraction, and the
+(`build_chat_model("openai")`) for the supervisor and memory's fact extraction, and the
 agents' own from `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` for the inspect agent's ReAct pass (blank
 model falls back to the provider's chat model). `openai` goes through `openai_base_url` (OpenAI direct by default). Every model
 logs its requests and responses at DEBUG. Changing model - or provider, with its `langchain-<name>` package installed - is a
@@ -303,8 +302,6 @@ another OpenAI-compatible endpoint.
 | Local dev | **each developer's own** | their git-ignored `.env` as `OPENAI_API_KEY` |
 | Production | **one shared key** | AWS Secrets Manager (`sentinelchat/openai`), injected into the backend task as `OPENAI_API_KEY` |
 
-Ollama (the "Local LLM" option) is a separate path - the backend calls it directly, no key.
-
 ---
 
 ## 6. Environments
@@ -381,7 +378,6 @@ See [`infra/production/README.md`](../infra/production/README.md) for the deploy
 - No custom domain or TLS certificate - CloudFront and the ALB use default AWS domains.
 - One shared OpenAI key, no per-consumer budgets or spend caps.
 - No autoscaling on any ECS service; each runs a single task.
-- In production, the "Local LLM" (Ollama) option is not available - no Ollama instance is deployed.
 
 ---
 

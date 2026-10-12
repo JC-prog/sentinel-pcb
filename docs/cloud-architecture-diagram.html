@@ -134,7 +134,7 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
   <div class="diagram-scroll">
     <figure>
       <svg class="schematic" viewBox="0 0 1240 900" role="img"
-           aria-label="Diagram: the browser reaches one CloudFront distribution, which serves the Angular build from a private S3 bucket by default and forwards /api/* to an Application Load Balancer. The ALB sits inside the default VPC's public subnets alongside the backend ECS Fargate service, which reaches RDS PostgreSQL and an inference ECS service, each gated by a security group that allows traffic only from the tier in front of it. The backend calls the public OpenAI API directly since there is no NAT Gateway. CloudWatch Logs and Secrets Manager provide logging and secret injection to the ECS services. Two components the application depends on, Qdrant for long-term memory and Ollama for the local LLM option, are drawn as dashed gap boxes with unterminated stub connectors, since neither is provisioned anywhere in this Terraform.">
+           aria-label="Diagram: the browser reaches one CloudFront distribution, which serves the Angular build from a private S3 bucket by default and forwards /api/* to an Application Load Balancer. The ALB sits inside the default VPC's public subnets alongside the backend ECS Fargate service, which reaches RDS PostgreSQL and an inference ECS service, each gated by a security group that allows traffic only from the tier in front of it. The backend calls the public OpenAI API directly since there is no NAT Gateway. CloudWatch Logs and Secrets Manager provide logging and secret injection to the ECS services. Qdrant, which the application uses for long-term memory, is drawn as a dashed gap box with an unterminated stub connector, since it is not provisioned anywhere in this Terraform.">
         <defs>
           <pattern id="grid2" width="22" height="22" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="1" class="grid-dot"/>
@@ -246,15 +246,6 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <text x="631" y="794" font-size="9.5" class="sub">PCB case store</text>
         <text x="631" y="812" font-size="9" class="gaptag">NOT PROVISIONED</text>
 
-        <!-- ===== gap: Ollama ===== -->
-        <path d="M930,690 L930,733" class="wire-gap"/>
-        <circle cx="930" cy="740" r="4" class="stub-end"/>
-        <rect x="835" y="740" width="190" height="80" rx="3" class="box-gap"/>
-        <text x="851" y="766" font-size="13" class="title-sans" style="fill:var(--gap-strong)">Ollama</text>
-        <text x="851" y="782" font-size="9.5" class="sub">the &ldquo;Local LLM&rdquo;</text>
-        <text x="851" y="794" font-size="9.5" class="sub">option in Settings</text>
-        <text x="851" y="812" font-size="9" class="gaptag">NOT DEPLOYED</text>
-
         <!-- ===== utility column: CloudWatch + Secrets Manager ===== -->
         <rect x="280" y="420" width="260" height="90" rx="3" class="box-live"/>
         <text x="296" y="444" font-size="12.5" class="title-sans">CloudWatch Logs</text>
@@ -274,10 +265,9 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
       </svg>
       <figcaption>
         Everything solid copper is a resource <code style="font-family:var(--font-mono)">terraform apply</code> in
-        <code style="font-family:var(--font-mono)">infra/production/</code> actually creates today. The two dashed
-        rust-colored boxes are the opposite: things <code style="font-family:var(--font-mono)">app/</code> reads a
-        setting for (<code style="font-family:var(--font-mono)">QDRANT_URL</code>,
-        <code style="font-family:var(--font-mono)">OLLAMA_BASE_URL</code>) that no <code style="font-family:var(--font-mono)">.tf</code> file
+        <code style="font-family:var(--font-mono)">infra/production/</code> actually creates today. The dashed
+        rust-colored box is the opposite: things <code style="font-family:var(--font-mono)">app/</code> reads a
+        setting for (<code style="font-family:var(--font-mono)">QDRANT_URL</code>) that no <code style="font-family:var(--font-mono)">.tf</code> file
         provisions &mdash; their stub connectors end in an open circle because there's nothing on the other end.
       </figcaption>
     </figure>
@@ -287,7 +277,6 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
     <h2>Known gaps &mdash; deliberate, per infra/production/README.md</h2>
     <ul>
       <li><strong>Qdrant is not provisioned anywhere.</strong> Long-term memory and the embedded PCB-case store both depend on it; in production today they'd have nowhere to reach (the app degrades gracefully, so this fails silently rather than crashing &mdash; memory just never works).</li>
-      <li><strong>No Ollama instance.</strong> The "Local LLM" option in Settings has no <code>OLLAMA_BASE_URL</code> to point at in production.</li>
       <li><strong>Chat image uploads are on local container disk</strong>, not S3 &mdash; fine at <code>desired_count = 1</code>, breaks the moment the backend scales to more than one task.</li>
       <li><strong>No autoscaling anywhere</strong> &mdash; backend and inference each run a single Fargate task.</li>
       <li><strong>No custom domain or ACM certificate</strong> &mdash; CloudFront and the ALB sit on their default AWS domains.</li>
@@ -313,7 +302,6 @@ footer{margin-top:44px;font-size:12.5px;color:var(--muted);border-top:1px solid 
         <tr><td class="component">ECR (backend, inference)</td><td>Image registry</td><td class="status"><span class="dot dot-live"></span>Live</td><td class="where">ecr.tf</td></tr>
         <tr><td class="component">OpenAI API</td><td>External</td><td class="status"><span class="dot dot-live"></span>Live (public)</td><td class="where">ecs.tf (OPENAI_API_KEY secret)</td></tr>
         <tr><td class="component">Qdrant</td><td>Vector database</td><td class="status"><span class="dot dot-gap"></span>Not provisioned</td><td class="where">no .tf file references it</td></tr>
-        <tr><td class="component">Ollama</td><td>Local model host</td><td class="status"><span class="dot dot-gap"></span>Not deployed</td><td class="where">no .tf file references it</td></tr>
       </tbody>
     </table>
   </div>

@@ -84,9 +84,6 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
 - **Chat image uploads are on local container disk** (`app/chat/uploads/service.py`), not S3. Fine at
   `desired_count = 1`; breaks if scaled to more than one task, since disk isn't shared between
   them. Move to S3 before scaling out.
-- **No Ollama in this deployment.** The Local LLM option in Settings won't work in production
-  until an Ollama instance is stood up and `OLLAMA_BASE_URL` is pointed at it (see `ecs.tf`).
-  The OpenAI path works.
 - **One shared OpenAI key, no per-consumer budgets.** The backend holds the key in its task
   environment (via Secrets Manager). If spend limits, per-developer keys or a second consumer are
   needed later, put a gateway back in front rather than distributing the key.

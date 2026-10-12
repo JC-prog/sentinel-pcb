@@ -32,8 +32,6 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
         # No OPENAI_BASE_URL override - OpenAI-compatible calls go straight to api.openai.com
         # (settings.openai_base_url's default) using the OPENAI_API_KEY secret below.
-        # No OLLAMA_BASE_URL override - there's no Ollama instance in this deployment. The Local
-        # LLM option in Settings simply won't work in production until one is stood up separately.
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },

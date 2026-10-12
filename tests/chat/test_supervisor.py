@@ -62,7 +62,7 @@ async def _run(
     return [
         event
         async for event in supervisor.run_turn(
-            provider="ollama", messages=[HumanMessage("hi")], ctx=_ctx(), tools=tools
+            provider="openai", messages=[HumanMessage("hi")], ctx=_ctx(), tools=tools
         )
     ]
 

@@ -19,10 +19,6 @@ services:
       # only resolvable on the compose network - bare local dev (uv run uvicorn ...) still reads
       # .env's own DATABASE_URL directly (localhost:5433).
       DATABASE_URL: postgresql+asyncpg://sentinelchat:sentinelchat@db:5432/sentinelchat
-      # Ollama runs natively on the host (not containerized - see the note below), and inside a
-      # container "localhost" means the container itself, not the host - host.docker.internal is
-      # the container's route back to the host.
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
       # Same story for LangFuse (--profile langfuse below) - only matters when this container and
       # that profile are both up; LANGFUSE_ENABLED/keys still come from .env either way.

@@ -67,15 +67,15 @@ def test_chat_stream_returns_503_when_openai_not_configured(
     assert response.status_code == 503
 
 
-def test_chat_stream_uses_ollama_by_default(
+def test_chat_stream_uses_openai_by_default(
     authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    providers = install(monkeypatch, says("Hello from Ollama"))
+    providers = install(monkeypatch, says("Hello from OpenAI"))
 
     body = _stream(authenticated_client, "c1", "hi")
 
-    assert providers == ["ollama"]
-    assert _reply(body) == "Hello from Ollama"
+    assert providers == ["openai"]
+    assert _reply(body) == "Hello from OpenAI"
     assert _parse_sse(body)[-1] == ("done", {})
 
 

@@ -9,6 +9,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Review Console separates the two agents. **Agent 1** is a card with the model
+  inference only (Machine is the label from the uploaded folder; AI is the defect model, with the
+  region model's and defect model's confidence). **Agent 2** is its own advisory card: verdict,
+  diagnosis, where its visual evidence came from, whether physical measurements were recorded, and
+  the IPC clauses it weighed. The decision is Machine, AI or Manual (plus the part area).
+- Work tab: the Review Console shows how sure both models were (the region model that picks the
+  part area, then the defect model, or that no defect model ran) and lets the operator correct the
+  part area as well as the defect. A corrected region sends the label to the defect model for that
+  area. The region choice is stored with the decision (`region_result`) on the run's Qdrant point; the
+  Postgres fallback keeps the defect decision only.
+- Work tab: **Corrections & Retraining** is now **Model feedback**, built around one question:
+  where do my corrections stand? It opens with a plain status sentence (with a way back to review
+  when samples are still unreviewed), a four-stage tracker (to send, sent, awaiting Admin, retrained),
+  and the corrections ready to send, all pre-ticked so it is one click. Below, analytics show
+  reviewed share, model accuracy, an outcome donut, error rate by model, how you decided and the most
+  common mistakes. The list shows the same machine verdict as the Review Console, and samples the defect
+  model never classified are labelled "Not classified" with the reason.
 - Work tab: the workflow summary has a **Failed** tile (preparation, verification and inference
   failures added up; red when above 0). The status line says at which stage samples failed, and the
   server's reasons ("Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s) (e.g. S000001)") are listed
@@ -141,6 +158,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `case_id` per sample and these tickets have none. They are now sent as `<run_id>:<sample_id>`.
 
 ### Changed
+
+- Agent 2 was re-ported from `pcb_agentic_inspector` (Oct 10): its grounding prompt weights visual
+  evidence and IPC precedents instead of letting laser/ICT readings decide. Missing readings are no
+  longer invented as a 0.0 um height, which had made every review say "missing part". Its vision step
+  now uses an OpenAI vision model.
+- **Ollama is removed.** Chat, memory embeddings and Agent 2 use OpenAI only (`OPENAI_API_KEY` is
+  required). The Settings window no longer offers a Local LLM, `OLLAMA_*` settings and the
+  `langchain-ollama` dependency are gone, and the setup scripts, compose file and docs no longer
+  mention it.
 
 - Work tab: the Review Console's **Drift & Retraining** tab is renamed **Corrections & Retraining**
   and reworded so it can be used without knowing the pipeline. It opens with the three steps (review

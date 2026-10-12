@@ -34,12 +34,6 @@ class Settings(BaseSettings):
     # running more than one instance - a later task, not needed for this scaffold.
     chat_upload_dir: str = "data/uploads"
 
-    # Local LLM provider (app.chat.services.providers.ollama). Backend-only config, not exposed in the
-    # Settings UI - swapping to an AWS-hosted Ollama service later is a .env change here, not a
-    # UI change.
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
-
     # OpenAI provider (app.chat.services.providers.openai). Single server-side key, used wherever OpenAI is
     # needed: chat (LlmProvider == "openai"), memory's embeddings/fact-extraction when the
     # conversation's provider is "openai", and the Explainability & Review Agent. No per-request
@@ -72,9 +66,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection_name: str = "chat_memories"
 
-    # Embedding models for app/chat/memory/embeddings.py - reuses whichever chat provider
-    # (ollama/openai) the request already selected, so there's no separate user-facing choice.
-    ollama_embedding_model: str = "nomic-embed-text"
+    # Embedding model for app/chat/memory/embeddings.py (OpenAI).
     openai_embedding_model: str = "text-embedding-3-small"
 
     # How often (in assistant turns per conversation) app/chat/memory/service.py extracts durable
@@ -211,7 +203,7 @@ class Settings(BaseSettings):
     )
     # The chat agents' LLM (app/shared/config/llm.py): a LangChain provider name and a model name.
     # Blank model -> openai_model. "openai" goes through openai_base_url, so a model change is just
-    # this setting; another provider ("anthropic", "ollama", ...) needs its langchain-<name>
+    # this setting; another provider ("anthropic", ...) needs its langchain-<name>
     # package installed and its own credentials in the environment.
     agent_llm_provider: str = "openai"
     agent_llm_model: str = ""

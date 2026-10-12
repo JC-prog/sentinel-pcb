@@ -1,8 +1,7 @@
 # SentinelChat
 
-A ChatGPT-style chat UI (Angular) backed by a FastAPI SSE streaming backend, with a choice of
-LLM provider per conversation (a local Ollama model, or OpenAI using a key the server operator
-configures), user accounts, and both short-term (per-conversation) and long-term
+A ChatGPT-style chat UI (Angular) backed by a FastAPI SSE streaming backend, running on OpenAI
+with a key the server operator configures, user accounts, and both short-term (per-conversation) and long-term
 (cross-conversation) chat memory. The assistant can also call tools mid-conversation - the
 current time, live weather for a named location, and (when you attach an image - via the
 paperclip button or by dragging a file onto the chat window) PCB defect inspection and diagnosis -
@@ -46,8 +45,8 @@ cd ui && npm start                      # http://localhost:4200
 ```
 
 The only value you may need to set by hand is `OPENAI_API_KEY` in `.env` - your own OpenAI key -
-if your work exercises the OpenAI provider, the chat agents' LLM pass, OpenAI embeddings or the
-Work tab's LLM planner. Leave it blank for Ollama-only. Free host ports needed: 8000, 4200, 5433,
+(chat, the agents' LLM calls, memory embeddings, the guardrails check, Agent 2 and the Work tab's
+LLM planner all need it). Free host ports needed: 8000, 4200, 5433,
 6333, 6334.
 
 ### External dependencies
@@ -57,11 +56,8 @@ Work tab's LLM planner. Leave it blank for Ollama-only. Free host ports needed: 
 | [Docker](https://docs.docker.com/get-docker/) | Yes | Runs local Postgres and Qdrant via Compose; the setup script starts them for you. |
 | Postgres | Auto (Docker) | User accounts, auth, and per-conversation chat history (Alembic-migrated - see `alembic/`). |
 | Qdrant | Auto (Docker) | Long-term, cross-conversation memory (`app/chat/memory/`). Can be turned off entirely with `MEMORY_ENABLED=False` in `.env`. Ships its own web dashboard at [localhost:6333/dashboard](http://localhost:6333/dashboard) - no extra setup, useful for browsing collections/points directly. |
-| [Ollama](https://ollama.com) | Optional | Needed for the Local LLM option in Settings. **Not installed or pulled automatically** - install it, then pull the models you intend to use: `ollama pull llama3.2` (default chat model) and `ollama pull nomic-embed-text` (default long-term-memory embedding model). Without the embedding model pulled, long-term memory silently no-ops instead of erroring. |
-| OpenAI access | Optional | The OpenAI provider in Settings, the chat agents' LLM calls (the inspect agent's ReAct pass), memory embeddings, the guardrails check and the Work tab's LLM planner all call OpenAI directly with the server-side `OPENAI_API_KEY` in `.env`. Put **your own** key there, or leave it blank for Ollama-only. No per-request bring-your-own-key - never entered in the browser. |
+| OpenAI access | Required | Chat, the chat agents' LLM calls (the inspect agent's ReAct pass), memory embeddings, the guardrails check, Agent 2's grounding and vision steps and the Work tab's LLM planner all call OpenAI directly with the server-side `OPENAI_API_KEY` in `.env`. Put **your own** key there. No per-request bring-your-own-key - never entered in the browser. |
 | LangFuse | Optional (Docker profile) | Self-hosted LLM observability/tracing for the chat agents (`app/shared/config/langfuse.py`). Off by default (`LANGFUSE_ENABLED=False`); `docker compose -f infra/development/docker-compose.yml --env-file .env --profile langfuse up -d --wait` brings it up at [localhost:3000](http://localhost:3000), auto-provisioning an org/project/API key that match `.env`'s `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` - no manual UI setup. |
-
-If you only plan to use the OpenAI option, Ollama can be skipped entirely.
 
 See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the branching/PR workflow, an architecture overview,
 and known gotchas before you start changing things.

@@ -87,15 +87,17 @@ async def qdrant_ready(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None, 
     await client.close()
 
 
-def _ollama_embed_response(input_texts: list[str]) -> httpx.Response:
-    return httpx.Response(200, json={"embeddings": [[1.0, 0.0, 0.0] for _ in input_texts]})
+def _embed_response(input_texts: list[str]) -> httpx.Response:
+    return httpx.Response(
+        200, json={"data": [{"embedding": [1.0, 0.0, 0.0]} for _ in input_texts]}
+    )
 
 
 def _embed_only(request: httpx.Request) -> httpx.Response:
-    """Embeddings are the one thing in this feature still reached over HTTP (Ollama's /api/embed)."""
+    """Embeddings are the one thing in this feature still reached over HTTP (OpenAI's /embeddings)."""
 
-    assert request.url.path == "/api/embed", request.url.path
-    return _ollama_embed_response(json.loads(request.content)["input"])
+    assert request.url.path.endswith("/embeddings"), request.url.path
+    return _embed_response(json.loads(request.content)["input"])
 
 
 def _memory_model(fact_json: str, reply_text: str) -> ScriptedModel:
@@ -163,7 +165,7 @@ async def test_extraction_writes_a_memory_after_the_configured_number_of_turns(
     assert reply == "Sure thing!"
 
     user_id = authenticated_client.get("/api/auth/me").json()["id"]
-    store = memory_service.get_memory_store(settings.ollama_embedding_model)
+    store = memory_service.get_memory_store(settings.openai_embedding_model)
     matches = await store.search(user_id, [1.0, 0.0, 0.0], top_k=5)
     assert [m.record.text for m in matches] == ["prefers dark roast coffee"]
 
@@ -172,7 +174,7 @@ async def test_retrieval_injects_memory_preamble_into_a_new_conversation(
     authenticated_client: TestClient, qdrant_ready: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user_id = authenticated_client.get("/api/auth/me").json()["id"]
-    store = memory_service.get_memory_store(settings.ollama_embedding_model)
+    store = memory_service.get_memory_store(settings.openai_embedding_model)
     await store.upsert(
         MemoryRecord(
             id=str(uuid.uuid4()),
@@ -206,7 +208,7 @@ async def test_remember_command_stores_a_fact_without_calling_the_chat_llm(
     assert model.seen == []  # a /remember command never reaches the chat LLM.
 
     user_id = authenticated_client.get("/api/auth/me").json()["id"]
-    store = memory_service.get_memory_store(settings.ollama_embedding_model)
+    store = memory_service.get_memory_store(settings.openai_embedding_model)
     matches = await store.search(user_id, [1.0, 0.0, 0.0], top_k=5)
     assert [m.record.text for m in matches] == ["I only drink oat milk"]
 

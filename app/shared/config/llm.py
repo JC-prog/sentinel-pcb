@@ -1,8 +1,8 @@
 """Every chat model the app uses, from one factory, so the model - or the provider - can change
 without touching a caller.
 
-- `build_chat_model("ollama" | "openai")` - the model behind a conversation, as the user picked it in
-  Settings: the chat supervisor and memory's fact extraction.
+- `build_chat_model("openai")` - the model behind a conversation: the chat supervisor and memory's
+  fact extraction.
 - `build_chat_model()` - the agents' own model (the inspect agent's ReAct pass), from
   `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` (blank model -> that provider's chat model).
 
@@ -88,20 +88,9 @@ def build_chat_model(
             **kwargs,
         )
         return model_obj
-    if provider == "ollama":
-        model_obj = init_chat_model(
-            model,
-            model_provider="ollama",
-            base_url=settings.ollama_base_url,
-            client_kwargs={"timeout": timeout},
-            **kwargs,
-        )
-        return model_obj
     model_obj = init_chat_model(model, model_provider=provider, timeout=timeout, **kwargs)
     return model_obj
 
 
 def _default_model(provider: str) -> str:
-    if provider == "ollama":
-        return settings.ollama_model
     return settings.openai_model

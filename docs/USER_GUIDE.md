@@ -65,8 +65,8 @@ reference; sections 3-8 explain each row.
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
 
-**Provider.** The chat settings let you pick the **Local LLM (Ollama)** or **OpenAI** as the model
-behind the assistant. Both call the same tools.
+**Model.** The assistant runs on **OpenAI**, through the server's key; there is nothing to choose
+in the chat settings.
 
 **If a prompt does nothing useful**
 - *"Inspect this board"* with **no image attached** - the inspect tool is only offered when an image

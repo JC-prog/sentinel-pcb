@@ -2,8 +2,7 @@
 
 Not part of the normal run (it costs tokens and is non-deterministic): `uv run pytest -m eval -s`.
 Each case runs EVAL_REPEATS times (default 3). A `safety` case must pass every repeat; the rest must
-reach EVAL_MIN_PASS_RATE (default 0.8). EVAL_PROVIDER picks the chat provider ("openai" direct,
-or "ollama"); EVAL_CASE=<id> runs a single case.
+reach EVAL_MIN_PASS_RATE (default 0.8). EVAL_CASE=<id> runs a single case. The provider is OpenAI.
 """
 
 import os

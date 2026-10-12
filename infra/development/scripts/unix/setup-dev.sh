@@ -44,7 +44,7 @@ fi
 
 if grep -qE '^OPENAI_API_KEY=$' .env; then
   echo "    Note: put your own OpenAI key in OPENAI_API_KEY in .env for the OpenAI features"
-  echo "    (chat, memory, guardrails, the Work tab planner). Ollama-only? Leave it blank."
+  echo "    (chat, memory, guardrails, the Work tab planner, Agent 2). It is required."
 fi
 
 echo "==> Checking Docker (needed for the local Postgres container)"
@@ -90,14 +90,6 @@ asyncio.run(asyncpg.connect('postgresql://sentinelchat:sentinelchat@localhost:54
   docker compose -f infra/development/docker-compose.yml --env-file .env rm -sf db
   docker volume rm sentinelchat_sentinelchat-db-data >/dev/null 2>&1 || true
   docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db
-fi
-
-echo "==> Checking for Ollama (http://localhost:11434) - optional"
-if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
-  echo "    Found - the Local LLM option in Settings will work."
-else
-  echo "    Not found. Only needed for the Local LLM option: https://ollama.com"
-  echo "    The OpenAI path does not need it."
 fi
 
 echo "==> UI: installing Node dependencies (npm install)"

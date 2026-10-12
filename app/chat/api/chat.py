@@ -27,7 +27,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     if not request.message.strip() and not request.image_ids:
         raise HTTPException(status_code=422, detail="message must not be empty")
-    if request.provider == "openai" and not settings.openai_api_key:
+    if not settings.openai_api_key:
         raise HTTPException(
             status_code=503, detail="OpenAI provider is not configured on this server"
         )

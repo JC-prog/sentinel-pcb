@@ -42,8 +42,7 @@ powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows
 ```
 
 Needed: Postgres and Qdrant (Docker), the backend (`:8000`), the **inference service
-(`:8001`)**, the UI (`http://localhost:4200`), and either **Ollama** with a tool-calling model
-(`OLLAMA_MODEL`, default `gemma4:12b`) or `OPENAI_API_KEY` set in `.env` for OpenAI.
+(`:8001`)**, the UI (`http://localhost:4200`), and `OPENAI_API_KEY` set in `.env`.
 
 Quick checks: `curl localhost:8000/health` and `curl localhost:8001/health` (should list four models).
 
@@ -82,8 +81,6 @@ threshold **0.3**) and make a decision or two in the Review Console. Skip Act 5 
 
 - [ ] Both services answer `/health`.
 - [ ] Send "hello" in a new chat - the provider answers.
-- [ ] Pick **Local LLM** or **OpenAI** in the chat settings. A hosted model is usually faster and
-      follows instructions more reliably; the local 12B model handled every prompt below.
 - [ ] Start each act in a **new chat** if you want it clean (the sidebar keeps the old ones).
 
 ---

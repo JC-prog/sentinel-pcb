@@ -31,6 +31,14 @@ def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _openai_key_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat is OpenAI-only, and the stream route answers 503 without a server key. Tests that cover
+    the "not configured" case blank it explicitly."""
+
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-key-for-tests-only")
+
+
+@pytest.fixture(autouse=True)
 def _memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Long-term memory (app/chat/memory/) makes its own embedding/LLM calls through the same
     httpx.AsyncClient chat tests mock - left enabled, those calls would interleave with (and
