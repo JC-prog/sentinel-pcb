@@ -398,6 +398,7 @@ describe('Models', () => {
       await click('Approve');
 
       expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2 flagged cases'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('currently simulated'));
       expect(fake.service.approveJob).toHaveBeenCalledWith('j-1');
     });
 
