@@ -105,6 +105,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Work tab: the Review Console's **Drift & Retraining** tab is renamed **Corrections & Retraining**
+  and reworded so it can be used without knowing the pipeline. It opens with the three steps (review
+  flagged samples, send corrections for retraining, an Admin approves the plan in the Models tab) and
+  marks the current one. The headline is now the **error rate on reviewed samples**, with how many
+  flagged samples have been reviewed (it is partial until all are). The row of counts becomes one bar
+  (right, wrong, couldn't decide, not reviewed). The per-model table credits a model only with samples
+  it classified; samples no defect model ran on are their own "No defect model ran" row. The
+  "Your final decisions" bars are removed. **Add N to training data** is now **Send N corrections for
+  retraining**: nothing is ticked until chosen (with select all), sent samples show a tick, labels and
+  decision kinds use the Explanation Review's wording, and errors and confirmations share one status
+  line. The tab says what to do first when there is no run yet. The "create retraining plan" prompt
+  counts only samples from this run and notes how many more waiting from chat or other runs the plan
+  would also take (`run-drift` returns `run_open_tickets` beside `open_tickets`). Chat's wording for
+  the tab follows.
+
 - Agent 2 review pipeline (`app/workflow/.../review_graph.py`) updated from the upstream `pcb_agentic_inspector`: tombstone precedent, telemetry read from the local cache with more field names and an explicit ICT flag, vision images downscaled to 384px with shorter prompts and a longer timeout, and revised cross-modal contradiction rules. Our config-path and no-repo-crawl fixes are kept. Adds `tests/test_agent_graph.py`.
 - Defect-label comparison (Agent 1 vs Agent 2 conflicts and run corrections) now treats the AOI
   datasets' misspelling `SolderInsuffcient` as `solder insufficient`, as Agent 1's own pipeline

@@ -187,6 +187,8 @@ export interface WorkflowRunDrift {
   decisions: WorkflowDecisionStats;
   /** Open (not yet planned) retraining tickets per model - what a plan drafted now would contain. */
   open_tickets?: Record<string, number>;
+  /** The same, counting only tickets added from this run. */
+  run_open_tickets?: Record<string, number>;
 }
 
 /** A drafted retraining plan: a job awaiting an Admin's approval in the Models tab. */

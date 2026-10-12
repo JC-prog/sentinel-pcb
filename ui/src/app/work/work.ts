@@ -5,7 +5,6 @@ import {
   OrchestratorRunMode,
   WorkflowDecisionSource,
   WorkflowCorrection,
-  WorkflowDecisionStats,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
@@ -67,58 +66,77 @@ export class Work implements OnDestroy {
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
 
-  // Adding relabelled samples to the training data, from the Drift & Retraining tab.
+  // Sending corrections for retraining, from the Corrections & Retraining tab. One status line for
+  // both steps (tickets, then the plan), cleared at the start of each action.
   protected readonly monitoringBusy = signal(false);
-  protected readonly monitoringError = signal<string | null>(null);
-  protected readonly monitoringMessage = signal<string | null>(null);
+  protected readonly actionError = signal<string | null>(null);
+  protected readonly actionMessage = signal<string | null>(null);
 
-  // The Drift & Retraining tab's view of the run: how much the model drifted, judged by the operator's
-  // final decisions (their relabels), computed on the server and refetched whenever one is saved.
+  // The Corrections & Retraining tab's view of the run: how often the defect model was wrong, judged
+  // by the operator's final decisions (their relabels), computed on the server and refetched
+  // whenever one is saved.
   protected readonly runDrift = signal<WorkflowRunDrift | null>(null);
   protected readonly driftLoading = signal(false);
   protected readonly driftError = signal<string | null>(null);
-  /** Relabelled samples the operator unticked: every one that can still be added starts selected. */
-  protected readonly skippedCorrectionIds = signal<ReadonlySet<string>>(new Set());
+  /** Corrections the operator ticked - nothing is sent unless it was chosen. */
+  protected readonly chosenCorrectionIds = signal<ReadonlySet<string>>(new Set());
 
   protected readonly corrections: Signal<WorkflowCorrection[]> = computed(
     () => this.runDrift()?.corrections ?? [],
   );
+  /** Corrections that can still be sent: they have a model to train and no ticket yet. */
   protected readonly pendingCorrections: Signal<WorkflowCorrection[]> = computed(() =>
     this.corrections().filter((c) => c.queueable && !c.queued),
   );
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
-    this.pendingCorrections().filter((c) => !this.skippedCorrectionIds().has(c.sample_id)),
+    this.pendingCorrections().filter((c) => this.chosenCorrectionIds().has(c.sample_id)),
   );
-  /** Models with samples in the training data that no retraining plan covers yet, with how many -
-   * normally empty, since adding samples also creates the plan; left over if that step failed. */
-  protected readonly planModels: Signal<{ name: string; tickets: number }[]> = computed(() =>
-    Object.entries(this.runDrift()?.open_tickets ?? {})
-      .map(([name, tickets]) => ({ name, tickets }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+  protected readonly allCorrectionsSelected: Signal<boolean> = computed(
+    () => this.pendingCorrections().length > 0 && this.selectedCorrections().length === this.pendingCorrections().length,
   );
-  /** The operator's decisions in the Explanation Review, one row per kind, with each kind's share of
-   * all decisions made (for the bar) and how many of them overruled the model. */
-  protected readonly decisionRows: Signal<
-    { source: string; label: string; chosen: number; overruled: number; share: number }[]
+  /** Models with samples from this run waiting for a retraining plan, with how many - normally
+   * empty, since sending corrections also creates the plan; left over if that step failed. `others`
+   * is how many more (from chat or other runs) the plan would also take. */
+  protected readonly planModels: Signal<{ name: string; tickets: number; others: number }[]> = computed(
+    () => {
+      const drift = this.runDrift();
+      const all = drift?.open_tickets ?? {};
+      return Object.entries(drift?.run_open_tickets ?? {})
+        .map(([name, tickets]) => ({ name, tickets, others: Math.max((all[name] ?? 0) - tickets, 0) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+  );
+  /** The flagged samples split into one bar: model right / wrong / couldn't decide / not reviewed. */
+  protected readonly outcomeSegments: Signal<
+    { key: string; label: string; count: number; share: number; barClass: string }[]
   > = computed(() => {
-    const stats: WorkflowDecisionStats | undefined = this.runDrift()?.decisions;
-    if (!stats) {
+    const drift = this.runDrift();
+    if (!drift?.available) {
       return [];
     }
-    const labels: Record<string, string> = { MACHINE: 'Accept Machine', AI: 'Accept AI', MANUAL: 'Manual' };
-    const total = Object.values(stats.by_source).reduce((sum, entry) => sum + entry.chosen, 0);
-    return Object.entries(stats.by_source).map(([source, entry]) => ({
-      source,
-      label: labels[source] ?? source,
-      chosen: entry.chosen,
-      overruled: entry.overruled_model,
-      share: total === 0 ? 0 : Math.round((entry.chosen / total) * 100),
-    }));
+    const parts = [
+      { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'bg-emerald-500' },
+      { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'bg-red-500' },
+      { key: 'no-answer', label: "Couldn't decide", count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
+      { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'bg-slate-300 dark:bg-slate-600' },
+    ];
+    const total = parts.reduce((sum, part) => sum + part.count, 0);
+    return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
+  });
+  protected readonly retrainingSteps = [
+    { n: 1, title: 'Review flagged samples', hint: 'Explanation Review tab' },
+    { n: 2, title: 'Send your corrections for retraining', hint: 'this tab' },
+    { n: 3, title: 'An Admin approves the plan', hint: 'Models tab' },
+  ] as const;
+  /** Which of the three steps the operator is on: review, send corrections, wait for the Admin. */
+  protected readonly retrainingStep: Signal<1 | 2 | 3> = computed(() => {
+    if (this.pendingCorrections().length > 0) {
+      return 2;
+    }
+    return this.corrections().some((c) => c.queued) ? 3 : 1;
   });
 
   protected readonly planBusy = signal(false);
-  protected readonly planError = signal<string | null>(null);
-  protected readonly planMessage = signal<string | null>(null);
 
   protected readonly canQueueCorrections: Signal<boolean> = computed(
     () => this.selectedCorrections().length > 0 && !this.monitoringBusy(),
@@ -259,8 +277,8 @@ export class Work implements OnDestroy {
   clearLog(): void {
     this.workService.clearLog();
     this.resetReviews();
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
   }
 
   ngOnDestroy(): void {
@@ -298,7 +316,7 @@ export class Work implements OnDestroy {
     }
   }
 
-  /** Refetches the server's drift numbers and corrections for the run - the Drift & Retraining
+  /** Refetches the server's drift numbers and corrections for the run - the Corrections & Retraining
    * tab follows every decision the operator saves in the Explanation Review. */
   async refreshDrift(): Promise<void> {
     const runId = this.runId();
@@ -322,11 +340,11 @@ export class Work implements OnDestroy {
   }
 
   isCorrectionSelected(sampleId: string): boolean {
-    return !this.skippedCorrectionIds().has(sampleId);
+    return this.chosenCorrectionIds().has(sampleId);
   }
 
   toggleCorrection(sampleId: string): void {
-    this.skippedCorrectionIds.update((ids) => {
+    this.chosenCorrectionIds.update((ids) => {
       const next = new Set(ids);
       if (!next.delete(sampleId)) {
         next.add(sampleId);
@@ -335,10 +353,17 @@ export class Work implements OnDestroy {
     });
   }
 
-  /** Adds the ticked relabelled samples to the training data: one retraining ticket each (built on
-   * the server from the stored sample and final decision - only the ids go over the wire), then a
-   * retraining plan for each model involved, so an Admin can approve it in the Models tab. */
-  async addToTrainingData(): Promise<void> {
+  /** Ticks every correction that can still be sent, or clears the ticks when all are ticked. */
+  toggleAllCorrections(): void {
+    this.chosenCorrectionIds.set(
+      this.allCorrectionsSelected() ? new Set() : new Set(this.pendingCorrections().map((c) => c.sample_id)),
+    );
+  }
+
+  /** Sends the ticked corrections for retraining: one retraining ticket each (built on the server
+   * from the stored sample and final decision - only the ids go over the wire), then a retraining
+   * plan for each model involved, so an Admin can approve it in the Models tab. */
+  async sendForRetraining(): Promise<void> {
     const runId = this.runId();
     if (runId === null || !this.canQueueCorrections()) {
       return;
@@ -346,14 +371,14 @@ export class Work implements OnDestroy {
     const selected = this.selectedCorrections();
     const models = [...new Set(selected.map((c) => c.model_name).filter((m): m is string => m !== null))];
     this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
     try {
       const out = await this.workService.queueCorrections({
         run_id: runId,
         sample_ids: selected.map((c) => c.sample_id),
       });
-      const added = out.created.length;
+      const sent = out.created.length;
       const planned: string[] = [];
       const unplanned: string[] = [];
       for (const model of models) {
@@ -364,51 +389,77 @@ export class Work implements OnDestroy {
           unplanned.push(model);
         }
       }
-      this.monitoringMessage.set(
-        `Added ${added} sample${added === 1 ? '' : 's'} to the training data.` +
+      this.actionMessage.set(
+        `Sent ${sent} correction${sent === 1 ? '' : 's'} for retraining.` +
           (planned.length > 0
-            ? ` Retraining plan for ${planned.join(', ')} is waiting for an Admin in the Models tab.`
+            ? ` The retraining plan for ${planned.join(', ')} is waiting for an Admin to approve it in the Models tab.`
             : '') +
-          (unplanned.length > 0 ? ` No plan could be created for ${unplanned.join(', ')} yet - try below.` : ''),
+          (unplanned.length > 0
+            ? ` No plan could be created for ${unplanned.join(', ')} yet - use "Create retraining plan" below.`
+            : ''),
       );
       await this.refreshDrift();
     } catch (error) {
-      this.monitoringError.set(
-        error instanceof Error ? error.message : 'Could not add the samples to the training data.',
+      this.actionError.set(
+        error instanceof Error ? error.message : 'Could not send the corrections for retraining.',
       );
     } finally {
       this.monitoringBusy.set(false);
     }
   }
 
+  /** A defect label as the Explanation Review shows it: 'MissingPart_3' -> 'missing part'. Display
+   * only - the same canonical form app/shared/modelops/run_drift.py's normalize_defect produces. */
+  labelText(label: string | null | undefined): string {
+    if (!label) {
+      return '—';
+    }
+    const spaced = label
+      .trim()
+      .split('_')[0]
+      .replace(/(?<!^)(?=[A-Z])/g, ' ')
+      .toLowerCase()
+      .replace(/-/g, ' ')
+      .split(/\s+/)
+      .join(' ')
+      .replace('insuffcient', 'insufficient');
+    return spaced === 'golden' ? 'no defect' : spaced;
+  }
+
+  /** The Explanation Review's own names for how a final decision was made. */
+  sourceLabel(source: string | null | undefined): string {
+    const labels: Record<string, string> = { MACHINE: 'Accept Machine', AI: 'Accept AI', MANUAL: 'Manual' };
+    return source ? (labels[source] ?? source) : '—';
+  }
+
   /** What the model said for a sample it didn't get right: its prediction, or that it couldn't
    * decide with the region model's best guess. */
   modelSaid(correction: WorkflowCorrection): string {
     if (correction.agent1_label !== null) {
-      return correction.agent1_label;
+      return this.labelText(correction.agent1_label);
     }
     const guess = correction.region_guess;
     if (!guess) {
       return "couldn't decide";
     }
     const confidence = guess.confidence === null ? '' : ` ${Math.round(guess.confidence * 100)}%`;
-    return `couldn't decide (region: ${guess.label}${confidence})`;
+    return `couldn't decide (first guess: ${guess.label} area${confidence})`;
   }
 
-  /** Where a sample the model didn't get right stands with the training data. */
+  /** Where a correction stands on its way to retraining. */
   trainingStatus(correction: WorkflowCorrection): string {
     if (!correction.queueable && !correction.queued) {
-      return "Can't add - no model to route to";
+      return "Can't send: no defect model to route it to";
     }
     switch (correction.ticket_status) {
       case 'open':
-        return 'In training data - no plan yet';
+        return 'Sent, waiting for a retraining plan';
       case 'acknowledged':
-        return 'In a retraining plan';
+        return 'In a retraining plan, awaiting Admin approval';
       case 'resolved':
         return 'Retrained';
       default:
-        return 'Not added yet';
+        return 'Not sent yet';
     }
   }
 
@@ -419,17 +470,17 @@ export class Work implements OnDestroy {
       return;
     }
     this.planBusy.set(true);
-    this.planError.set(null);
-    this.planMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
     try {
       const plan = await this.workService.draftRetrainingPlan(modelName);
-      this.planMessage.set(
+      this.actionMessage.set(
         `Plan drafted for ${plan.model_name}: ${plan.sample_count} sample${plan.sample_count === 1 ? '' : 's'}, ` +
           `${plan.status.replace('_', ' ')}. An Admin approves it in the Models tab.`,
       );
       await this.refreshDrift();
     } catch (error) {
-      this.planError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
+      this.actionError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
     } finally {
       this.planBusy.set(false);
     }
@@ -545,9 +596,9 @@ export class Work implements OnDestroy {
     this.reviewMessage.set(null);
     this.runDrift.set(null);
     this.driftError.set(null);
-    this.planError.set(null);
-    this.planMessage.set(null);
-    this.skippedCorrectionIds.set(new Set());
+    this.actionError.set(null);
+    this.actionMessage.set(null);
+    this.chosenCorrectionIds.set(new Set());
     this.revokeImages();
   }
 
