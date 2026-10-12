@@ -589,6 +589,71 @@ describe('Work', () => {
       return (fixture.nativeElement as HTMLElement).textContent ?? '';
     }
 
+    it('moves focus into the console when it opens and back to the button when it closes', async () => {
+      await showRun([reviewCase()]);
+      consoleButton().focus();
+      await openConsole();
+
+      expect(document.activeElement).toBe(popup());
+
+      fixture.componentInstance.closeConsole();
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(consoleButton());
+    });
+
+    it('does not close the console while a decision is being saved', async () => {
+      await showRun([reviewCase()]);
+      await openCase('S1');
+      let release: () => void = () => undefined;
+      fake.saveReviewDecision.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (release = resolve)),
+      );
+
+      const confirm = submit();
+      confirm.click();
+      fixture.detectChanges();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(popup()).not.toBeNull();
+      expect(confirm.textContent).toContain('Saving');
+
+      release();
+      await fixture.whenStable();
+    });
+
+    it('confirms a decision and opens the next pending case', async () => {
+      await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
+      await openCase('S1');
+
+      const next = fixture.nativeElement.querySelector('[data-testid="confirm-next"]') as HTMLButtonElement;
+      next.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fake.saveReviewDecision).toHaveBeenCalledWith(expect.objectContaining({ sample_id: 'S1' }));
+      expect(text()).toContain('Sample: S2');
+    });
+
+    it('keeps the newest answer when an older cases request finishes last', async () => {
+      await showRun([reviewCase()]);
+      await openConsole();
+
+      let resolveSlow: (cases: WorkflowReviewCaseOut[]) => void = () => undefined;
+      fake.getReviewCases.mockImplementationOnce(
+        () => new Promise<WorkflowReviewCaseOut[]>((resolve) => (resolveSlow = resolve)),
+      );
+      fake.getReviewCases.mockResolvedValueOnce([reviewCase({ sample_id: 'S9', component_ref: 'CNEWEST' })]);
+
+      const slow = fixture.componentInstance.refreshCases();
+      await fixture.componentInstance.refreshCases();
+      resolveSlow([reviewCase({ sample_id: 'SOLD', component_ref: 'CSTALE' })]);
+      await slow;
+      fixture.detectChanges();
+
+      expect(text()).toContain('CNEWEST');
+      expect(text()).not.toContain('CSTALE');
+    });
+
     it('lets the keyboard open a case from the queue', async () => {
       await showRun([reviewCase(), reviewCase({ sample_id: 'S2', review: null })]);
       await openConsole();

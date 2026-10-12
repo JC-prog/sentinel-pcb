@@ -13,7 +13,6 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  OrchestratorInferenceResult,
   OrchestratorRunMode,
   WorkflowDecisionSource,
   WorkflowCorrection,
@@ -21,6 +20,7 @@ import {
   WorkflowRunDrift,
 } from './models/orchestrator.models';
 import { formatLog, logEntryText, logTime } from './work-log';
+import { formatBytes, labelText, modelSaid, percent, sourceLabel, trainingStatus } from './work-format';
 import { WorkSettingsService } from './work-settings.service';
 import { WorkSettings } from './work-settings/work-settings';
 import { WorkService } from './work.service';
@@ -32,20 +32,6 @@ export const LOG_RENDER_LIMIT = 500;
 /** A pane counts as "at the bottom" within this many pixels, so a fractional scroll position
  * doesn't stop it following. */
 const LOG_BOTTOM_SLACK_PX = 24;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ['KB', 'MB', 'GB'];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
-}
 
 /** IPC defect classes an operator can override with - the same canonical names Agent 2 and the
  * conflict check (app/workflow/services/reviews.py's normalize_defect) use. */
@@ -172,6 +158,8 @@ export class Work implements OnDestroy {
   protected readonly manualClass = signal<string>(IPC_CLASSES[0]);
   protected readonly operatorNotes = signal('');
   protected readonly reviewBusy = signal(false);
+  protected readonly casesLoading = signal(false);
+  protected readonly imagesLoading = signal(false);
   protected readonly reviewError = signal<string | null>(null);
   protected readonly reviewMessage = signal<string | null>(null);
 
@@ -212,6 +200,11 @@ export class Work implements OnDestroy {
     return pausedAt === null ? 0 : Math.max(this.workService.log().length - pausedAt, 0);
   });
 
+  protected readonly hasNextPending: Signal<boolean> = computed(() => {
+    const selected = this.selectedCaseId();
+    return this.reviewCases().some((c) => c.decision === null && c.sample_id !== selected);
+  });
+
   protected readonly imageRootSummary: Signal<string> = computed(() => {
     const files = this.imageRootFiles();
     if (files.length === 0) {
@@ -225,10 +218,6 @@ export class Work implements OnDestroy {
     const result = this.workService.result();
     return result === null ? null : JSON.stringify(result, null, 2);
   });
-
-  protected readonly results: Signal<OrchestratorInferenceResult[]> = computed(
-    () => this.workService.result()?.results ?? [],
-  );
 
   protected readonly runId: Signal<string | null> = computed(
     () => this.workService.result()?.run_id ?? null,
@@ -275,6 +264,15 @@ export class Work implements OnDestroy {
   // it fails, e.g. orchestrator_agent_enabled is off), so the label only appears once it's known.
   protected readonly llmConfigured = signal<boolean | null>(null);
 
+  // Only the newest cases / drift request may write its answer: a slow earlier one (or one for a
+  // run that has since been replaced) would otherwise overwrite fresher data.
+  private casesRequest = 0;
+  private driftRequest = 0;
+  private logNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private destroyed = false;
+  private consoleOpener: HTMLElement | null = null;
+  private readonly consoleDialog = viewChild<ElementRef<HTMLElement>>('consoleDialog');
+
   /** One line of the active policy and planner choices, so they stay visible with the panel closed. */
   protected readonly settingsSummary: Signal<string> = computed(() => {
     const s = this.workSettings;
@@ -292,6 +290,14 @@ export class Work implements OnDestroy {
       const pane = this.logPane()?.nativeElement;
       if (pane && untracked(() => this.logFollowing())) {
         pane.scrollTop = pane.scrollHeight;
+      }
+    });
+
+    // Move focus into the Review Console when it opens, so keyboard and screen reader users land in it.
+    afterRenderEffect(() => {
+      const dialog = this.consoleDialog()?.nativeElement;
+      if (dialog && !dialog.contains(document.activeElement)) {
+        dialog.focus();
       }
     });
 
@@ -313,7 +319,7 @@ export class Work implements OnDestroy {
     this.workService
       .getStatus()
       .then((status) => this.llmConfigured.set(status.llm_configured))
-      .catch(() => this.llmConfigured.set(null));
+      .catch(() => undefined);
   }
 
   onDatasetFileChange(event: Event): void {
@@ -395,7 +401,10 @@ export class Work implements OnDestroy {
     } catch {
       this.logNotice.set('Could not copy - use Download log instead');
     }
-    setTimeout(() => this.logNotice.set(null), 2500);
+    if (this.logNoticeTimer !== null) {
+      clearTimeout(this.logNoticeTimer);
+    }
+    this.logNoticeTimer = setTimeout(() => this.logNotice.set(null), 2500);
   }
 
   clearLog(): void {
@@ -408,12 +417,19 @@ export class Work implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    if (this.logNoticeTimer !== null) {
+      clearTimeout(this.logNoticeTimer);
+    }
     this.revokeImages();
   }
 
   /** Opens the Review Console popup (the source app's "Open Review Console" button), refetching
    * first so it never shows a stale queue, and selecting the first pending case. */
   async openConsole(): Promise<void> {
+    if (!this.consoleOpen()) {
+      this.consoleOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
     this.consoleOpen.set(true);
     await Promise.all([this.refreshCases(), this.refreshDrift()]);
     if (this.selectedCase() === null) {
@@ -426,7 +442,40 @@ export class Work implements OnDestroy {
 
   @HostListener('document:keydown.escape')
   closeConsole(): void {
+    // Closing mid-save would hide the outcome of the decision being written.
+    if (!this.consoleOpen() || this.reviewBusy()) {
+      return;
+    }
     this.consoleOpen.set(false);
+    this.consoleOpener?.focus();
+    this.consoleOpener = null;
+  }
+
+  /** Keeps Tab inside the open console, so focus cannot wander to the page behind the backdrop. */
+  trapConsoleFocus(keyEvent: Event): void {
+    const event = keyEvent as KeyboardEvent;
+    const dialog = this.consoleDialog()?.nativeElement;
+    if (event.key !== 'Tab' || !dialog) {
+      return;
+    }
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialog)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   async refreshCases(): Promise<void> {
@@ -434,11 +483,22 @@ export class Work implements OnDestroy {
     if (runId === null) {
       return;
     }
+    const request = ++this.casesRequest;
+    this.casesLoading.set(true);
     try {
-      this.reviewCases.set(await this.workService.getReviewCases(runId));
-      this.reviewError.set(null);
+      const cases = await this.workService.getReviewCases(runId);
+      if (request === this.casesRequest && runId === this.runId()) {
+        this.reviewCases.set(cases);
+        this.reviewError.set(null);
+      }
     } catch (error) {
-      this.reviewError.set(error instanceof Error ? error.message : 'Could not load review cases.');
+      if (request === this.casesRequest) {
+        this.reviewError.set(error instanceof Error ? error.message : 'Could not load review cases.');
+      }
+    } finally {
+      if (request === this.casesRequest) {
+        this.casesLoading.set(false);
+      }
     }
   }
 
@@ -449,14 +509,22 @@ export class Work implements OnDestroy {
     if (runId === null) {
       return;
     }
+    const request = ++this.driftRequest;
     this.driftLoading.set(true);
     try {
-      this.runDrift.set(await this.workService.getRunDrift(runId));
-      this.driftError.set(null);
+      const drift = await this.workService.getRunDrift(runId);
+      if (request === this.driftRequest && runId === this.runId()) {
+        this.runDrift.set(drift);
+        this.driftError.set(null);
+      }
     } catch (error) {
-      this.driftError.set(error instanceof Error ? error.message : 'Could not load the drift numbers.');
+      if (request === this.driftRequest) {
+        this.driftError.set(error instanceof Error ? error.message : 'Could not load the drift numbers.');
+      }
     } finally {
-      this.driftLoading.set(false);
+      if (request === this.driftRequest) {
+        this.driftLoading.set(false);
+      }
     }
   }
 
@@ -534,60 +602,11 @@ export class Work implements OnDestroy {
     }
   }
 
-  /** A defect label as the Explanation Review shows it: 'MissingPart_3' -> 'missing part'. Display
-   * only - the same canonical form app/shared/modelops/run_drift.py's normalize_defect produces. */
-  labelText(label: string | null | undefined): string {
-    if (!label) {
-      return '—';
-    }
-    const spaced = label
-      .trim()
-      .split('_')[0]
-      .replace(/(?<!^)(?=[A-Z])/g, ' ')
-      .toLowerCase()
-      .replace(/-/g, ' ')
-      .split(/\s+/)
-      .join(' ')
-      .replace('insuffcient', 'insufficient');
-    return spaced === 'golden' ? 'no defect' : spaced;
-  }
-
-  /** The Explanation Review's own names for how a final decision was made. */
-  sourceLabel(source: string | null | undefined): string {
-    const labels: Record<string, string> = { MACHINE: 'Accept Machine', AI: 'Accept AI', MANUAL: 'Manual' };
-    return source ? (labels[source] ?? source) : '—';
-  }
-
-  /** What the model said for a sample it didn't get right: its prediction, or that it couldn't
-   * decide with the region model's best guess. */
-  modelSaid(correction: WorkflowCorrection): string {
-    if (correction.agent1_label !== null) {
-      return this.labelText(correction.agent1_label);
-    }
-    const guess = correction.region_guess;
-    if (!guess) {
-      return "couldn't decide";
-    }
-    const confidence = guess.confidence === null ? '' : ` ${Math.round(guess.confidence * 100)}%`;
-    return `couldn't decide (first guess: ${guess.label} area${confidence})`;
-  }
-
-  /** Where a correction stands on its way to retraining. */
-  trainingStatus(correction: WorkflowCorrection): string {
-    if (!correction.queueable && !correction.queued) {
-      return "Can't send: no defect model to route it to";
-    }
-    switch (correction.ticket_status) {
-      case 'open':
-        return 'Sent, waiting for a retraining plan';
-      case 'acknowledged':
-        return 'In a retraining plan, awaiting Admin approval';
-      case 'resolved':
-        return 'Retrained';
-      default:
-        return 'Not sent yet';
-    }
-  }
+  protected readonly labelText = labelText;
+  protected readonly sourceLabel = sourceLabel;
+  protected readonly modelSaid = modelSaid;
+  protected readonly trainingStatus = trainingStatus;
+  protected readonly percent = percent;
 
   /** Drafts a retraining plan for a model from its open tickets. The plan is a job awaiting an
    * Admin's approval in the Models tab - nothing is retrained from here. */
@@ -630,7 +649,7 @@ export class Work implements OnDestroy {
 
   /** Saves the operator's call: Agent 1's verdict (MACHINE), Agent 2's (AI), or an IPC class
    * (MANUAL). Only possible for AI once Agent 2 has actually reviewed the case. */
-  async submitDecision(): Promise<void> {
+  async submitDecision(advance = false): Promise<void> {
     const reviewCase = this.selectedCase();
     if (reviewCase === null || this.reviewBusy()) {
       return;
@@ -663,6 +682,15 @@ export class Work implements OnDestroy {
       });
       this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
       await Promise.all([this.refreshCases(), this.refreshDrift()]);
+      if (advance) {
+        const next = this.reviewCases().find(
+          (c) => c.decision === null && c.sample_id !== reviewCase.sample_id,
+        );
+        if (next) {
+          await this.selectCase(next.sample_id);
+          this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
+        }
+      }
     } catch (error) {
       this.reviewError.set(error instanceof Error ? error.message : 'Could not save the decision.');
     } finally {
@@ -672,12 +700,16 @@ export class Work implements OnDestroy {
 
   private async loadImages(reviewCase: WorkflowReviewCaseOut): Promise<void> {
     this.revokeImages();
+    this.imagesLoading.set(true);
     const [golden, defect] = await Promise.all([
       this.fetchImage(reviewCase, 'golden', reviewCase.has_golden_image),
       this.fetchImage(reviewCase, 'defect', reviewCase.has_defect_image),
     ]);
-    if (this.selectedCaseId() !== reviewCase.sample_id) {
-      // The operator moved on while these downloaded - do not leak or show them.
+    if (this.selectedCaseId() === reviewCase.sample_id) {
+      this.imagesLoading.set(false);
+    }
+    if (this.destroyed || this.selectedCaseId() !== reviewCase.sample_id) {
+      // The operator moved on (or left) while these downloaded - do not leak or show them.
       for (const url of [golden, defect]) {
         if (url !== null) {
           URL.revokeObjectURL(url);
@@ -726,11 +758,6 @@ export class Work implements OnDestroy {
     this.actionMessage.set(null);
     this.chosenCorrectionIds.set(new Set());
     this.revokeImages();
-  }
-
-  /** 0.5 -> "50%"; "—" when there is nothing to measure. */
-  percent(value: number | null): string {
-    return value === null ? '—' : `${Math.round(value * 100)}%`;
   }
 
   downloadResult(): void {
