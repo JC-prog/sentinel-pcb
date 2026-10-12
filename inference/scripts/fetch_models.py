@@ -13,7 +13,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
 
 PLACEHOLDER = "REPLACE_ME"
 
@@ -33,6 +33,7 @@ def main() -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     token = os.environ.get("HF_TOKEN") or None
+    api = HfApi()
 
     problems: list[str] = []
     for entry in models:
@@ -46,8 +47,11 @@ def main() -> int:
             continue
 
         try:
+            # Resolve first and download that exact commit, so a moving ref ("main") can't change
+            # between the lookup and the download.
+            sha = api.model_info(repo_id, revision=revision, token=token).sha or revision
             downloaded = hf_hub_download(
-                repo_id=repo_id, filename=filename, revision=revision, token=token
+                repo_id=repo_id, filename=filename, revision=sha, token=token
             )
         except Exception as exc:  # noqa: BLE001 - surface any hub failure with context
             problems.append(f"{name}: {repo_id}@{revision}/{filename} - {exc}")
@@ -55,7 +59,9 @@ def main() -> int:
 
         dest = out_dir / f"{name}.onnx"
         dest.write_bytes(Path(downloaded).read_bytes())
-        print(f"{name}: {repo_id}@{revision}/{filename} -> {dest}")
+        # The running service reads this to report the pinned version (registry.py).
+        (out_dir / f"{name}.revision").write_text(sha + "\n")
+        print(f"{name}: {repo_id}@{sha}/{filename} (manifest: {revision}) -> {dest}")
 
     if problems:
         print("\nfailed:", *problems, sep="\n  ", file=sys.stderr)

@@ -18,8 +18,12 @@ the backend over the VPC's private DNS - no ALB, no public route.
 | GET    | `/jobs`, `/jobs/{id}` | -                                   | job(s): `{id, client_ref, model, base_version, status, progress, sample_count, result, error, ...}` |
 | POST   | `/jobs/{id}/cancel` | -                                       | the job (409 if it already succeeded/failed) |
 
-A model's `version` is `<repo_id>@<revision>` from `models.toml` - pin `revision` to a commit SHA
-so it means something. `/classify` reports the version that produced each verdict.
+A model's `version` is `<repo_id>@<commit sha>`. Refs like `main` are resolved to their commit SHA
+- by `scripts/fetch_models.py` at build time (recorded in `model_store/<name>.revision`) and by
+`/activate` at runtime - so a version always names exactly one set of weights; you may leave
+`revision = "main"` in `models.toml` and still get a reproducible, reported SHA. `/classify` reports
+the version that produced each verdict. Publish new versions from the trainer with
+`PCB-Object-Detection-App/scripts/publish_to_hf.py`, which prints the commit SHA to activate.
 
 `username` is logged for request tracking, not used for auth (this service isn't
 internet-facing). One structured log line per request; `LOG_FORMAT=json` in production.
@@ -33,7 +37,7 @@ whether to apply softmax). **Every `REPLACE_ME` must be filled in** before the i
 `scripts/fetch_models.py` reads that file and downloads each ONNX into `model_store/` at image
 build time, so the running container has no dependency on Hugging Face for the *baseline*
 versions. A newer version can be hot-swapped without a rebuild via `POST /models/{name}/activate`:
-it downloads `repo_id@revision` (set `HF_TOKEN` for private repos - so the container then needs
+it resolves `revision` to a SHA, downloads that (set `HF_TOKEN` for private repos - so the container then needs
 outbound access to Hugging Face), loads and smoke-tests it, and only then swaps it in. The previous
 version stays loaded, so `POST /models/{name}/rollback` is instant. A new version must be a drop-in:
 labels, input size and preprocessing are inherited from the version it replaces.

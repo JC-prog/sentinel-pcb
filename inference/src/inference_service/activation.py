@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 from typing import Protocol
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
 
 from inference_service.classifier import OnnxClassifier
 from inference_service.manifest import ModelSpec
@@ -22,6 +22,21 @@ from inference_service.manifest import ModelSpec
 class ModelFetcher(Protocol):
     def __call__(self, spec: ModelSpec, dest: Path) -> None:
         """Writes the ONNX file for `spec` (its repo_id @ revision / filename) to `dest`."""
+
+
+class ModelResolver(Protocol):
+    def __call__(self, repo_id: str, revision: str) -> str:
+        """Returns the immutable commit SHA that `revision` (a branch, tag or SHA) points at."""
+
+
+def resolve_on_hub(repo_id: str, revision: str) -> str:
+    """Pins a moving ref such as "main" to its commit SHA, so a version names exactly one set of
+    weights. HF_TOKEN covers private repos."""
+
+    info = HfApi().model_info(repo_id, revision=revision, token=os.environ.get("HF_TOKEN") or None)
+    if not info.sha:
+        raise ValueError(f"{repo_id}@{revision} has no commit SHA")
+    return info.sha
 
 
 def fetch_from_hub(spec: ModelSpec, dest: Path) -> None:
