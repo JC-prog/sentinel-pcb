@@ -83,6 +83,9 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = data.aws_subnets.default.ids
+  # Must be at least CloudFront's origin read timeout (static_site.tf), or the ALB drops a streaming
+  # response that CloudFront is still willing to wait for.
+  idle_timeout = 120
 }
 
 resource "aws_lb_target_group" "backend" {

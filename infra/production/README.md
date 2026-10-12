@@ -13,6 +13,9 @@ The backend calls `api.openai.com` directly with the key in the `sentinelchat/op
 **One CloudFront distribution serves both the UI and the API** (`/api/*` routes to the ALB) so
 everything ends up on one HTTPS domain - no mixed content, no CORS in production.
 
+For a start-to-finish walkthrough (deploy, use, tear down), see
+[`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md).
+
 ## One-time setup
 
 ```bash

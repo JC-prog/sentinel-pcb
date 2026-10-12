@@ -82,6 +82,10 @@ resource "aws_cloudfront_distribution" "site" {
       http_port              = 80
       https_port             = 443
       origin_ssl_protocols   = ["TLSv1.2"]
+      # How long CloudFront waits for the backend to send the next byte before answering 504. The
+      # default is 30 s, and a Work-tab run can be silent that long while it prepares the dataset;
+      # 60 s is the most an account allows without a quota increase.
+      origin_read_timeout = 60
     }
   }
 
