@@ -140,8 +140,10 @@ async def _stored_run(run_id: str) -> tuple[list[dict[str, Any]], list[dict[str,
         raise StoreUnavailable(str(exc)) from exc
 
 
-async def _open_tickets_by_model(session: AsyncSession) -> dict[str, int]:
-    counts = await ticket_repo.count_tickets(session, status=RetrainingTicketStatus.OPEN)
+async def _open_tickets_by_model(session: AsyncSession, run_id: str | None = None) -> dict[str, int]:
+    counts = await ticket_repo.count_tickets(
+        session, status=RetrainingTicketStatus.OPEN, run_id=run_id
+    )
     return {model: n for model, n in counts.items() if model}
 
 
@@ -162,6 +164,7 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
             corrections=[],
             decisions=WorkflowDecisionStatsOut(**run_drift.summarize_run([], [])["decisions"]),
             open_tickets=await _open_tickets_by_model(session),
+            run_open_tickets=await _open_tickets_by_model(session, run_id),
         )
     summary = run_drift.summarize_run(points, reviews)
     tickets = await ticket_repo.sample_refs_for_run(session, run_id)
@@ -181,6 +184,7 @@ async def run_drift_summary(session: AsyncSession, *, run_id: str) -> WorkflowRu
         ],
         decisions=WorkflowDecisionStatsOut(**summary["decisions"]),
         open_tickets=await _open_tickets_by_model(session),
+        run_open_tickets=await _open_tickets_by_model(session, run_id),
     )
 
 

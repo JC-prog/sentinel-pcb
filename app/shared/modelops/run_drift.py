@@ -295,8 +295,10 @@ def _decision_stats(
 
 
 def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -> dict[str, Any]:
-    """Per-model drift for one run (grouped by the defect model each sample belongs to), the
-    samples the model didn't get right, and a breakdown of the operator's final decisions."""
+    """Per-model drift for one run (grouped by the defect model that classified each sample - a
+    sample no defect model ran on has its own group, `model_name` None, so no model is credited with
+    samples it never answered), the samples the model didn't get right, and a breakdown of the
+    operator's final decisions."""
 
     by_sample = {str(r.get("sample_id")): r for r in reviews}
     groups: dict[str | None, _ModelStats] = defaultdict(lambda: _ModelStats(None))
@@ -307,10 +309,10 @@ def summarize_run(points: list[dict[str, Any]], reviews: list[dict[str, Any]]) -
 
     for point in sorted(points, key=lambda p: str(p.get("sample_id"))):
         review = by_sample.get(str(point.get("sample_id")))
-        name, source = training_target(point)
+        name = sample_model_name(point)
         stats = groups[name]
         stats.model_name = name
-        if source == CLASSIFIED:
+        if name is not None:
             stats.model_version = stats.model_version or sample_model_version(point)
         stats.samples += 1
         if point.get("final_decision") == REVIEW_REQUIRED:

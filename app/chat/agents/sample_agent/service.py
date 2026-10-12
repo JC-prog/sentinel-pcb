@@ -254,8 +254,8 @@ def _drift_instruction(waiting: int, models_with_tickets: list[str | None]) -> s
     ]
     if waiting:
         parts.append(
-            f"{waiting} sample(s) the model didn't get right are not in the training data yet - only "
-            "the operator can add them, in the Review Console's Drift & Retraining tab; you cannot."
+            f"{waiting} sample(s) the model didn't get right have not been sent for retraining yet - only "
+            "the operator can send them, in the Review Console's Corrections & Retraining tab; you cannot."
         )
     if models_with_tickets:
         names = ", ".join(str(m) for m in models_with_tickets)

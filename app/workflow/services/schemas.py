@@ -170,6 +170,8 @@ class WorkflowRunDriftOut(BaseModel):
     # Open (not yet planned) retraining tickets per model, whatever their origin - what a plan drafted
     # now would contain. Models with none are left out.
     open_tickets: dict[str, int] = Field(default_factory=dict)
+    # The same, counting only tickets added from this run.
+    run_open_tickets: dict[str, int] = Field(default_factory=dict)
 
 
 class WorkflowRetrainingPlanRequest(BaseModel):

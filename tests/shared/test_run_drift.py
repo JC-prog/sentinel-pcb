@@ -174,9 +174,10 @@ def test_agent2_disagreement_and_confidence_are_counted_per_model() -> None:
     assert body["mean_confidence"] == round((0.9 + monkeypatched - 0.1) / 2, 3)
 
 
-def test_a_sample_the_model_couldnt_decide_is_not_drift_but_goes_to_the_model_its_region_guess_routes_to() -> None:
+def test_a_sample_the_model_couldnt_decide_is_not_drift_but_trains_the_model_its_region_guess_routes_to() -> None:
     """It stopped at the region stage (below the threshold): the model never answered, so it is not
-    drift - but the operator's label can still train the defect model the region guess routes to."""
+    drift and no model is credited with it in the per-model table - but the operator's label can
+    still train the defect model the region guess routes to."""
 
     points = [_point("S1", model=None), _point("S2", model=None)]
     reviews = [
@@ -186,9 +187,10 @@ def test_a_sample_the_model_couldnt_decide_is_not_drift_but_goes_to_the_model_it
 
     summary = summarize_run(points, reviews)
 
-    # the region guess ("Text") routes both to the text defect model, which never ran
+    # no defect model ran, so both sit in the "no model answered" group, not under the text model
+    # the region guess ("Text") routes them to
     (group,) = summary["models"]
-    assert (group["model_name"], group["model_version"]) == ("pcb_text_defect", None)
+    assert (group["model_name"], group["model_version"]) == (None, None)
     assert (group["decided"], group["no_prediction"], group["relabelled"]) == (2, 2, 0)
     assert (group["corrected"], group["correction_rate"]) == (0, None)
     assert summary["drift_rate"] is None  # nothing classified: undefined, not 0% or 100%

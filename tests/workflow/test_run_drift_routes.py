@@ -436,7 +436,37 @@ async def test_the_drift_numbers_say_how_many_tickets_are_waiting_for_a_plan(
     _decide(authenticated_client, "S2", "Shift")
     authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1", "S2"]})
 
-    assert _drift(authenticated_client)["open_tickets"] == {"pcb_body_defect": 2}
+    drift = _drift(authenticated_client)
+    assert drift["open_tickets"] == {"pcb_body_defect": 2}
+    assert drift["run_open_tickets"] == {"pcb_body_defect": 2}
+
+
+async def test_run_open_tickets_leave_out_tickets_from_other_runs(
+    authenticated_client: TestClient, run_store_repo: Any
+) -> None:
+    other = "other-run"
+    _store_run(run_store_repo, _routed("S1"))
+    _store_run(run_store_repo, _routed("S9"), run_id=other)
+    _decide(authenticated_client, "S1", "Tombstone")
+    response = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": other,
+            "sample_id": "S9",
+            "selected_source": "MANUAL",
+            "final_result": "Tombstone",
+            "operator_notes": None,
+        },
+    )
+    assert response.status_code == 200, response.text
+    authenticated_client.post(QUEUE_URL, json={"run_id": RUN, "sample_ids": ["S1"]})
+    authenticated_client.post(QUEUE_URL, json={"run_id": other, "sample_ids": ["S9"]})
+
+    mine = _drift(authenticated_client)
+    theirs = _drift(authenticated_client, other)
+    assert mine["open_tickets"] == theirs["open_tickets"] == {"pcb_body_defect": 2}
+    assert mine["run_open_tickets"] == {"pcb_body_defect": 1}
+    assert theirs["run_open_tickets"] == {"pcb_body_defect": 1}
 
 
 async def test_a_plan_drafted_from_the_work_tab_is_a_job_awaiting_approval(
