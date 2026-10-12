@@ -514,6 +514,51 @@
                     </section>
                   </div>
 
+                  <!-- How sure each model was: the region model picks the part area, the defect model then
+                       names the defect. A sample the region model was unsure about never reaches the defect model. -->
+                  <section aria-label="Model confidence" data-testid="model-confidence" class="rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
+                    <h3 class="mb-2 text-xs font-medium text-slate-600 dark:text-slate-400">How sure were the models?</h3>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                      <div data-testid="region-confidence">
+                        <p class="flex items-baseline justify-between">
+                          <span><b>Region model</b> <span class="text-slate-600 dark:text-slate-400">picks the part area</span></span>
+                        </p>
+                        <p class="mt-0.5">
+                          <span class="font-medium">{{ reviewCase.region_label || reviewCase.feature_type || '—' }}</span>
+                          <span class="ml-1 tabular-nums" data-testid="region-confidence-value">{{ confidenceText(reviewCase.region_confidence) }}</span>
+                        </p>
+                        <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <div
+                            class="h-full rounded-full"
+                            [class]="(reviewCase.region_confidence ?? 0) >= workSettings.featureThreshold() ? 'bg-sky-500' : 'bg-amber-500'"
+                            [style.width.%]="(reviewCase.region_confidence ?? 0) * 100"
+                          ></div>
+                        </div>
+                        @if (reviewCase.region_confidence !== null && reviewCase.region_confidence !== undefined && reviewCase.region_confidence < workSettings.featureThreshold()) {
+                          <p class="mt-0.5 text-xs text-amber-700 dark:text-amber-300">Below the {{ confidenceText(workSettings.featureThreshold()) }} threshold</p>
+                        }
+                      </div>
+                      <div data-testid="defect-confidence">
+                        <p><b>Defect model</b> <span class="text-slate-600 dark:text-slate-400">names the defect</span></p>
+                        @if (reviewCase.defect_model_ran === false) {
+                          <p class="mt-0.5 text-slate-600 dark:text-slate-400" data-testid="defect-not-run">Did not run: the region model was unsure.</p>
+                        } @else {
+                          <p class="mt-0.5">
+                            <span class="font-medium capitalize">{{ reviewCase.agent1_verdict }}</span>
+                            <span class="ml-1 tabular-nums" data-testid="defect-confidence-value">{{ confidenceText(reviewCase.agent1_confidence) }}</span>
+                          </p>
+                          <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div
+                              class="h-full rounded-full"
+                              [class]="reviewCase.agent1_confidence >= workSettings.defectThreshold() ? 'bg-sky-500' : 'bg-amber-500'"
+                              [style.width.%]="reviewCase.agent1_confidence * 100"
+                            ></div>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  </section>
+
                   <section aria-label="Machine and AI results" class="grid gap-3 text-sm sm:grid-cols-2">
                     <div class="rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
                       <p class="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><path d="M8 2.5v2.5M12 2.5v2.5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/></svg>Machine</p>
@@ -622,6 +667,27 @@
                           }
                         </select>
                       </label>
+                    </div>
+                    <div class="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="region-relabel">
+                      <label for="region-result" class="font-medium">Part area</label>
+                      <select
+                        id="region-result"
+                        [ngModel]="regionResult()"
+                        (ngModelChange)="regionResult.set($event)"
+                        name="regionResult"
+                        class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+                      >
+                        @for (region of regions; track region) {
+                          <option [value]="region">{{ region }}</option>
+                        }
+                      </select>
+                      @if (regionChanged(reviewCase)) {
+                        <span class="text-xs text-amber-700 dark:text-amber-300" data-testid="region-changed">
+                          Changed from {{ modelRegion(reviewCase) }}. A correction here trains the {{ regionResult() }} defect model.
+                        </span>
+                      } @else {
+                        <span class="text-xs text-slate-600 dark:text-slate-400">Leave as the region model had it unless it picked the wrong area.</span>
+                      }
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                       <label class="flex min-w-[12rem] flex-1 items-center gap-2">
@@ -799,7 +865,7 @@
                                 <td class="py-2 pr-3">
                                   <span class="font-mono">{{ correction.sample_id }}</span>
                                   <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="target-model">
-                                    {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}
+                                    {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}@if (correction.model_source === 'operator_region') { (from your region)}
                                   </span>
                                 </td>
                                 <td class="py-2 pr-3 text-slate-600 dark:text-slate-400">
@@ -810,6 +876,9 @@
                                 </td>
                                 <td class="py-2 pr-3">
                                   <span data-testid="chose"><b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-xs text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span></span>
+                                  @if (correction.region_result) {
+                                    <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="region-set">Region set to {{ correction.region_result }}</span>
+                                  }
                                   @if (correction.operator_notes) {
                                     <span class="block text-xs italic text-slate-500 dark:text-slate-400">{{ correction.operator_notes }}</span>
                                   }

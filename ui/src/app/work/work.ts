@@ -17,6 +17,7 @@ import { RouterLink } from '@angular/router';
 import {
   OrchestratorRunMode,
   WorkflowDecisionSource,
+  WorkflowRegion,
   WorkflowCorrection,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
@@ -263,6 +264,9 @@ export class Work implements OnDestroy {
   protected readonly decisionSource = signal<WorkflowDecisionSource>('MACHINE');
   protected readonly manualClass = signal<string>(IPC_CLASSES[0]);
   protected readonly operatorNotes = signal('');
+  /** The part area the operator is deciding on; starts as what the region model said. */
+  protected readonly regionResult = signal<WorkflowRegion>('Body');
+  protected readonly regions: readonly WorkflowRegion[] = ['Body', 'Lead', 'Text'];
   protected readonly reviewBusy = signal(false);
   protected readonly casesLoading = signal(false);
   protected readonly imagesLoading = signal(false);
@@ -779,6 +783,25 @@ export class Work implements OnDestroy {
     }
   }
 
+  private regionOf(value: string | null | undefined): WorkflowRegion | null {
+    return this.regions.find((r) => r === value) ?? null;
+  }
+
+  /** The region model's call for a case, as one of the three areas (null when unknown). */
+  protected modelRegion(reviewCase: WorkflowReviewCaseOut): WorkflowRegion | null {
+    return this.regionOf(reviewCase.region_label) ?? this.regionOf(reviewCase.feature_type);
+  }
+
+  protected regionChanged(reviewCase: WorkflowReviewCaseOut): boolean {
+    const model = this.modelRegion(reviewCase);
+    return model !== null && this.regionResult() !== model;
+  }
+
+  /** Confidence as the console shows it: 0.953 -> 95%, null -> an em dash. */
+  protected confidenceText(value: number | null | undefined): string {
+    return value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`;
+  }
+
   /** Arrow keys in the queue: selects the neighbouring row and keeps focus on it. */
   async moveSelection(step: 1 | -1): Promise<void> {
     const cases = this.filteredCases();
@@ -809,6 +832,7 @@ export class Work implements OnDestroy {
     this.decisionSource.set(decision?.selected_source ?? 'MACHINE');
     this.manualClass.set(decision?.selected_source === 'MANUAL' ? decision.final_result : IPC_CLASSES[0]);
     this.operatorNotes.set(decision?.operator_notes ?? '');
+    this.regionResult.set(this.regionOf(decision?.region_result) ?? this.regionOf(reviewCase.region_label) ?? this.regionOf(reviewCase.feature_type) ?? 'Body');
     await this.loadImages(reviewCase);
   }
 
@@ -844,6 +868,8 @@ export class Work implements OnDestroy {
         ai_result: agent2Verdict,
         ai_diagnosis: reviewCase.review?.diagnosis ?? null,
         operator_notes: this.operatorNotes().trim() || null,
+        // only a real correction is sent: leaving the region as the model had it records nothing
+        region_result: this.regionChanged(reviewCase) ? this.regionResult() : null,
       });
       this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
       await Promise.all([this.refreshCases(), this.refreshDrift()]);

@@ -673,6 +673,9 @@ describe('Work', () => {
         board_id: 'Board1',
         component_ref: 'C978',
         feature_type: 'Body',
+        region_label: 'Body',
+        region_confidence: 0.95,
+        defect_model_ran: true,
         agent1_verdict: 'wrong part',
         agent1_confidence: 0.6,
         has_golden_image: true,
@@ -1051,8 +1054,48 @@ describe('Work', () => {
         ai_result: 'missing part',
         ai_diagnosis: 'Laser height is ~0 - the body is absent.',
         operator_notes: 'looks fine',
+        region_result: null, // left as the region model had it: nothing to record
       });
       expect(text()).toContain('Saved S1: wrong part');
+    });
+
+    it('shows both models\' confidence, and flags a region call below the threshold', async () => {
+      await showRun([reviewCase({ region_confidence: 0.55 })]);
+      await openCase();
+
+      const box = fixture.nativeElement.querySelector('[data-testid="model-confidence"]') as HTMLElement;
+      expect(box.querySelector('[data-testid="region-confidence-value"]')?.textContent?.trim()).toBe('55%');
+      expect(box.querySelector('[data-testid="defect-confidence-value"]')?.textContent?.trim()).toBe('60%');
+      expect(box.textContent).toContain('Below the 70% threshold');
+    });
+
+    it('says the defect model did not run when the region model was unsure', async () => {
+      await showRun([reviewCase({ defect_model_ran: false, region_confidence: 0.3, agent1_confidence: 0 })]);
+      await openCase();
+
+      const box = fixture.nativeElement.querySelector('[data-testid="model-confidence"]') as HTMLElement;
+      expect(box.querySelector('[data-testid="defect-not-run"]')).not.toBeNull();
+      expect(box.querySelector('[data-testid="defect-confidence-value"]')).toBeNull();
+    });
+
+    it('saves a region correction only when the operator changed the region', async () => {
+      await showRun([reviewCase()]);
+      await openCase();
+      const select = fixture.nativeElement.querySelector('#region-result') as HTMLSelectElement;
+      expect(select.value).toBe('Body');
+      expect(fixture.nativeElement.querySelector('[data-testid="region-changed"]')).toBeNull();
+
+      select.value = 'Lead';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="region-changed"]')?.textContent).toContain(
+        'Changed from Body',
+      );
+
+      submit().click();
+      await fixture.whenStable();
+
+      expect(fake.saveReviewDecision).toHaveBeenCalledWith(expect.objectContaining({ region_result: 'Lead' }));
     });
 
     it('saves Agent 2 or a manual IPC class when picked', async () => {

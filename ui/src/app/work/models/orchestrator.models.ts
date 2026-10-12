@@ -152,7 +152,9 @@ export interface WorkflowCorrection {
    * guess routes to (`model_source`). */
   model_name: string | null;
   model_version: string | null;
-  model_source?: 'classified' | 'region_guess' | null;
+  model_source?: 'classified' | 'region_guess' | 'operator_region' | null;
+  /** The region the operator set when they changed the region model's call. */
+  region_result?: string | null;
   /** The region model's answer - its best guess even when below the threshold. */
   region_guess?: { label: string; confidence: number | null } | null;
   /** The model's prediction; null when no defect model ran (it couldn't decide). */
@@ -243,6 +245,8 @@ export interface WorkflowReviewOut {
 
 export type WorkflowDecisionSource = 'MACHINE' | 'AI' | 'MANUAL';
 
+export type WorkflowRegion = 'Body' | 'Lead' | 'Text';
+
 export interface WorkflowReviewDecisionRequest {
   run_id: string;
   sample_id: string;
@@ -252,6 +256,8 @@ export interface WorkflowReviewDecisionRequest {
   ai_result?: string | null;
   ai_diagnosis?: string | null;
   operator_notes?: string | null;
+  /** The part area, only when the operator changed the region model's call. */
+  region_result?: WorkflowRegion | null;
 }
 
 export interface WorkflowReviewDecisionOut {
@@ -262,6 +268,7 @@ export interface WorkflowReviewDecisionOut {
   machine_result: string | null;
   ai_result: string | null;
   operator_notes: string | null;
+  region_result?: string | null;
   decided_by_user_id: string;
 }
 
@@ -273,6 +280,11 @@ export interface WorkflowReviewCaseOut {
   board_id: string;
   component_ref: string;
   feature_type: string;
+  /** Stage 1, the region model: its label and confidence (null when not stored). */
+  region_label?: string | null;
+  region_confidence?: number | null;
+  /** False when the region model was unsure and no defect model ran. */
+  defect_model_ran?: boolean;
   agent1_verdict: string;
   agent1_confidence: number;
   has_golden_image: boolean;
