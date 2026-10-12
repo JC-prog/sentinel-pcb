@@ -13,6 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import {
   OrchestratorRunMode,
   WorkflowDecisionSource,
@@ -59,7 +60,7 @@ export const IPC_CLASSES = [
  * work.service.ts/work-orchestrator-client.ts. */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, WorkAlert, WorkExecutionLog, WorkSettings],
+  imports: [FormsModule, RouterLink, WorkAlert, WorkExecutionLog, WorkSettings],
   selector: 'app-work',
   styleUrl: './work.css',
   templateUrl: './work.html',
@@ -84,8 +85,9 @@ export class Work implements OnDestroy {
   protected readonly runDrift = signal<WorkflowRunDrift | null>(null);
   protected readonly driftLoading = signal(false);
   protected readonly driftError = signal<string | null>(null);
-  /** Corrections the operator ticked - nothing is sent unless it was chosen. */
-  protected readonly chosenCorrectionIds = signal<ReadonlySet<string>>(new Set());
+  /** Corrections the operator unticked. Everything sendable is ticked by default, so only the
+   * exclusions are remembered. */
+  protected readonly excludedCorrectionIds = signal<ReadonlySet<string>>(new Set());
 
   protected readonly corrections: Signal<WorkflowCorrection[]> = computed(
     () => this.runDrift()?.corrections ?? [],
@@ -95,7 +97,7 @@ export class Work implements OnDestroy {
     this.corrections().filter((c) => c.queueable && !c.queued),
   );
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
-    this.pendingCorrections().filter((c) => this.chosenCorrectionIds().has(c.sample_id)),
+    this.pendingCorrections().filter((c) => !this.excludedCorrectionIds().has(c.sample_id)),
   );
   protected readonly allCorrectionsSelected: Signal<boolean> = computed(
     () => this.pendingCorrections().length > 0 && this.selectedCorrections().length === this.pendingCorrections().length,
@@ -112,7 +114,7 @@ export class Work implements OnDestroy {
         .sort((a, b) => a.name.localeCompare(b.name));
     },
   );
-  /** The flagged samples split into one bar: model right / wrong / couldn't decide / not reviewed. */
+  /** The flagged samples split into one bar: model right / wrong / unsure / not reviewed. */
   protected readonly outcomeSegments: Signal<
     { key: string; label: string; count: number; share: number; barClass: string }[]
   > = computed(() => {
@@ -123,23 +125,118 @@ export class Work implements OnDestroy {
     const parts = [
       { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'bg-emerald-500' },
       { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'bg-red-500' },
-      { key: 'no-answer', label: "Couldn't decide", count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
+      { key: 'no-answer', label: 'Model unsure', count: drift.totals.no_prediction, barClass: 'bg-amber-400' },
       { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'bg-slate-300 dark:bg-slate-600' },
     ];
     const total = parts.reduce((sum, part) => sum + part.count, 0);
     return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
   });
-  protected readonly retrainingSteps = [
-    { n: 1, title: 'Review flagged samples', hint: 'Explanation Review tab' },
-    { n: 2, title: 'Send your corrections for retraining', hint: 'this tab' },
-    { n: 3, title: 'An Admin approves the plan', hint: 'Models tab' },
-  ] as const;
-  /** Which of the three steps the operator is on: review, send corrections, wait for the Admin. */
-  protected readonly retrainingStep: Signal<1 | 2 | 3> = computed(() => {
-    if (this.pendingCorrections().length > 0) {
-      return 2;
+  /** The one-sentence answer to "where do my corrections stand?". */
+  protected readonly feedbackStatus: Signal<{ kind: 'review' | 'clear' | 'send' | 'sent'; text: string }> = computed(() => {
+    const drift = this.runDrift();
+    const flagged = drift?.totals.review_required ?? 0;
+    const pending = drift?.decisions.pending ?? 0;
+    const corrections = this.corrections().length;
+    const toSend = this.pendingCorrections().length;
+    const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+    if (pending > 0) {
+      return { kind: 'review', text: `${plural(pending, 'flagged sample')} still need${pending === 1 ? 's' : ''} review before the feedback is complete.` };
     }
-    return this.corrections().some((c) => c.queued) ? 3 : 1;
+    if (corrections === 0) {
+      return {
+        kind: 'clear',
+        text: flagged === 0 ? 'Nothing was flagged for review in this run.' : 'The model got every reviewed sample right. Nothing to send.',
+      };
+    }
+    if (toSend === 0) {
+      return { kind: 'sent', text: `All ${plural(corrections, 'correction')} have been sent.` };
+    }
+    return {
+      kind: 'send',
+      text: `You corrected ${corrections} of ${drift?.totals.decided ?? 0} reviewed samples. ${toSend} ${toSend === 1 ? 'is' : 'are'} ready to send.`,
+    };
+  });
+
+  /** Where the corrections are on their way to a better model, stage by stage. */
+  protected readonly feedbackStages: Signal<{ key: string; label: string; hint: string; count: number }[]> = computed(() => {
+    const all = this.corrections();
+    const count = (status: string): number => all.filter((c) => c.queued && c.ticket_status === status).length;
+    return [
+      { key: 'to-send', label: 'To send', hint: 'Waiting for you', count: this.pendingCorrections().length },
+      { key: 'sent', label: 'Sent', hint: 'Waiting for a plan', count: count('open') },
+      { key: 'approval', label: 'Awaiting Admin', hint: 'Approve in Models tab', count: count('acknowledged') },
+      { key: 'retrained', label: 'Retrained', hint: 'Model updated', count: count('resolved') },
+    ];
+  });
+
+  /** Headline numbers for the analytics section. */
+  protected readonly feedbackKpis: Signal<{ label: string; value: string; hint: string }[]> = computed(() => {
+    const drift = this.runDrift();
+    if (!drift?.available) {
+      return [];
+    }
+    const t = drift.totals;
+    const answered = t.confirmed + t.relabelled;
+    return [
+      {
+        label: 'Reviewed',
+        value: t.review_required === 0 ? '—' : `${Math.round((t.decided / t.review_required) * 100)}%`,
+        hint: `${t.decided} of ${t.review_required} flagged`,
+      },
+      {
+        label: 'Model accuracy',
+        value: answered === 0 ? '—' : `${Math.round((t.confirmed / answered) * 100)}%`,
+        hint: answered === 0 ? 'nothing classified yet' : `${t.confirmed} of ${answered} right`,
+      },
+      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or unsure' },
+      { label: 'Model unsure', value: String(t.no_prediction), hint: 'no defect model ran' },
+    ];
+  });
+
+  /** The outcome split as donut arcs (circumference 100, so a share is its own dash length). */
+  protected readonly outcomeDonut: Signal<{ key: string; label: string; count: number; dash: string; offset: number; stroke: string }[]> = computed(() => {
+    const strokes: Record<string, string> = {
+      confirmed: '#10b981',
+      relabelled: '#ef4444',
+      'no-answer': '#fbbf24',
+      pending: '#94a3b8',
+    };
+    let offset = 25; // start at 12 o'clock
+    return this.outcomeSegments().map((s) => {
+      const arc = { key: s.key, label: s.label, count: s.count, dash: `${s.share} ${100 - s.share}`, offset, stroke: strokes[s.key] };
+      offset -= s.share;
+      return arc;
+    });
+  });
+
+  /** One bar per defect model: how often it was wrong on the reviewed samples. */
+  protected readonly modelBars: Signal<{ name: string; rate: number; detail: string }[]> = computed(() =>
+    (this.runDrift()?.models ?? [])
+      .filter((m) => m.model_name !== null && m.correction_rate !== null)
+      .map((m) => ({
+        name: m.model_name as string,
+        rate: (m.correction_rate as number) * 100,
+        detail: `${m.corrected} of ${m.decided} reviewed`,
+      })),
+  );
+
+  /** Who made the final call, and how often that call overruled the model. */
+  protected readonly decisionSources: Signal<{ label: string; chosen: number; overruled: number; share: number }[]> = computed(() => {
+    const by = this.runDrift()?.decisions.by_source ?? {};
+    const rows = Object.entries(by).map(([source, v]) => ({
+      label: sourceLabel(source),
+      chosen: v.chosen,
+      overruled: v.overruled_model,
+    }));
+    const max = Math.max(1, ...rows.map((r) => r.chosen));
+    return rows.filter((r) => r.chosen > 0).map((r) => ({ ...r, share: (r.chosen / max) * 100 }));
+  });
+
+  /** The most common mistakes with a bar scaled to the commonest one. */
+  protected readonly mistakeBars: Signal<{ from: string; to: string; count: number; share: number }[]> = computed(() => {
+    const list = this.runDrift()?.decisions.top_overruled ?? [];
+    const max = Math.max(1, ...list.map((m) => m.count));
+    return list.map((m) => ({ from: m.model_label, to: m.chosen_label, count: m.count, share: (m.count / max) * 100 }));
   });
 
   protected readonly planBusy = signal(false);
@@ -578,11 +675,11 @@ export class Work implements OnDestroy {
   }
 
   isCorrectionSelected(sampleId: string): boolean {
-    return this.chosenCorrectionIds().has(sampleId);
+    return !this.excludedCorrectionIds().has(sampleId);
   }
 
   toggleCorrection(sampleId: string): void {
-    this.chosenCorrectionIds.update((ids) => {
+    this.excludedCorrectionIds.update((ids) => {
       const next = new Set(ids);
       if (!next.delete(sampleId)) {
         next.add(sampleId);
@@ -591,10 +688,10 @@ export class Work implements OnDestroy {
     });
   }
 
-  /** Ticks every correction that can still be sent, or clears the ticks when all are ticked. */
+  /** Unticks every correction that can still be sent, or ticks them all again when none is. */
   toggleAllCorrections(): void {
-    this.chosenCorrectionIds.set(
-      this.allCorrectionsSelected() ? new Set() : new Set(this.pendingCorrections().map((c) => c.sample_id)),
+    this.excludedCorrectionIds.set(
+      this.allCorrectionsSelected() ? new Set(this.pendingCorrections().map((c) => c.sample_id)) : new Set(),
     );
   }
 
@@ -817,7 +914,7 @@ export class Work implements OnDestroy {
     this.driftError.set(null);
     this.actionError.set(null);
     this.actionMessage.set(null);
-    this.chosenCorrectionIds.set(new Set());
+    this.excludedCorrectionIds.set(new Set());
     this.revokeImages();
   }
 

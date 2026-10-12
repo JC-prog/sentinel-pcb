@@ -308,7 +308,7 @@
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4" width="11" height="13.5" rx="1.5"/><path d="M7.5 4V3h5v1M7.5 9h5M7.5 12.5h5"/></svg>
             </span>
             <h1 id="review-console-title" class="text-lg font-bold">
-              {{ consoleTab() === 'review' ? 'Review Console' : 'Corrections & Retraining' }}
+              {{ consoleTab() === 'review' ? 'Review Console' : 'Model feedback' }}
             </h1>
             <span class="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">Run: {{ runId() ?? '-' }}</span>
             <div class="ml-auto flex items-center gap-2 text-sm">
@@ -385,7 +385,7 @@
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               "
             >
-              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5"/></svg>Corrections &amp; Retraining</span>
+              <span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5"/></svg>Model feedback</span>
               @if (pendingCorrections().length > 0) {
                 <span
                   data-testid="corrections-badge"
@@ -661,198 +661,98 @@
             </div>
           </div>
           } @else {
-          <!-- Corrections & Retraining: how often the defect model was wrong in this run, judged by the
-               operator's final decisions, and sending those corrections for retraining -->
+          <!-- Model feedback: where the operator's corrections stand, sending them, and how the model did -->
           <div
             data-testid="drift-section"
             id="console-panel"
             role="tabpanel"
             aria-labelledby="tab-drift"
-            class="min-h-0 flex-1 space-y-6 overflow-y-auto p-4"
+            class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4"
           >
             @if (runId() === null) {
               <p data-testid="drift-no-run" class="text-sm text-slate-600 dark:text-slate-400">
                 There is no run yet. Run the agentic workflow, then confirm a final decision on each flagged sample in
-                the Explanation Review tab. Your corrections appear here.
+                the Review Console. Your corrections appear here, ready to send to the model.
               </p>
             } @else {
-              <!-- Where the operator is in the flow -->
-              <ol data-testid="retraining-steps" class="grid gap-2 text-sm sm:grid-cols-3">
-                @for (step of retrainingSteps; track step.n) {
-                  <li
-                    class="rounded border p-2"
-                    [attr.data-step]="step.n"
-                    [attr.aria-current]="retrainingStep() === step.n ? 'step' : null"
+              @if (driftError()) {
+                <app-work-alert kind="error" role="alert" data-testid="drift-error">{{ driftError() }}</app-work-alert>
+              }
+
+              @if (runDrift(); as drift) {
+                @if (!drift.available) {
+                  <p data-testid="drift-unavailable" class="text-sm text-slate-600 dark:text-slate-400">
+                    {{ drift.message }}
+                  </p>
+                } @else {
+                  <!-- Where things stand, and the next step -->
+                  <div
+                    data-testid="feedback-status"
+                    [attr.data-kind]="feedbackStatus().kind"
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
                     [class]="
-                      retrainingStep() === step.n
-                        ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/30'
-                        : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'
+                      feedbackStatus().kind === 'review'
+                        ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
+                        : feedbackStatus().kind === 'send'
+                          ? 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30'
+                          : 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
                     "
                   >
-                    <p class="font-semibold">{{ retrainingStep() > step.n ? '✓' : step.n + '.' }} {{ step.title }}</p>
-                    <p class="text-xs">{{ step.hint }}</p>
-                  </li>
-                }
-              </ol>
-
-              <section data-testid="run-drift">
-                <div class="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <h2 class="text-base font-semibold">How accurate was the defect model on the flagged samples?</h2>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">
-                      The final decision you confirm in the Explanation Review (Accept Machine, Accept AI or Manual)
-                      counts as the correct label and is compared with what the defect model predicted. Only samples
-                      flagged for review are counted, so this is not the model's overall accuracy.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    (click)="refreshDrift()"
-                    [disabled]="driftLoading()"
-                    class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                  >
-                    Refresh
-                  </button>
-                </div>
-
-                @if (driftError()) {
-                  <app-work-alert kind="error" role="alert" data-testid="drift-error" spacing="mb-3">
-                    {{ driftError() }}
-                  </app-work-alert>
-                }
-
-                @if (runDrift(); as drift) {
-                  @if (!drift.available) {
-                    <p data-testid="drift-unavailable" class="text-sm text-slate-500 dark:text-slate-400">
-                      {{ drift.message }}
-                    </p>
-                  } @else {
-                    <!-- The headline: the error rate, and how much of the review it rests on -->
-                    <div
-                      class="mb-4 rounded border p-3"
-                      data-testid="drift-summary"
-                      [class]="
-                        drift.decisions.pending === 0 && drift.totals.relabelled > 0
-                          ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
-                          : 'border-slate-200 dark:border-slate-700'
-                      "
-                    >
-                      <p class="text-sm text-slate-600 dark:text-slate-400">Error rate on reviewed samples</p>
-                      <p class="text-3xl font-semibold" data-testid="drift-rate">{{ percent(drift.drift_rate ?? null) }}</p>
-                      <p class="text-sm" data-testid="drift-of">
-                        @if (drift.totals.decided === 0) {
-                          nothing reviewed yet
-                        } @else if (drift.totals.confirmed + drift.totals.relabelled === 0) {
-                          the defect model classified none of the reviewed samples
-                        } @else {
-                          {{ drift.totals.relabelled }} of {{ drift.totals.confirmed + drift.totals.relabelled }} the defect model classified were wrong
-                        }
-                      </p>
-                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-testid="review-progress">
-                        {{ drift.totals.decided }} of {{ drift.totals.review_required }} flagged samples reviewed
-                        @if (drift.decisions.pending > 0) {
-                          - this changes as you review
-                        }
-                      </p>
-                    </div>
-
-                    <!-- Every flagged sample, in one bar -->
-                    @if (drift.totals.review_required > 0) {
-                      <div class="mb-4" data-testid="outcome-bar">
-                        <div class="flex h-3 overflow-hidden rounded bg-slate-100 dark:bg-slate-800" role="img" aria-label="flagged samples by outcome">
-                          @for (segment of outcomeSegments(); track segment.key) {
-                            <span class="block h-full" [class]="segment.barClass" [style.width.%]="segment.share"></span>
-                          }
-                        </div>
-                        <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                          @for (segment of outcomeSegments(); track segment.key) {
-                            <li class="flex items-center gap-1.5">
-                              <span class="inline-block h-2.5 w-2.5 rounded-sm" [class]="segment.barClass" aria-hidden="true"></span>
-                              {{ segment.label }}
-                              <b [attr.data-testid]="'kpi-' + segment.key">{{ segment.count }}</b>
-                            </li>
-                          }
-                        </ul>
-                      </div>
-                    }
-
-                    @if (drift.models.length > 0) {
-                      <div class="mb-2 overflow-x-auto">
-                        <table class="w-full text-left text-xs" data-testid="model-drift">
-                          <thead class="text-slate-500 dark:text-slate-400">
-                            <tr>
-                              <th class="py-1 pr-3 font-medium">Defect model</th>
-                              <th class="py-1 pr-3 font-medium">Reviewed</th>
-                              <th class="py-1 pr-3 font-medium">Right</th>
-                              <th class="py-1 pr-3 font-medium">Wrong</th>
-                              <th class="py-1 pr-3 font-medium">Couldn't decide</th>
-                              <th class="py-1 font-medium">Error rate</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            @for (model of drift.models; track model.model_name) {
-                              <tr class="border-t border-slate-200 dark:border-slate-800" [attr.data-model]="model.model_name">
-                                <td class="py-1 pr-3 font-mono">
-                                  {{ model.model_name ?? 'No defect model ran' }}
-                                  @if (model.model_name && model.model_version) {
-                                    <span class="text-slate-500 dark:text-slate-400">{{ model.model_version }}</span>
-                                  }
-                                </td>
-                                <td class="py-1 pr-3" data-testid="decided">{{ model.decided }} of {{ model.review_required }}</td>
-                                <td class="py-1 pr-3">{{ model.confirmed }}</td>
-                                <td class="py-1 pr-3">{{ model.relabelled }}</td>
-                                <td class="py-1 pr-3">{{ model.no_prediction }}</td>
-                                <td class="py-1 font-semibold" data-testid="corrected">{{ percent(model.correction_rate) }}</td>
-                              </tr>
-                            }
-                          </tbody>
-                        </table>
-                      </div>
-                      @if (drift.totals.no_prediction > 0) {
-                        <p class="mb-2 text-sm text-slate-600 dark:text-slate-400" data-testid="no-model-note">
-                          "Couldn't decide": the first-stage model wasn't confident enough about the part area, so no
-                          defect model ran. These samples do not count toward the error rate. You can still send your
-                          label for retraining; it goes to the defect model that first guess points to.
-                        </p>
+                    <p class="flex items-center gap-2 text-sm font-medium">
+                      @if (feedbackStatus().kind === 'review') {
+                        <svg class="h-4 w-4 text-amber-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 2.5 16.5h15Z"/><path d="M10 8v4M10 14.2h.01"/></svg>
+                      } @else {
+                        <svg class="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg>
                       }
-                    }
+                      {{ feedbackStatus().text }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                      @if (feedbackStatus().kind === 'review') {
+                        <button
+                          type="button"
+                          data-testid="go-review"
+                          (click)="consoleTab.set('review')"
+                          class="inline-flex items-center gap-1.5 rounded-md border border-amber-600 px-3 py-1 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950"
+                        >
+                          Back to review
+                          <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h11M11 6l4 4-4 4"/></svg>
+                        </button>
+                      }
+                      <button
+                        type="button"
+                        (click)="refreshDrift()"
+                        [disabled]="driftLoading()"
+                        class="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
 
-                    @if (drift.totals.decided === 0) {
-                      <p class="text-sm text-slate-500 dark:text-slate-400" data-testid="activity-empty">
-                        No decisions yet - confirm a final decision on a flagged sample in the Explanation Review tab.
-                      </p>
-                    } @else if (drift.decisions.top_overruled.length > 0) {
-                      <div class="rounded border border-slate-200 p-3 dark:border-slate-700" data-testid="review-activity">
-                        <h3 class="mb-1 text-sm font-semibold">Most common mistakes</h3>
-                        <ul class="text-sm" data-testid="top-overruled">
-                          @for (miss of drift.decisions.top_overruled; track miss.model_label + '>' + miss.chosen_label) {
-                            <li class="flex justify-between gap-2 border-t border-slate-100 py-0.5 dark:border-slate-800">
-                              <span>
-                                model said <i class="capitalize">{{ miss.model_label }}</i> &rarr; correct label
-                                <b class="capitalize">{{ miss.chosen_label }}</b>
-                              </span>
-                              <span class="whitespace-nowrap">&times; {{ miss.count }}</span>
-                            </li>
-                          }
-                        </ul>
-                      </div>
+                  <!-- Follow-through: from your decision to a better model -->
+                  <ol data-testid="feedback-tracker" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    @for (stage of feedbackStages(); track stage.key) {
+                      <li
+                        class="rounded-lg border px-3 py-2"
+                        [attr.data-stage]="stage.key"
+                        [class]="stage.count > 0 ? 'border-slate-400 dark:border-slate-500' : 'border-slate-200 dark:border-slate-800'"
+                      >
+                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ stage.label }}</p>
+                        <p class="text-2xl font-semibold tabular-nums" [class.text-slate-400]="stage.count === 0">{{ stage.count }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ stage.hint }}</p>
+                      </li>
                     }
-                  }
-                }
-              </section>
+                  </ol>
 
-              <!-- Sending the corrections for retraining -->
-              @if (runDrift(); as drift) {
-                @if (drift.available) {
-                  <section data-testid="training-data">
-                    <h2 class="text-base font-semibold">Send corrections for retraining</h2>
+                  <!-- Sending the corrections -->
+                  <section data-testid="training-data" aria-labelledby="send-title">
+                    <h2 id="send-title" class="text-base font-semibold">Corrections to send</h2>
                     <p class="mb-2 text-sm text-slate-600 dark:text-slate-400">
-                      Samples where the defect model was wrong or couldn't decide, with the label you chose. Tick the
-                      ones to send. Sending adds them to a retraining plan for that model; nothing is retrained until
-                      an Admin approves the plan in the Models tab.
+                      Samples where the model was wrong or unsure, with the label you chose. They teach the model
+                      what it missed. Untick any you do not want to send.
                     </p>
                     @if (corrections().length === 0) {
-                      <p data-testid="no-corrections" class="text-sm text-slate-500 dark:text-slate-400">
+                      <p data-testid="no-corrections" class="text-sm text-slate-600 dark:text-slate-400">
                         @if (drift.totals.decided === 0) {
                           Nothing reviewed yet.
                         } @else {
@@ -860,11 +760,11 @@
                         }
                       </p>
                     } @else {
-                      <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs" data-testid="corrections">
-                          <thead class="text-slate-500 dark:text-slate-400">
+                      <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+                        <table class="w-full text-left text-sm" data-testid="corrections">
+                          <thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
                             <tr>
-                              <th class="py-1 pr-2">
+                              <th class="px-3 py-2">
                                 <input
                                   type="checkbox"
                                   aria-label="select all corrections"
@@ -874,43 +774,42 @@
                                   (change)="toggleAllCorrections()"
                                 />
                               </th>
-                              <th class="py-1 pr-3 font-medium">Sample</th>
-                              <th class="py-1 pr-3 font-medium">Defect model</th>
-                              <th class="py-1 pr-3 font-medium">Model said</th>
-                              <th class="py-1 pr-3 font-medium">Your label</th>
-                              <th class="py-1 pr-3 font-medium">Notes</th>
-                              <th class="py-1 font-medium">Status</th>
+                              <th class="py-2 pr-3 font-medium">Sample</th>
+                              <th class="py-2 pr-3 font-medium">Model said</th>
+                              <th class="py-2 pr-3 font-medium">You chose</th>
+                              <th class="py-2 pr-3 font-medium">Status</th>
                             </tr>
                           </thead>
                           <tbody>
                             @for (correction of corrections(); track correction.sample_id) {
                               <tr class="border-t border-slate-200 dark:border-slate-800" [attr.data-sample]="correction.sample_id">
-                                <td class="py-1 pr-2">
+                                <td class="px-3 py-2">
                                   @if (correction.queued) {
                                     <span class="text-emerald-600 dark:text-emerald-400" role="img" aria-label="already sent">✓</span>
                                   } @else {
                                     <input
                                       type="checkbox"
                                       [attr.aria-label]="'send ' + correction.sample_id"
-                                      [checked]="isCorrectionSelected(correction.sample_id)"
+                                      [checked]="correction.queueable && isCorrectionSelected(correction.sample_id)"
                                       [disabled]="!correction.queueable"
                                       (change)="toggleCorrection(correction.sample_id)"
                                     />
                                   }
                                 </td>
-                                <td class="py-1 pr-3 font-mono">{{ correction.sample_id }}</td>
-                                <td class="py-1 pr-3" data-testid="target-model">
-                                  <span class="font-mono">{{ correction.model_name ?? '—' }}</span>
-                                  @if (correction.model_source === 'region_guess') {
-                                    <span class="text-slate-500 dark:text-slate-400"> (from first guess)</span>
+                                <td class="py-2 pr-3">
+                                  <span class="font-mono">{{ correction.sample_id }}</span>
+                                  <span class="block text-xs text-slate-500 dark:text-slate-400" data-testid="target-model">
+                                    {{ correction.model_name ?? '—' }}@if (correction.model_source === 'region_guess') { (from first guess)}
+                                  </span>
+                                </td>
+                                <td class="py-2 pr-3 capitalize text-slate-600 dark:text-slate-400" data-testid="said-model">{{ modelSaid(correction) }}</td>
+                                <td class="py-2 pr-3">
+                                  <span data-testid="chose"><b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-xs text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span></span>
+                                  @if (correction.operator_notes) {
+                                    <span class="block text-xs italic text-slate-500 dark:text-slate-400">{{ correction.operator_notes }}</span>
                                   }
                                 </td>
-                                <td class="py-1 pr-3 capitalize" data-testid="said-model">{{ modelSaid(correction) }}</td>
-                                <td class="py-1 pr-3" data-testid="chose">
-                                  <b class="capitalize">{{ labelText(correction.final_result) }}</b>{{ ' ' }}<span class="text-slate-500 dark:text-slate-400">({{ sourceLabel(correction.selected_source) }})</span>
-                                </td>
-                                <td class="py-1 pr-3">{{ correction.operator_notes ?? '' }}</td>
-                                <td class="py-1" data-testid="correction-status">{{ trainingStatus(correction) }}</td>
+                                <td class="py-2 pr-3" data-testid="correction-status">{{ trainingStatus(correction) }}</td>
                               </tr>
                             }
                           </tbody>
@@ -928,15 +827,22 @@
                         {{ actionMessage() }}
                       </app-work-alert>
                     }
-                    <button
-                      type="button"
-                      data-testid="send-for-retraining"
-                      [disabled]="!canQueueCorrections()"
-                      (click)="sendForRetraining()"
-                      class="mt-3 rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
-                    </button>
+                    <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <button
+                        type="button"
+                        data-testid="send-for-retraining"
+                        [disabled]="!canQueueCorrections()"
+                        (click)="sendForRetraining()"
+                        class="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                      >
+                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 14-6-5 13-2.5-5.5Z"/></svg>
+                        Send {{ selectedCorrections().length }} correction{{ selectedCorrections().length === 1 ? '' : 's' }} for retraining
+                      </button>
+                      <p class="text-xs text-slate-600 dark:text-slate-400">
+                        An Admin must approve before the model changes.
+                        <a routerLink="/models" class="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300">Open Models tab</a>
+                      </p>
+                    </div>
 
                     @if (planModels().length > 0) {
                       <!-- Only when samples of this run were sent but no plan covers them (e.g. the plan
@@ -965,6 +871,153 @@
                           </div>
                         }
                       </div>
+                    }
+                  </section>
+
+                  <!-- Analytics: how the model did on this run -->
+                  <section data-testid="run-drift" aria-labelledby="analytics-title" class="space-y-4">
+                    <div>
+                      <h2 id="analytics-title" class="text-base font-semibold">How did the model do?</h2>
+                      <p class="text-sm text-slate-600 dark:text-slate-400">
+                        Your final decision counts as the correct label. Only samples flagged for review are measured,
+                        so this is not the model's overall accuracy.
+                      </p>
+                    </div>
+
+                    <!-- Headline numbers -->
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="drift-summary">
+                      @for (kpi of feedbackKpis(); track kpi.label) {
+                        <div class="rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700">
+                          <p class="text-xs text-slate-600 dark:text-slate-400">{{ kpi.label }}</p>
+                          <p class="text-2xl font-semibold tabular-nums">{{ kpi.value }}</p>
+                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ kpi.hint }}</p>
+                        </div>
+                      }
+                    </div>
+                    <p class="text-sm" data-testid="drift-of">
+                      @if (drift.totals.decided === 0) {
+                        nothing reviewed yet
+                      } @else if (drift.totals.confirmed + drift.totals.relabelled === 0) {
+                        the defect model classified none of the reviewed samples
+                      } @else {
+                        {{ drift.totals.relabelled }} of {{ drift.totals.confirmed + drift.totals.relabelled }} the defect model classified were wrong
+                      }
+                    </p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400" data-testid="review-progress">
+                      {{ drift.totals.decided }} of {{ drift.totals.review_required }} flagged samples reviewed
+                      @if (drift.decisions.pending > 0) {
+                        - this changes as you review
+                      }
+                    </p>
+                    <p class="sr-only">Error rate <span data-testid="drift-rate">{{ percent(drift.drift_rate ?? null) }}</span></p>
+
+                    <div class="grid gap-4 md:grid-cols-2">
+                      <!-- Outcome split -->
+                      @if (drift.totals.review_required > 0) {
+                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="outcome-bar">
+                          <h3 class="mb-2 text-sm font-semibold">What happened to the flagged samples</h3>
+                          <div class="flex items-center gap-4">
+                            <svg viewBox="0 0 36 36" class="h-28 w-28 shrink-0 -rotate-0" role="img" aria-label="flagged samples by outcome">
+                              <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" class="text-slate-100 dark:text-slate-800" stroke-width="5" />
+                              @for (arc of outcomeDonut(); track arc.key) {
+                                <circle
+                                  cx="18" cy="18" r="15.9155" fill="none" stroke-width="5"
+                                  [attr.stroke]="arc.stroke"
+                                  [attr.stroke-dasharray]="arc.dash"
+                                  [attr.stroke-dashoffset]="arc.offset"
+                                />
+                              }
+                              <text x="18" y="19.5" text-anchor="middle" font-size="6" font-weight="600" fill="currentColor">{{ drift.totals.review_required }}</text>
+                            </svg>
+                            <ul class="space-y-1 text-sm">
+                              @for (segment of outcomeSegments(); track segment.key) {
+                                <li class="flex items-center gap-1.5">
+                                  <span class="inline-block h-2.5 w-2.5 rounded-sm" [class]="segment.barClass" aria-hidden="true"></span>
+                                  {{ segment.label }}
+                                  <b [attr.data-testid]="'kpi-' + segment.key">{{ segment.count }}</b>
+                                </li>
+                              }
+                            </ul>
+                          </div>
+                        </div>
+                      }
+
+                      <!-- Per-model error rate -->
+                      @if (modelBars().length > 0) {
+                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                          <h3 class="mb-2 text-sm font-semibold">Error rate by defect model</h3>
+                          <ul class="space-y-2" data-testid="model-drift">
+                            @for (bar of modelBars(); track bar.name) {
+                              <li [attr.data-model]="bar.name">
+                                <div class="flex justify-between text-xs">
+                                  <span class="font-mono">{{ bar.name }}</span>
+                                  <span class="text-slate-600 dark:text-slate-400">{{ bar.detail }}</span>
+                                </div>
+                                <div class="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div class="h-full rounded-full bg-red-500" [style.width.%]="bar.rate"></div>
+                                </div>
+                                <p class="mt-0.5 text-xs font-semibold" data-testid="corrected">{{ bar.rate.toFixed(0) }}%</p>
+                              </li>
+                            }
+                          </ul>
+                        </div>
+                      }
+
+                      <!-- Who made the final call -->
+                      @if (decisionSources().length > 0) {
+                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800" data-testid="review-activity">
+                          <h3 class="mb-2 text-sm font-semibold">How you decided</h3>
+                          <ul class="space-y-2 text-sm">
+                            @for (row of decisionSources(); track row.label) {
+                              <li>
+                                <div class="flex justify-between text-xs">
+                                  <span>{{ row.label }}</span>
+                                  <span class="text-slate-600 dark:text-slate-400">{{ row.chosen }} chosen, {{ row.overruled }} overruled the model</span>
+                                </div>
+                                <div class="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div class="h-full rounded-full bg-sky-500" [style.width.%]="row.share"></div>
+                                </div>
+                              </li>
+                            }
+                          </ul>
+                        </div>
+                      }
+
+                      <!-- Most common mistakes -->
+                      @if (mistakeBars().length > 0) {
+                        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                          <h3 class="mb-2 text-sm font-semibold">Most common mistakes</h3>
+                          <ul class="space-y-2 text-sm" data-testid="top-overruled">
+                            @for (miss of mistakeBars(); track miss.from + '>' + miss.to) {
+                              <li>
+                                <div class="flex justify-between gap-2 text-xs">
+                                  <span>
+                                    model said <i class="capitalize">{{ miss.from }}</i> &rarr; correct label
+                                    <b class="capitalize">{{ miss.to }}</b>
+                                  </span>
+                                  <span class="whitespace-nowrap">&times; {{ miss.count }}</span>
+                                </div>
+                                <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div class="h-full rounded-full bg-amber-500" [style.width.%]="miss.share"></div>
+                                </div>
+                              </li>
+                            }
+                          </ul>
+                        </div>
+                      }
+                    </div>
+
+                    @if (drift.totals.no_prediction > 0) {
+                      <p class="text-sm text-slate-600 dark:text-slate-400" data-testid="no-model-note">
+                        "Model unsure": the first-stage model was not confident enough about the part area, so no
+                        defect model ran. These samples do not count toward the error rate. You can still send your
+                        label for retraining; it goes to the defect model that first guess points to.
+                      </p>
+                    }
+                    @if (drift.totals.decided === 0) {
+                      <p class="text-sm text-slate-600 dark:text-slate-400" data-testid="activity-empty">
+                        No decisions yet - confirm a final decision on a flagged sample in the Review Console.
+                      </p>
                     }
                   </section>
                 }

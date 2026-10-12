@@ -38,9 +38,9 @@ describe('work-format', () => {
 
   it('describes what the model said, including a region guess when it could not decide', () => {
     expect(modelSaid({ ...base, agent1_label: 'WrongPart_13' })).toBe('wrong part');
-    expect(modelSaid(base)).toBe("couldn't decide");
+    expect(modelSaid(base)).toBe('unsure');
     expect(modelSaid({ ...base, region_guess: { label: 'Body', confidence: 0.95 } })).toBe(
-      "couldn't decide (first guess: Body area 95%)",
+      'unsure (first guess: Body area 95%)',
     );
   });
 

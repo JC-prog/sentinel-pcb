@@ -55,10 +55,10 @@ export function modelSaid(correction: WorkflowCorrection): string {
   }
   const guess = correction.region_guess;
   if (!guess) {
-    return "couldn't decide";
+    return 'unsure';
   }
   const confidence = guess.confidence === null ? '' : ` ${Math.round(guess.confidence * 100)}%`;
-  return `couldn't decide (first guess: ${guess.label} area${confidence})`;
+  return `unsure (first guess: ${guess.label} area${confidence})`;
 }
 
 /** Where a correction stands on its way to retraining. */
