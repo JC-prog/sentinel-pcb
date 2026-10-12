@@ -216,6 +216,22 @@ export class Work implements OnDestroy {
     });
   });
 
+  /** Per-model telemetry from the stored run: how confident the defect model was, how often it was
+   * barely confident, and how often Agent 2 disagreed with it. */
+  protected readonly modelTelemetry: Signal<
+    { name: string; reviewed: number; meanConfidence: string; lowConfidence: string; agent2Disagreed: string }[]
+  > = computed(() =>
+    (this.runDrift()?.models ?? [])
+      .filter((m) => m.model_name !== null)
+      .map((m) => ({
+        name: m.model_name as string,
+        reviewed: m.decided,
+        meanConfidence: m.mean_confidence === null ? '—' : `${Math.round(m.mean_confidence * 100)}%`,
+        lowConfidence: m.low_confidence_rate === null ? '—' : `${Math.round(m.low_confidence_rate * 100)}%`,
+        agent2Disagreed: `${m.agent2_disagreed} of ${m.review_required}`,
+      })),
+  );
+
   /** One bar per defect model: how often it was wrong on the reviewed samples. */
   protected readonly modelBars: Signal<{ name: string; rate: number; detail: string }[]> = computed(() =>
     (this.runDrift()?.models ?? [])

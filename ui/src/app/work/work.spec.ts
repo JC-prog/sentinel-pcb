@@ -1369,6 +1369,23 @@ describe('Work', () => {
         expect(tidy(byTestId('review-activity'))).toContain('2 chosen, 2 overruled the model');
       });
 
+      it('puts the graphs and telemetry first, then where the corrections stand', async () => {
+        fake.getRunDrift.mockResolvedValue(runDrift([correction({ sample_id: 'S1' })]));
+        await showRun([reviewCase()]);
+        await openDriftTab();
+
+        const section = (id: string): Element => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as Element;
+        const before = (a: Element, b: Element): boolean =>
+          !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+        expect(before(section('run-drift'), section('feedback-status'))).toBe(true);
+        expect(before(section('feedback-status'), section('training-data'))).toBe(true);
+
+        const telemetry = section('model-telemetry');
+        expect(tidy(telemetry.querySelector('[data-testid="telemetry-mean"]'))).toBe('70%');
+        expect(tidy(telemetry.querySelector('[data-testid="telemetry-low"]'))).toBe('50%');
+        expect(tidy(telemetry.querySelector('[data-testid="telemetry-agent2"]'))).toBe('1 of 2');
+      });
+
       it('asks for the rest of the review first, with a way back', async () => {
         fake.getRunDrift.mockResolvedValue(
           runDrift([], {
