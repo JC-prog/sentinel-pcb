@@ -100,6 +100,7 @@ function fakeWorkService(): {
   service: WorkService;
   log: ReturnType<typeof signal<OrchestratorLogEntry[]>>;
   result: ReturnType<typeof signal<OrchestratorRunResult | null>>;
+  status: ReturnType<typeof signal<OrchestratorStatusEvent>>;
   run: ReturnType<typeof vi.fn>;
   clearLog: ReturnType<typeof vi.fn>;
   getReviewCases: ReturnType<typeof vi.fn>;
@@ -141,8 +142,9 @@ function fakeWorkService(): {
     drift_reports_linked: 0,
   });
 
+  const status = signal(IDLE_STATUS);
   const service = {
-    status: signal(IDLE_STATUS),
+    status,
     log,
     running: signal(false),
     result,
@@ -165,6 +167,7 @@ function fakeWorkService(): {
     service,
     log,
     result,
+    status,
     run,
     clearLog,
     getReviewCases,
@@ -353,6 +356,26 @@ describe('Work', () => {
 
     expect(download().disabled).toBe(false);
     expect(download().textContent).toContain('Download result');
+  });
+
+  describe('run summary', () => {
+    it('words the status and splits accepted from review', () => {
+      fake.status.set({
+        status: 'REVIEW_REQUIRED',
+        input_samples: 11,
+        preparation_ready: 11,
+        verification_passed: 11,
+        inference_attempted: 11,
+        accepted: 3,
+        review_required: 8,
+      });
+      fixture.detectChanges();
+
+      const status = fixture.nativeElement.querySelector('[data-testid="summary-status"]') as HTMLElement;
+      expect(status.textContent?.trim()).toBe('Review required');
+      expect(fixture.nativeElement.textContent).toContain('8 of 11 samples need a person to confirm');
+      expect(fixture.nativeElement.querySelector('[role="img"][aria-label="3 accepted, 8 need review"]')).not.toBeNull();
+    });
   });
 
   describe('status light', () => {

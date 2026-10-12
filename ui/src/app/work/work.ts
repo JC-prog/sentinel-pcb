@@ -167,7 +167,7 @@ export class Work implements OnDestroy {
     // Colour only where it means something: green for accepted, amber for what needs a person.
     return [
       { label: 'Input', value: status.input_samples, tone: plain },
-      { label: 'Prep ready', value: status.preparation_ready, tone: plain },
+      { label: 'Prepared', value: status.preparation_ready, tone: plain },
       { label: 'Verified', value: status.verification_passed, tone: plain },
       { label: 'Inference', value: status.inference_attempted, tone: plain },
       {
@@ -181,6 +181,50 @@ export class Work implements OnDestroy {
         tone: status.review_required > 0 ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30' : plain,
       },
     ];
+  });
+
+  /** The server's status word (REVIEW_REQUIRED) as a sentence-case label, with a light and what it
+   * means for the samples. */
+  protected readonly statusView: Signal<{ label: string; light: string; detail: string }> = computed(() => {
+    const status = this.workService.status();
+    const raw = status.status;
+    const words = raw.replace(/_/g, ' ').toLowerCase();
+    const label = words.charAt(0).toUpperCase() + words.slice(1);
+    const upper = raw.toUpperCase();
+    let light = 'bg-slate-400';
+    if (upper.includes('REVIEW')) {
+      light = 'bg-amber-500';
+    } else if (/(FAIL|ABORT|ERROR)/.test(upper)) {
+      light = 'bg-red-500';
+    } else if (/(ACCEPT|COMPLETE|PASS|SUCCESS)/.test(upper)) {
+      light = 'bg-emerald-500';
+    }
+    let detail = '';
+    if (status.review_required > 0) {
+      detail = `${status.review_required} of ${status.input_samples} sample${status.input_samples === 1 ? '' : 's'} need a person to confirm`;
+    } else if (status.accepted > 0) {
+      detail = `${status.accepted} of ${status.input_samples} accepted`;
+    }
+    return { label, light, detail };
+  });
+
+  /** Accepted against needs-review as shares of everything the agent decided on. */
+  protected readonly outcomeBar: Signal<{
+    total: number;
+    accepted: number;
+    review: number;
+    acceptedShare: number;
+    reviewShare: number;
+  }> = computed(() => {
+    const { accepted, review_required: review } = this.workService.status();
+    const total = accepted + review;
+    return {
+      total,
+      accepted,
+      review,
+      acceptedShare: total === 0 ? 0 : (accepted / total) * 100,
+      reviewShare: total === 0 ? 0 : (review / total) * 100,
+    };
   });
 
   /** What the agent is doing, as one word and a light - so the state is visible at a glance. */
