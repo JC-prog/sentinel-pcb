@@ -261,6 +261,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- UI: the Chat | Work | Cases | Models switch and the theme toggle are in a top bar centred over the
+  page beside the sidebar, and the page starts below it. Before, they floated over the window, so a
+  message scrolled underneath and the switch was centred on the whole window instead of the page.
 - Chat: approve/override of a case (`review_case` / `confirm_review`) is **off by default**
   (`REVIEW_AGENT_ENABLED=false`); the code is kept and the setting brings it back. Existing Approved
   and Overridden cases are unchanged, but `override_rate` in drift summaries no longer moves, so use
