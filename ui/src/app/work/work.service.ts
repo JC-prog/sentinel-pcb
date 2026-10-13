@@ -11,6 +11,8 @@ import {
   WorkflowRetrainingPlanOut,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
+  WorkflowRunList,
+  WorkflowRunSummary,
   WorkflowReviewDecisionOut,
   WorkflowReviewDecisionRequest,
 } from './models/orchestrator.models';
@@ -46,12 +48,21 @@ export class WorkService {
   private readonly _running = signal(false);
   private readonly _result = signal<OrchestratorRunResult | null>(null);
   private readonly _reviewTick = signal(0);
+  private readonly _runs = signal<WorkflowRunSummary[]>([]);
+  private readonly _runsAvailable = signal(true);
+  private readonly _runsError = signal<string | null>(null);
   private runSubscription: Subscription | null = null;
 
   readonly status: Signal<OrchestratorStatusEvent> = this._status.asReadonly();
   readonly log: Signal<OrchestratorLogEntry[]> = this._log.asReadonly();
   readonly running: Signal<boolean> = this._running.asReadonly();
   readonly result: Signal<OrchestratorRunResult | null> = this._result.asReadonly();
+  /** The stored runs, newest first - the Work tab's run history (shown in the sidebar). */
+  readonly runs: Signal<WorkflowRunSummary[]> = this._runs.asReadonly();
+  /** False when the server could not read its run store, so an empty list is not "no runs". */
+  readonly runsAvailable: Signal<boolean> = this._runsAvailable.asReadonly();
+  /** Why the last open/refresh of a run failed, for the sidebar to show; null when fine. */
+  readonly runsError: Signal<string | null> = this._runsError.asReadonly();
   /** Bumped each time Agent 2 finishes a sample during a run - the Review Console refetches its
    * cases on it. */
   readonly reviewTick: Signal<number> = this._reviewTick.asReadonly();
@@ -68,6 +79,47 @@ export class WorkService {
 
   uploadImageRootFiles(files: File[]): Promise<string> {
     return this.client.uploadImageRootFiles(files);
+  }
+
+  /** Refreshes the run history. Never throws: history is a convenience, not part of a run. */
+  async loadRuns(): Promise<void> {
+    try {
+      const list: WorkflowRunList = await this.client.listRuns();
+      this._runs.set(list.runs);
+      this._runsAvailable.set(list.available);
+      this._runsError.set(null);
+    } catch (error) {
+      this._runsError.set(error instanceof Error ? error.message : 'Could not load the runs.');
+    }
+  }
+
+  /** Shows a stored run exactly as the run just finished would be: its counters, its result, and
+   * (through the result's run id) the Review Console, Model feedback and Retraining queue. A run
+   * in progress is not interrupted. */
+  async openRun(runId: string): Promise<void> {
+    if (this._running()) {
+      return;
+    }
+    try {
+      const run = await this.client.getRun(runId);
+      this._log.set([]);
+      this._status.set({
+        status: String(run['workflow_status'] ?? ''),
+        input_samples: Number(run['input_samples'] ?? 0),
+        preparation_ready: Number(run['preparation_ready'] ?? 0),
+        verification_passed: Number(run['verification_passed'] ?? 0),
+        inference_attempted: Number(run['inference_attempted'] ?? 0),
+        accepted: Number(run['accepted'] ?? 0),
+        review_required: Number(run['review_required'] ?? 0),
+        preparation_failed: Number(run['preparation_failed'] ?? 0),
+        verification_failed: Number(run['verification_failed'] ?? 0),
+        inference_aborted: Number(run['inference_aborted'] ?? 0),
+      });
+      this._result.set(run);
+      this._runsError.set(null);
+    } catch (error) {
+      this._runsError.set(error instanceof Error ? error.message : 'Could not open that run.');
+    }
   }
 
   getStatus(): Promise<OrchestratorStatus> {
@@ -186,5 +238,6 @@ export class WorkService {
   private finishRun(): void {
     this.runSubscription = null;
     this._running.set(false);
+    void this.loadRuns();
   }
 }

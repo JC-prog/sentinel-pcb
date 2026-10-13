@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work: **run history.** The sidebar on the Work tab lists the stored runs (when, samples, flagged,
+  decided); clicking one reopens it as if it had just finished, with its summary, Review Console,
+  Model feedback and Retraining queue. New `GET /api/orchestrator/runs` (newest first, each run's
+  final counters and how many flagged samples have a decision; `available: false` when the run store
+  cannot be read) and `GET /api/orchestrator/runs/{run_id}`. Runs are shared by QA and Admin, and
+  images uploaded before a redeploy are not kept, as before.
 - Chat: **correcting a label no longer needs a case first.** Say the model's label on the image you
   just inspected is wrong and confirm in your next message: that confirmation creates the case with
   your correction on it and queues the retraining ticket, in one commit. The assistant no longer asks

@@ -17,6 +17,7 @@ function fakeClient(events$: Subject<WorkResponderEvent>): WorkOrchestratorClien
     uploadDataset: async () => 'dataset-1',
     uploadXml: async () => 'xml-1',
     uploadImageRootFiles: async () => 'root-1',
+    listRuns: async () => ({ runs: [], available: true }),
   } as unknown as WorkOrchestratorClient;
 }
 
@@ -182,5 +183,93 @@ describe('WorkService', () => {
     expect(service.status().input_samples).toBe(0);
     second$.next({ type: 'log', text: 'new line' });
     expect(service.log().map((e) => (e.kind === 'log' ? e.text : ''))).toEqual(['new line']);
+  });
+
+  describe('run history', () => {
+    const STORED = {
+      run_id: 'run-old',
+      workflow_status: 'REVIEW_REQUIRED',
+      termination_reason: null,
+      results: [],
+      errors: [],
+      input_samples: 12,
+      accepted: 7,
+      review_required: 5,
+      verification_failed: 2,
+    };
+
+    function clientWith(overrides: Record<string, unknown>): WorkOrchestratorClient {
+      return { ...fakeClient(new Subject()), ...overrides } as unknown as WorkOrchestratorClient;
+    }
+
+    it('loads the stored runs', async () => {
+      const runs = [{ run_id: 'r1', review_required: 2 }];
+      const service = new WorkService(
+        clientWith({ listRuns: async () => ({ runs, available: true }) }),
+      );
+
+      await service.loadRuns();
+
+      expect(service.runs()).toEqual(runs);
+      expect(service.runsAvailable()).toBe(true);
+    });
+
+    it('says when the server could not read its run store', async () => {
+      const service = new WorkService(
+        clientWith({ listRuns: async () => ({ runs: [], available: false }) }),
+      );
+
+      await service.loadRuns();
+
+      expect(service.runs()).toEqual([]);
+      expect(service.runsAvailable()).toBe(false);
+    });
+
+    it('keeps the last list and reports the error when loading fails', async () => {
+      const service = new WorkService(
+        clientWith({ listRuns: async () => { throw new Error('boom'); } }),
+      );
+
+      await service.loadRuns();
+
+      expect(service.runsError()).toBe('boom');
+    });
+
+    it('opens a stored run as if it had just finished', async () => {
+      const service = new WorkService(clientWith({ getRun: async () => STORED }));
+
+      await service.openRun('run-old');
+
+      expect(service.result()?.run_id).toBe('run-old');
+      expect(service.status()).toMatchObject({
+        input_samples: 12,
+        accepted: 7,
+        review_required: 5,
+        verification_failed: 2,
+      });
+      expect(service.log()).toEqual([]);
+    });
+
+    it('does not replace a run that is in progress', async () => {
+      const getRun = vi.fn().mockResolvedValue(STORED);
+      const service = new WorkService(clientWith({ getRun, run: () => new Subject().asObservable() }));
+      service.run('run_full', 'd', 'x', null, OPTIONS);
+
+      await service.openRun('run-old');
+
+      expect(getRun).not.toHaveBeenCalled();
+      expect(service.result()).toBeNull();
+    });
+
+    it('reports a run that cannot be opened and leaves the current result alone', async () => {
+      const service = new WorkService(
+        clientWith({ getRun: async () => { throw new Error('run nope is not stored'); } }),
+      );
+
+      await service.openRun('nope');
+
+      expect(service.runsError()).toBe('run nope is not stored');
+      expect(service.result()).toBeNull();
+    });
   });
 });

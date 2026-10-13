@@ -125,6 +125,49 @@
         }
       </ul>
     </nav>
+  } @else if (showRuns()) {
+    <nav class="flex-1 overflow-y-auto px-2 py-3" aria-label="Runs">
+      <h2 class="px-2 pb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
+        Runs
+      </h2>
+      @if (workService.runsError(); as error) {
+        <p class="px-2 pb-2 text-xs text-red-600 dark:text-red-400" role="alert">{{ error }}</p>
+      }
+      @if (!workService.runsAvailable()) {
+        <p class="px-2 py-2 text-sm text-slate-400 dark:text-slate-500">
+          Run history is unavailable right now (the run store could not be read).
+        </p>
+      } @else if (runs().length === 0) {
+        <p class="px-2 py-2 text-sm text-slate-400 dark:text-slate-500">
+          No runs yet. Run the workflow and it will be listed here.
+        </p>
+      }
+      <ul class="flex flex-col gap-1">
+        @for (run of runs(); track run.run_id) {
+          <li>
+            <button
+              type="button"
+              class="flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 disabled:opacity-60 dark:hover:bg-slate-800"
+              [class]="run.run_id === currentRunId() ? 'bg-slate-100 dark:bg-slate-800' : ''"
+              [attr.aria-current]="run.run_id === currentRunId() ? 'true' : null"
+              [disabled]="workService.running()"
+              (click)="openRun(run.run_id)"
+            >
+              <span class="flex items-center justify-between gap-2">
+                <span class="truncate font-medium">{{ runTime(run.saved_at_utc) }}</span>
+                <span class="shrink-0 font-mono text-xs text-slate-400 dark:text-slate-500">{{
+                  run.run_id.slice(0, 8)
+                }}</span>
+              </span>
+              <span class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                {{ run.input_samples }} samples · {{ run.review_required }} flagged ·
+                {{ run.decided }} decided
+              </span>
+            </button>
+          </li>
+        }
+      </ul>
+    </nav>
   } @else {
     <div class="flex-1"></div>
   }

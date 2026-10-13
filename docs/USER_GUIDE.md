@@ -227,6 +227,15 @@ flagged sample (about 35 seconds for 11 samples) and the log prints each one:
 The run and everything Agent 2 and you decide are **stored**, so the Review Console survives a
 page reload or a backend restart.
 
+### 8.1a Run history
+
+The sidebar on the Work tab lists the runs that have been stored, newest first, each with its
+time, how many samples it had, how many were flagged and how many already have your decision.
+Click one to reopen it: the summary, the Review Console, Model feedback and the Retraining queue
+all show that run. You cannot switch while a run is in progress. Runs are shared by everyone with
+QA or Admin access. If the sidebar says history is unavailable, the run store (Qdrant) could not
+be read; running a dataset still works.
+
 ### 8.2 Explanation Review - make the final call
 
 Click **Open Review Console**. On the **Explanation Review** tab:

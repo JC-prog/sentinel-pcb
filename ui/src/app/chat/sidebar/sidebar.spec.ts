@@ -8,6 +8,7 @@ import { AuthService, AuthUser } from '../../auth.service';
 import { CHAT_RESPONDER } from '../chat-responder';
 import { ChatService } from '../chat.service';
 import { SettingsService } from '../settings.service';
+import { WorkService } from '../../work/work.service';
 
 @Component({ template: '', selector: 'app-test-stub' })
 class StubComponent {}
@@ -180,7 +181,7 @@ describe('Sidebar', () => {
     expect(logoutSpy).toHaveBeenCalled();
   });
 
-  it('hides "New chat" and conversation history on the Work route, but keeps Settings/logout', async () => {
+  it('hides "New chat" and conversation history on the Work route (it lists runs), keeps Settings/logout', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response));
 
     const router = TestBed.inject(Router);
@@ -188,7 +189,8 @@ describe('Sidebar', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).not.toContain('New chat');
-    expect(fixture.nativeElement.querySelector('nav')).toBeFalsy();
+    // no conversation list: the Work route lists its runs instead
+    expect(fixture.nativeElement.querySelector('nav[aria-label="Conversations"]')).toBeFalsy();
 
     const authService = TestBed.inject(AuthService);
     authService.currentUser.set(USER);
@@ -215,5 +217,75 @@ describe('Sidebar', () => {
     await router.navigateByUrl('/');
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('New chat');
+  });
+
+  describe('run history on the Work route', () => {
+    const RUN = {
+      run_id: 'abcdef1234567890',
+      saved_at_utc: '2026-10-12T14:05:00+00:00',
+      status: 'REVIEW_REQUIRED',
+      input_samples: 12,
+      review_required: 5,
+      decided: 2,
+    };
+
+    function stubRuns(runs: unknown[], available = true): void {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: true, json: async () => ({ runs, available }) } as Response),
+      );
+      const auth = TestBed.inject(AuthService);
+      vi.spyOn(auth, 'fetchWithAuth').mockResolvedValue({
+        ok: true,
+        json: async () => ({ runs, available }),
+      } as Response);
+    }
+
+    async function openWork(): Promise<void> {
+      await TestBed.inject(Router).navigateByUrl('/work');
+      fixture.detectChanges();
+      // the history is fetched from an effect; let that promise settle, then render it
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+    }
+
+    it('lists stored runs instead of conversations', async () => {
+      stubRuns([RUN]);
+
+      await openWork();
+
+      const text = fixture.nativeElement.textContent as string;
+      expect(text).toContain('Runs');
+      expect(text).toContain('abcdef12');
+      expect(text).toContain('12 samples · 5 flagged · 2 decided');
+      expect(text).not.toContain('New chat');
+    });
+
+    it('says there are no runs yet', async () => {
+      stubRuns([]);
+
+      await openWork();
+
+      expect(fixture.nativeElement.textContent).toContain('No runs yet');
+    });
+
+    it('says when history is unavailable rather than showing an empty list', async () => {
+      stubRuns([], false);
+
+      await openWork();
+
+      expect(fixture.nativeElement.textContent).toContain('Run history is unavailable');
+    });
+
+    it('opens a run when it is clicked', async () => {
+      stubRuns([RUN]);
+      const work = TestBed.inject(WorkService);
+      const open = vi.spyOn(work, 'openRun').mockResolvedValue();
+      await openWork();
+
+      (fixture.nativeElement.querySelector('nav[aria-label="Runs"] button') as HTMLElement).click();
+
+      expect(open).toHaveBeenCalledWith('abcdef1234567890');
+    });
   });
 });

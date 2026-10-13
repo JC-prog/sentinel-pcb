@@ -7,6 +7,8 @@ import { ChatService } from '../chat.service';
 import { Icon } from '../icons/icon';
 import { Conversation } from '../models/chat.models';
 import { SettingsService } from '../settings.service';
+import { WorkService } from '../../work/work.service';
+import { WorkflowRunSummary } from '../../work/models/orchestrator.models';
 
 // Work and Models have their own controls (pickers/run buttons; version/queue actions), not
 // conversation history, so the sidebar shows on those routes too (app.ts's ROUTES_WITHOUT_SIDEBAR)
@@ -23,6 +25,10 @@ const ROUTES_WITHOUT_CHAT_NAV = new Set(['/work', '/models']);
 export class Sidebar {
   protected readonly conversations: Signal<Conversation[]>;
   protected readonly showChatNav: Signal<boolean>;
+  /** On the Work tab the sidebar lists stored runs instead of conversations. */
+  protected readonly showRuns: Signal<boolean>;
+  protected readonly runs: Signal<WorkflowRunSummary[]>;
+  protected readonly currentRunId: Signal<string | null>;
 
   /** What the search box holds; matches titles and any messages this browser has loaded. */
   protected readonly query = signal('');
@@ -39,6 +45,7 @@ export class Sidebar {
     private readonly router: Router,
     protected readonly settingsService: SettingsService,
     protected readonly authService: AuthService,
+    protected readonly workService: WorkService,
   ) {
     this.conversations = this.chatService.list();
 
@@ -63,6 +70,16 @@ export class Sidebar {
       { initialValue: this.router.url },
     );
     this.showChatNav = computed(() => !ROUTES_WITHOUT_CHAT_NAV.has(url()));
+    this.showRuns = computed(() => url() === '/work');
+    this.runs = this.workService.runs;
+    this.currentRunId = computed(() => this.workService.result()?.run_id ?? null);
+
+    // History is read when the Work tab is shown (and again when a run finishes, in the service).
+    effect(() => {
+      if (this.showRuns()) {
+        void this.workService.loadRuns();
+      }
+    });
 
     effect(() => {
       const input = this.titleInput();
@@ -70,6 +87,24 @@ export class Sidebar {
         input.nativeElement.focus();
         input.nativeElement.select();
       }
+    });
+  }
+
+  openRun(runId: string): void {
+    void this.workService.openRun(runId);
+  }
+
+  /** "12 Oct 14:05" - when the run finished, in the viewer's time zone. */
+  runTime(savedAtUtc: string): string {
+    const date = new Date(savedAtUtc);
+    if (Number.isNaN(date.getTime())) {
+      return savedAtUtc;
+    }
+    return date.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
