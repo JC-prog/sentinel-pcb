@@ -195,6 +195,16 @@ class Settings(BaseSettings):
     # inspection_log.py). Off: nothing is recorded and those counts stay empty.
     inspection_log_enabled: bool = True
 
+    # Explain agent (app/chat/agents/explain_agent/) - an advisory explanation of the image just
+    # inspected, asked of Agent 2's MCP service (app/workflow/services/agent2_mcp_service.py, run as
+    # its own process). Off unless AGENT2_MCP_URL points at it; fails open when it is unreachable.
+    explain_agent_enabled: bool = True
+    agent2_mcp_url: str = ""
+    agent2_mcp_timeout_seconds: float = 60.0
+    # Where that service listens when it is run (python -m app.workflow.services.agent2_mcp_service).
+    agent2_mcp_host: str = "127.0.0.1"
+    agent2_mcp_port: int = 8002
+
     # Case agent (app/chat/agents/case_agent/) - read-only lookups of the Cases chat has saved
     # (get_case, list_cases): what the Cases tab shows, answerable in the conversation.
     case_lookup_agent_enabled: bool = True
@@ -255,6 +265,12 @@ class Settings(BaseSettings):
     # Uploaded dataset CSVs, inspection XMLs, and image-root folders for Work-tab runs - same
     # cwd-relative convention/caveat as chat_upload_dir.
     orchestrator_data_dir: str = "data/orchestrator"
+
+    @property
+    def explain_available(self) -> bool:
+        """The explain agent is on and has a service to ask."""
+
+        return self.explain_agent_enabled and bool(self.agent2_mcp_url.strip())
 
     @property
     def selectable_chat_models(self) -> list[str]:
