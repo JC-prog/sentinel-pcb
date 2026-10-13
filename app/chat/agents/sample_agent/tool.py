@@ -85,7 +85,7 @@ async def get_run_drift(
     disagreed with it, and its confidence - plus how the operator's decisions split (Accept Machine /
     Accept AI / Manual, and how many of each overruled the model), what is still pending, the model's
     commonest misses, and the list of operator corrections with which already have a retraining ticket. Read-only. Use it for 'how is the model doing in the last run?' and
-    'what did the operator correct?' (not get_drift_summary, which measures saved cases). Uses the
+    'what did the operator correct?' (not get_drift_summary, which counts corrections over time). Uses the
     latest run unless a run id is given."""
 
     try:

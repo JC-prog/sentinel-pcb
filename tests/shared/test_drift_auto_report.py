@@ -73,7 +73,8 @@ async def test_the_fifth_correction_raises_one_report_with_its_evidence(
     assert (report.model_name, report.model_version) == (MODEL, VERSION)
     assert report.status == DriftReportStatus.OPEN
     assert report.reported_by_user_id == user.id
-    assert report.stats["auto"] is True and report.stats["corrections"] == 5
+    assert report.stats["auto"] is True and report.stats["version_corrections"] == 5
+    assert report.stats["corrections"]["recent"] == 5
     assert report.case_numbers == [t.case_number for t in tickets]
     assert "5 corrections to pcb_body_defect" in report.description
 
@@ -89,7 +90,7 @@ async def test_more_corrections_refresh_the_open_report_instead_of_adding_one(
         await _correct(db_async_session, user)
 
     (report,) = await _reports(db_async_session)
-    assert report.stats["corrections"] == 8 and len(report.case_numbers) == 8
+    assert report.stats["version_corrections"] == 8 and len(report.case_numbers) == 8
     assert "8 corrections" in report.description
 
 

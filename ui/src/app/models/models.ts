@@ -131,6 +131,15 @@ export class Models implements OnInit, OnDestroy {
 
   /** "override rate 40%" style one-liners from a report's snapshot, for the numbers worth a glance. */
   protected driftFigures(report: DriftReport): string[] {
+    const corrections = report.stats.corrections;
+    if (corrections) {
+      const days = report.stats.window_days;
+      const window = days ? `the last ${days} days` : 'the recent window';
+      return [
+        `${corrections.recent} correction${corrections.recent === 1 ? '' : 's'} in ${window}`,
+        `${corrections.previous} before`,
+      ];
+    }
     const recent = report.stats.recent;
     if (!recent || recent.cases === 0) {
       return [];

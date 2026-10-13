@@ -73,9 +73,14 @@ export interface DriftStats {
   previous?: DriftWindowStats;
   enough_data?: boolean;
   signals?: string[];
+  /** Confirmed corrections in the recent window and the one before (app/shared/modelops/corrections.py).
+   * Reports filed before this existed carry `recent` (saved-case rates) instead. */
+  corrections?: { recent: number; previous: number };
+  by_version?: Record<string, { recent: number; previous: number }>;
   /** True for a report raised automatically after enough corrections (app/shared/modelops/drift.py). */
   auto?: boolean;
-  corrections?: number;
+  /** For an automatic report: corrections to this model version inside the window. */
+  version_corrections?: number;
 }
 
 export interface DriftOverview {

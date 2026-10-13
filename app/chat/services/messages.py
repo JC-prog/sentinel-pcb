@@ -30,7 +30,7 @@ and to contact an administrator; do not guess it from other tools.
 run, so name the run you answered from.
 - They ask what is waiting for review in a Work-tab run: list_review_cases.
 - They ask how the models did in a Work-tab run, or what the operator corrected: get_run_drift \
-(get_drift_summary is for saved cases, not runs).
+(get_drift_summary counts corrections over time, not one run).
 When the user says "it", "that case" or "this defect" without a number, the tools use what they are \
 looking at - you do not need to ask for a number.
 

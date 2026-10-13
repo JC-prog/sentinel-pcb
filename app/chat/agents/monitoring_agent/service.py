@@ -1,7 +1,7 @@
 """The monitoring agent's work, free of any chat or LLM concern: summarise a model's drift, file a
 drift report, draft a retraining plan, and the Admin overview. Reads and writes the shared
-model-operations tables (app/shared/modelops/); the drift numbers come from Cases
-(app/chat/services/drift.py).
+model-operations tables (app/shared/modelops/); the drift numbers are counts of confirmed
+corrections (app/shared/modelops/corrections.py).
 
 Nothing here retrains anything or changes which model is live. The furthest a request goes is a
 RetrainingJob in PENDING_APPROVAL - an Admin approves it (and promotes the result) in the Models tab.
@@ -13,7 +13,6 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.services.cases import get_case_by_sequence_number, parse_case_number
-from app.chat.services.drift import drift_summary
 from app.shared.db.models import (
     DriftReport,
     DriftReportStatus,
@@ -27,6 +26,7 @@ from app.shared.modelops import jobs as job_repo
 from app.shared.modelops import reconcile
 from app.shared.modelops import tickets as ticket_repo
 from app.shared.modelops import versions as version_repo
+from app.shared.modelops.corrections import correction_trend
 
 DEFAULT_WINDOW_DAYS = 7
 MAX_REPORTS = 20
@@ -64,7 +64,7 @@ async def drift_overview(session: AsyncSession, model: str, *, days: int) -> dic
     """The drift summary plus what the user will want next to it: the live version and how many
     reports and tickets are already open for this model."""
 
-    summary = await drift_summary(session, model, days=days)
+    summary = await correction_trend(session, model, days=days)
     live = await version_repo.get_live_version(session, model)
     open_reports = await drift_repo.count_reports_by_model(session, status=DriftReportStatus.OPEN)
     open_tickets = await ticket_repo.count_tickets(session, status=RetrainingTicketStatus.OPEN)
@@ -104,7 +104,7 @@ async def file_drift_report(
             case_ids.append(case.id)
             known_numbers.append(case.case_number)
 
-    summary = await drift_summary(session, model, days=days)
+    summary = await correction_trend(session, model, days=days)
     live = await version_repo.get_live_version(session, model)
     report = await drift_repo.create_drift_report(
         session,
@@ -136,7 +136,7 @@ async def draft_plan(
         session, model_name=model, status=DriftReportStatus.OPEN
     )
     if not rationale:
-        summary = await drift_summary(session, model, days=DEFAULT_WINDOW_DAYS)
+        summary = await correction_trend(session, model, days=DEFAULT_WINDOW_DAYS)
         rationale = default_rationale(model, len(open_reports), summary["signals"])
 
     try:

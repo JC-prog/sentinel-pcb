@@ -261,6 +261,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Chat: **"is the model drifting?" now counts corrections.** `get_drift_summary` used to report
+  review, override and low-confidence rates over saved Cases, which no longer mean anything now that
+  a Case is only made when someone corrects a label (and approve/override is off): the sample was
+  only the mistakes. It now counts confirmed corrections (retraining tickets, from chat and the
+  Work tab) for the model in the recent window against the one before, split by model version, and
+  says where the automatic drift-report threshold is. It states that this is a count and not an
+  error rate; a run's rate is `get_run_drift`. A drift report's stored snapshot, and the Models
+  tab's figures, use the same numbers (older reports keep their old figures). Removed
+  `app/chat/services/drift.py`.
 - UI: the inspection card in chat shows a confidence meter and the model version for the region and
   defect stages, the assistant's one-line summary when there is one, and what to do next (correct
   the label, or inspect a clearer image when no defect model ran). The Cases tab shows dates

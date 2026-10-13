@@ -18,6 +18,7 @@ from app.shared.db.models import (
     DriftReportStatus,
     RetrainingTicket,
 )
+from app.shared.modelops.corrections import correction_trend
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +137,13 @@ async def maybe_raise_report(session: AsyncSession, ticket: RetrainingTicket) ->
     description = (
         f"{len(recent)} corrections to {ticket.model_name} ({version}) in the last {days} days."
     )
+    # The model's correction trend (same shape as a report filed by hand), plus what is specific to
+    # this one: it was raised automatically, and how many corrections this model version has.
     stats: dict[str, Any] = {
+        **await correction_trend(session, ticket.model_name, days=days),
         "auto": True,
-        "model": ticket.model_name,
-        "corrections": len(recent),
-        "window_days": days,
+        "model_version": ticket.model_version,
+        "version_corrections": len(recent),
         "threshold": threshold,
         "sample_refs": sample_refs,
     }

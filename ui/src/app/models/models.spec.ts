@@ -361,6 +361,24 @@ describe('Models', () => {
       expect(button('30 days')!.getAttribute('aria-pressed')).toBe('false');
     });
 
+    it('shows a report that counts corrections as a number of corrections, not rates', () => {
+      fake.driftSignal.set(
+        drift({
+          reports: [
+            report({
+              stats: { corrections: { recent: 6, previous: 1 }, window_days: 7, signals: [] },
+            }),
+          ],
+        }),
+      );
+      fixture.detectChanges();
+
+      const card = root().querySelector('[data-report="r-1"]') as HTMLElement;
+      expect(card.textContent).toContain('6 corrections in the last 7 days');
+      expect(card.textContent).toContain('1 before');
+      expect(card.textContent).not.toContain('override rate');
+    });
+
     it('lets an Admin resolve an open report but not a resolved one', async () => {
       await click('Mark resolved');
       expect(fake.service.resolveDrift).toHaveBeenCalledWith('r-1');

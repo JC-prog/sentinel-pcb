@@ -207,8 +207,9 @@ relabel_case (propose)                         confirm_relabel (commit, a LATER 
 
 The confirm step is **enforced in code, not by the prompt**: `streaming.py` injects when the turn
 began, and `service.py` refuses to commit a proposal stamped inside that same turn, or one made by
-another user - so the model cannot propose and confirm in one breath. Corrections also feed drift
-(`correction_rate` in `app/chat/services/drift.py`). `RELABEL_AGENT_ENABLED` is its kill switch.
+another user - so the model cannot propose and confirm in one breath. Each correction is a
+retraining ticket, which is what drift counts (`app/shared/modelops/corrections.py`) and what raises
+a drift report on its own. `RELABEL_AGENT_ENABLED` is its kill switch.
 
 ### Monitoring Agent
 

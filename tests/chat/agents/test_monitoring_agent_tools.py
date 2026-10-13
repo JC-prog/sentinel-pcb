@@ -68,7 +68,8 @@ async def test_reporting_drift_files_a_report_with_a_snapshot_of_the_numbers(
     (report,) = (await db_async_session.scalars(select(DriftReport))).all()
     assert report.case_ids == [case.id]
     assert report.stats["model"] == MODEL
-    assert report.stats["recent"]["cases"] == 1
+    assert report.stats["corrections"] == {"recent": 0, "previous": 0}  # no ticket yet
+    assert "not the model's error rate" in report.stats["basis"]
     assert report.reported_by_user_id == user.id
 
 
@@ -103,7 +104,9 @@ async def test_the_drift_summary_includes_the_live_version_and_open_counts(
     assert result["live_version"] == "JcProg/body@v1"
     assert result["open_drift_reports"] == 1
     assert result["open_retraining_tickets"] == 1
-    assert {"recent", "previous", "by_version", "signals", "enough_data"} <= set(result)
+    assert {"corrections", "by_version", "signals", "enough_data", "basis"} <= set(result)
+    assert result["corrections"] == {"recent": 1, "previous": 0}
+    assert result["by_version"] == {"JcProg/body@v1": {"recent": 1, "previous": 0}}
 
 
 async def test_the_window_is_kept_within_sane_bounds(db_async_session: AsyncSession) -> None:

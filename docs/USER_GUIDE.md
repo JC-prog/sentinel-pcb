@@ -60,7 +60,7 @@ reference; sections 3-8 explain each row.
 | Look up a Work-tab sample | nothing | "What do you know about sample S000001?" | `get_sample` | No |
 | See what is waiting for review | nothing | "Which samples are still waiting for review?" | `list_review_cases` | No |
 | See how the models did in a Work-tab run | nothing | "How did the models do in the last run, and what did the operator correct?" | `get_run_drift` | No |
-| Check whether a model is drifting (saved cases) | nothing | "Is the pcb_text_defect model drifting?" | `get_drift_summary` | No |
+| Check whether corrections are piling up | nothing | "Are corrections to pcb_text_defect piling up?" | `get_drift_summary` | No |
 | File a drift report | nothing | "Report that - lots of false Golden calls since Monday." | `report_model_drift` | Yes |
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
@@ -172,12 +172,13 @@ tells you to run a dataset in the Work tab first.
 
 ## 7. Model health and retraining (chat)
 
-> *"Is the pcb_text_defect model drifting?"*
+> *"Are corrections to the pcb_text_defect model piling up?"*
 
-`get_drift_summary` compares the model's recent period with the one before it over **saved cases**
-(from the relabel / review steps above): how many needed review, how often reviewers overrode or
-**corrected** it, its confidence, by model version, with plain-language notes. (For a Work-tab
-**run**, use the run question in section 6 instead - it measures the run's samples.)
+`get_drift_summary` counts the **corrections** people confirmed for the model (from chat relabels
+and from the Work tab), this period against the one before, split by model version, with
+plain-language notes and where the automatic drift-report threshold is. It is a **count, not an
+error rate**: only labels someone looked at and corrected are counted. (For how a Work-tab **run**
+did, use the run question in section 6 instead - it measures that run's samples.)
 
 If it looks wrong:
 

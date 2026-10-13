@@ -14,7 +14,6 @@ from app.chat.agents import supervisor
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
 from app.chat.agents.supervisor import ToolFinished
 from app.chat.db.models import Case, CaseStatus
-from app.chat.services.drift import window_stats
 from app.shared.db.models import User, UserRole
 from tests.chat._llm import ScriptedModel, ai
 from tests.chat.agents._helpers import call, tool_context
@@ -221,24 +220,6 @@ async def test_a_confirmed_proposal_cannot_be_confirmed_twice(
 
 # --- drift: an override is the signal the drift numbers watch ---------------------------------
 
-
-async def test_an_override_counts_in_the_override_rate_drift_watches(
-    db_async_session: AsyncSession,
-) -> None:
-    user = await make_user(db_async_session)
-    approved = await _flagged_case(db_async_session, user)
-    overridden = await _flagged_case(db_async_session, user)
-    for case, decision in ((approved, "approve"), (overridden, "override")):
-        await _propose(db_async_session, user, case, decision=decision)
-        await _confirm(db_async_session, user, case, _next_turn())
-
-    now = datetime.now(UTC)
-    stats = await window_stats(
-        db_async_session, "pcb_body_defect", since=now - timedelta(days=1), until=now + timedelta(days=1)
-    )
-
-    assert (stats.approved, stats.overridden) == (1, 1)
-    assert stats.override_rate == 0.5
 
 
 # --- end to end through the supervisor ----------------------------------------------------------

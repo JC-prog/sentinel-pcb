@@ -27,7 +27,8 @@ app/workflow/services/run_store.py wrote them:
   points   `adc_inspection_results` payloads: {sample_id, sample, inference, final_decision}
   reviews  `adc_agent2_reviews` payloads:     {sample_id, result: {output}, human_decision, ...}
 
-Cases (chat's table) are a different population and are measured by app/chat/services/drift.py.
+Corrections over time, across chat and every run, are counted by corrections.py - a count, not
+the per-run rate computed here.
 """
 
 import re
