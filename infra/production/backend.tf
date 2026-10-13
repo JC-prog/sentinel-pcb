@@ -6,7 +6,7 @@ terraform {
   backend "s3" {
     bucket       = "sentinelchat-terraform-state-REPLACE_WITH_ACCOUNT_ID" # from bootstrap's output
     key          = "sentinelchat/terraform.tfstate"
-    region       = "us-east-1"
+    region       = "ap-southeast-1"
     encrypt      = true
     use_lockfile = true
   }
