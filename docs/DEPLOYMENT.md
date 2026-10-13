@@ -5,17 +5,18 @@ afterwards. Nothing is persistent: when you destroy the stack, the database, upl
 and secrets are gone. Plan for about 45 minutes to deploy and 20 to tear down.
 
 What gets created: one CloudFront URL that serves the UI and `/api/*`, an ALB, the backend on
-Fargate (1 vCPU, 2 GiB), the inference service on Fargate, Qdrant on Fargate, RDS Postgres, two ECR
-repositories, an S3 bucket for the UI, three Secrets Manager secrets, and a private DNS namespace.
+Fargate (1 vCPU, 3 GiB, with Agent 2's MCP service beside it as a second container), the inference
+service on Fargate, Qdrant on Fargate, RDS Postgres, two ECR repositories, an S3 bucket for the UI
+and one for the IPC corpus, three Secrets Manager secrets, and a private DNS namespace.
 Details of each piece are in [`infra/production/README.md`](../infra/production/README.md).
 
 **Contents**
 
 | Part | Steps |
 |---|---|
-| Deploy | [0. Before you start](#0-before-you-start) · [1. State bucket](#1-one-time-the-terraform-state-bucket) · [2. Repositories](#2-create-the-container-repositories-first) · [3. Build and push](#3-build-and-push-the-two-images) · [4. Create the rest](#4-create-everything-else) · [5. Health check](#5-check-that-the-backend-is-healthy) · [6. Publish the UI](#6-publish-the-ui) · [7. Use it](#7-use-it) |
-| Update | [8. Updating while it is up](#8-updating-while-it-is-up) |
-| **Teardown** | [**9. Teardown**](#9-teardown-destroy-everything) · [9.1 Destroy](#91-destroy-the-stack) · [9.2 Confirm nothing is left](#92-confirm-nothing-is-left-running) · [9.3 Clean up outside Terraform](#93-clean-up-outside-terraform) |
+| Deploy | [0. Before you start](#0-before-you-start) · [1. State bucket](#1-one-time-the-terraform-state-bucket) · [2. Repositories](#2-create-the-container-repositories-first) · [3. Build and push](#3-build-and-push-the-two-images) · [4. Create the rest](#4-create-everything-else) · [5. Health check](#5-check-that-the-backend-is-healthy) · [6. Publish the UI](#6-publish-the-ui) · [7. Load the IPC corpus](#7-load-the-ipc-corpus-explain-this-result) · [8. Use it](#8-use-it) |
+| Update | [9. Updating while it is up](#9-updating-while-it-is-up) |
+| **Teardown** | [**10. Teardown**](#10-teardown-destroy-everything) · [10.1 Destroy](#101-destroy-the-stack) · [10.2 Confirm nothing is left](#102-confirm-nothing-is-left-running) · [10.3 Clean up outside Terraform](#103-clean-up-outside-terraform) |
 
 ---
 
@@ -115,7 +116,8 @@ terraform apply          # review the plan, then type "yes"
 ```
 
 This creates RDS, the ALB, the ECS cluster and three services, Cloud Map DNS, the secrets
-(including a generated JWT signing key), the S3 bucket and the CloudFront distribution.
+(including a generated JWT signing key), the UI bucket, the IPC corpus bucket with its one-shot
+loader task, and the CloudFront distribution.
 Expect **10 to 20 minutes**: RDS and CloudFront are the slow parts.
 
 When it finishes, note the outputs:
@@ -124,7 +126,13 @@ When it finishes, note the outputs:
 terraform output
 ```
 
-You will use `cloudfront_domain`, `ui_bucket_name` and `cloudfront_distribution_id`.
+You will use `cloudfront_domain`, `ui_bucket_name` and `cloudfront_distribution_id`, and for
+step 7 `ipc_corpus_bucket_name` and `ipc_corpus_load_command`.
+
+Two settings you may want to know about: `explain_enabled` (default `true`) runs Agent 2's MCP
+service beside the backend, which is what switches on "Explain this result" in chat; set it to
+`false` to leave it out (the backend then also needs only 2 GiB). The backend's 3 GiB default
+(`task_memory`) already includes room for it.
 
 ---
 
@@ -152,6 +160,10 @@ aws ecs list-tasks --region "$AWS_REGION" --cluster sentinelchat-cluster \
 aws logs tail /ecs/sentinelchat-backend --since 15m
 ```
 
+The backend task also runs the Agent 2 container; its lines are in the same log group under the
+`agent2-mcp` stream prefix. It is not essential, so if it fails the backend still answers health
+checks and chat only reports that explanations are unavailable.
+
 The usual causes are an image that was never pushed (step 3), the wrong platform (step 3), or a
 bad OpenAI key in the secret.
 
@@ -173,14 +185,43 @@ The UI calls the API on its own origin (`apiBaseUrl` is empty), so no URL needs 
 
 ---
 
-## 7. Use it
+## 7. Load the IPC corpus (Explain this result)
+
+Agent 2 cites IPC-standard passages it finds in Qdrant (`pcb_standards_precedents`). Qdrant here has
+no persistent volume, so that collection is **empty on every fresh stack and after every Qdrant
+restart**; without it "Explain this result" still works but cites no precedents. Loading is a
+separate, manual step because it uses an export made on a machine that holds the corpus:
+
+```bash
+# once, on a machine whose Qdrant holds the corpus (your dev stack; no OpenAI call is made)
+uv run python -m app.workflow.services.ipc_ingest export ipc-corpus.jsonl
+
+# upload it to the private corpus bucket created in step 4
+cd infra/production
+aws s3 cp ../../ipc-corpus.jsonl "s3://$(terraform output -raw ipc_corpus_bucket_name)/ipc-corpus.jsonl"
+
+# run the one-shot loader task (copies the file from S3, waits for Qdrant, imports it)
+eval "$(terraform output -raw ipc_corpus_load_command)"
+```
+
+Check it in CloudWatch, log group `/ecs/sentinelchat-ipc-corpus-loader`: the `fetch` stream shows the
+copy and `import` ends with `imported N chunk(s)`. Running it twice is harmless. The export holds the
+documents' text, so it is never committed or baked into an image, and it is deleted with the bucket
+at teardown.
+
+---
+
+## 8. Use it
 
 1. Open the `cloudfront_domain` URL from step 4.
 2. **Register.** The **first** user ever registered becomes the Admin, so do this yourself first.
 3. Go to the **Work** tab, add a dataset CSV and inspection XML (and the image folder), and press
-   **Run Agentic Workflow**.
+   **Run Agentic Workflow**. Past runs are listed in the sidebar.
 4. Open the **Review Console** to see the Agent 1 and Agent 2 cards, and **Model feedback** for the
    graphs.
+5. In **Chat**, attach a component image and ask what is wrong with it, then ask to **explain** the
+   result. **Cases** lists what chat saved; **Models** shows versions, drift and the retraining
+   queue (approve and promote are Admin-only). The first user is the Admin; later users are QA.
 
 Things to expect on a fresh deployment:
 
@@ -190,26 +231,30 @@ Things to expect on a fresh deployment:
   the browser will show a gateway timeout and the run may be cut off. Use a smaller dataset for the
   demo if it happens.
 - **Uploaded files and Qdrant data live on the task's own disk.** If a task restarts, the
-  uploads and the stored runs and reviews for that task are lost.
+  uploads and the stored runs and reviews for that task are lost, and the IPC corpus has to be
+  loaded again (step 7).
+- **"Explain this result" takes a while** (a vision call and a grounding call); the client waits up
+  to a minute.
 
 ---
 
-## 8. Updating while it is up
+## 9. Updating while it is up
 
 | Change | Do |
 |---|---|
-| Backend code | rebuild and push the backend image (step 3), then `aws ecs update-service --region "$AWS_REGION" --cluster sentinelchat-cluster --service sentinelchat-backend --force-new-deployment` |
+| Backend code (this also updates Agent 2's container and the corpus loader, which use the same image) | rebuild and push the backend image (step 3), then `aws ecs update-service --region "$AWS_REGION" --cluster sentinelchat-cluster --service sentinelchat-backend --force-new-deployment` |
+| A new corpus export | upload it over the same S3 key and run the loader again (step 7) |
 | Inference models | rebuild and push the inference image, then the same command with `sentinelchat-inference` |
 | UI | step 6 again |
 | Infrastructure settings | edit the `.tf` or variables, then `terraform apply` |
 
 ---
 
-## 9. Teardown (destroy everything)
+## 10. Teardown (destroy everything)
 
 Do this as soon as you are done; the stack costs money while it exists.
 
-### 9.1 Destroy the stack
+### 10.1 Destroy the stack
 
 ```bash
 cd infra/production
@@ -218,7 +263,7 @@ terraform destroy        # review, then type "yes"
 
 This removes the services, ALB, RDS (no final snapshot is taken), the secrets (no recovery window,
 so the names are free immediately), the ECR repositories **including their images**, and the UI
-bucket **including its files**. Expect **10 to 20 minutes**; CloudFront takes the longest because it
+bucket **and the IPC corpus bucket, including their files**. Expect **10 to 20 minutes**; CloudFront takes the longest because it
 is disabled and then deleted.
 
 If `destroy` stops with an error:
@@ -229,20 +274,22 @@ If `destroy` stops with an error:
 | The Cloud Map namespace "has services" | Same: run it again once the ECS services are gone. |
 | CloudFront "distribution not disabled" | Run it again; it needs the disable to finish first. |
 
-### 9.2 Confirm nothing is left running
+### 10.2 Confirm nothing is left running
 
 ```bash
 aws ecs list-clusters --region "$AWS_REGION"
 aws rds describe-db-instances --region "$AWS_REGION" --query 'DBInstances[].DBInstanceIdentifier'
 aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[].LoadBalancerName'
 aws ecr describe-repositories --region "$AWS_REGION" --query 'repositories[].repositoryName'
+aws s3api list-buckets --query "Buckets[?starts_with(Name,'sentinelchat')].Name"
 aws secretsmanager list-secrets --region "$AWS_REGION" --query "SecretList[?starts_with(Name,'sentinelchat')].Name"
 aws cloudfront list-distributions --query "DistributionList.Items[].Id"
 ```
 
-All of these should come back empty (apart from anything unrelated in the account).
+All of these should come back empty (apart from anything unrelated in the account). The S3 list
+will still show the Terraform state bucket (`sentinelchat-terraform-state-...`); see 10.3.
 
-### 9.3 Clean up outside Terraform
+### 10.3 Clean up outside Terraform
 
 1. **Revoke or rotate the OpenAI key** you used. It was written to the Terraform state in the S3
    state bucket, and to your shell history if you exported it there.
@@ -256,13 +303,14 @@ All of these should come back empty (apart from anything unrelated in the accoun
 
 ---
 
-## 10. If you need it to keep data
+## 11. If you need it to keep data
 
 This setup is built to be thrown away. Before using it for anything that must survive a restart,
 or for more than one backend task, see "Known gaps" in
 [`infra/production/README.md`](../infra/production/README.md): Qdrant and the uploads need a
 persistent volume or a managed service first, and chat uploads should move to S3.
 
-One thing is restorable without that: Agent 2's IPC corpus. Upload an export of it to the corpus
-bucket once and run the loader task after each Qdrant start (`terraform output
-ipc_corpus_load_command`); see "The IPC corpus is restored, nothing else" in the same README.
+One thing is restorable without that: Agent 2's IPC corpus. Run the loader of step 7 after each
+Qdrant start; see "The IPC corpus is restored, nothing else" in the same README. Chat memory and
+the Work tab's stored runs are not covered by it: that needs block storage or Qdrant Cloud (Qdrant
+does not support network filesystems such as EFS).
