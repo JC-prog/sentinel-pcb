@@ -26,6 +26,11 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # Admin-only, not QA - infra/monitoring visibility is a configuration concern, not a QA
     # day-to-day action.
     "monitoring_status": frozenset({UserRole.ADMIN}),
+    # Same reason: what has been reported and how a retraining job is doing is Admin visibility.
+    # A QA user is told to contact an administrator (messages.py). Read-only; approving stays in
+    # the Models tab.
+    "list_drift_reports": frozenset({UserRole.ADMIN}),
+    "get_retraining_job": frozenset({UserRole.ADMIN}),
     # Read-only views of the Work tab's stored runs, which are QA/Admin only there too.
     "get_sample": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_runs": frozenset({UserRole.QA, UserRole.ADMIN}),

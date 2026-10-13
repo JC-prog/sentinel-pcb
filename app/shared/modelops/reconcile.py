@@ -5,9 +5,9 @@ never make the Models tab error out - it shows what the database last knew, flag
 
 import logging
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modelops.services.schemas import InferenceStatus
 from app.shared import inference
 from app.shared.db.models import RetrainingJobStatus
 from app.shared.inference import ModelInfo
@@ -15,6 +15,15 @@ from app.shared.modelops import jobs as job_repo
 from app.shared.modelops import versions as version_repo
 
 logger = logging.getLogger(__name__)
+
+
+class InferenceStatus(BaseModel):
+    """Whether the numbers on the page reflect the inference service right now. When it can't be
+    reached the tab still renders what the database knows, and says so."""
+
+    configured: bool
+    reachable: bool
+    error: str | None = None
 
 # Jobs the inference service should currently know about. APPROVED (not yet accepted) has no
 # external id to ask about, and PENDING_APPROVAL hasn't been sent at all.

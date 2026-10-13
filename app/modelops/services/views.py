@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modelops.services import reconcile
 from app.modelops.services.schemas import (
     DriftOverview,
     DriftReportOut,
@@ -32,6 +31,7 @@ from app.shared.db.models import (
 )
 from app.shared.modelops import drift as drift_repo
 from app.shared.modelops import jobs as job_repo
+from app.shared.modelops import reconcile
 from app.shared.modelops import tickets as ticket_repo
 from app.shared.modelops import versions as version_repo
 

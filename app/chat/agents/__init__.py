@@ -21,6 +21,8 @@ from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
     GET_DRIFT_SUMMARY,
+    GET_RETRAINING_JOB,
+    LIST_DRIFT_REPORTS,
     MONITORING_STATUS,
     REPORT_MODEL_DRIFT,
 )
@@ -41,6 +43,8 @@ tool_registry = ToolRegistry(
         REPORT_MODEL_DRIFT,
         DRAFT_RETRAINING_PLAN,
         MONITORING_STATUS,
+        LIST_DRIFT_REPORTS,
+        GET_RETRAINING_JOB,
         GET_SAMPLE,
         LIST_RUNS,
         LIST_REVIEW_CASES,

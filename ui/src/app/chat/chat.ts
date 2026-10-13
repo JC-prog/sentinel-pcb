@@ -6,6 +6,7 @@ import {
   ViewChild,
   computed,
   effect,
+  inject,
   signal,
   untracked,
   viewChild,
@@ -14,6 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
+import { AuthService } from '../auth.service';
 import { ChatService } from './chat.service';
 import { Icon } from './icons/icon';
 import { MarkdownView } from './markdown/markdown-view';
@@ -46,6 +48,8 @@ interface Suggestion {
   needsAttachment?: boolean;
   /** Complete as written: sent on click. Otherwise the prompt is only put in the box to edit. */
   send?: boolean;
+  /** Needs a tool only an Admin is offered; hidden from QA so a suggestion never ends in a refusal. */
+  adminOnly?: boolean;
 }
 
 function isXml(file: File): boolean {
@@ -110,12 +114,25 @@ export class Chat {
       send: true,
     },
     {
+      label: 'Model status and queue',
+      hint: 'Live versions, open drift reports and the retraining queue',
+      prompt: 'What is the model status, and what is in the retraining queue?',
+      send: true,
+      adminOnly: true,
+    },
+    {
       label: 'Draft a retraining plan',
       hint: 'Group the open tickets into a job for approval',
       prompt: 'Draft a retraining plan from the open tickets.',
       send: true,
     },
   ];
+
+  private readonly auth = inject(AuthService);
+  /** The suggestions this user can use: Admin-only ones are not shown to QA. */
+  protected readonly visibleSuggestions = computed(() =>
+    this.suggestions.filter((s) => !s.adminOnly || this.auth.currentUser()?.role === 'admin'),
+  );
 
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);

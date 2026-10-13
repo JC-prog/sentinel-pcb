@@ -65,6 +65,8 @@ reference; sections 3-8 explain each row.
 | File a drift report | nothing | "Report that - lots of false Golden calls since Monday." | `report_model_drift` | Yes |
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
+| See filed drift reports (Admin) | nothing | "What drift reports are open?" | `list_drift_reports` | No |
+| Check a retraining job (Admin) | nothing | "How is the retraining job going?" | `get_retraining_job` | No |
 
 **Model.** The assistant runs on **OpenAI**, through the server's key. **Settings** lets you pick
 which model writes the chat reply from the list the server offers (the operator's `CHAT_MODELS`; the

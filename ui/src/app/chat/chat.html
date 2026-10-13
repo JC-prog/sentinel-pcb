@@ -30,7 +30,7 @@
         </p>
       </div>
       <div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
-        @for (suggestion of suggestions; track suggestion.label) {
+        @for (suggestion of visibleSuggestions(); track suggestion.label) {
           <button
             type="button"
             class="rounded-xl border border-slate-200 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"

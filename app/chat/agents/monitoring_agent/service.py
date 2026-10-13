@@ -24,10 +24,13 @@ from app.shared.db.models import (
 )
 from app.shared.modelops import drift as drift_repo
 from app.shared.modelops import jobs as job_repo
+from app.shared.modelops import reconcile
 from app.shared.modelops import tickets as ticket_repo
 from app.shared.modelops import versions as version_repo
 
 DEFAULT_WINDOW_DAYS = 7
+MAX_REPORTS = 20
+MAX_JOB_SAMPLES = 20
 
 # Jobs still on their way somewhere - what the Admin overview calls the retraining queue.
 _ACTIVE_JOB_STATUSES = [
@@ -167,12 +170,105 @@ def default_rationale(model: str, drift_reports: int, signals: list[str]) -> str
     return " ".join(parts)
 
 
+async def refresh_from_inference(session: AsyncSession) -> dict[str, Any]:
+    """Brings versions and running jobs in line with the inference service before they are read
+    (the Models tab does the same when opened). Best effort: an unreachable service leaves the
+    database's last-known data, and the answer says so rather than passing it off as current."""
+
+    status, _ = await reconcile.sync_versions(session)
+    if status.reachable:
+        await reconcile.refresh_active_jobs(session)
+    return {
+        "inference_reachable": status.reachable,
+        "inference_configured": status.configured,
+        "data_is_current": status.reachable,
+    }
+
+
+def _report_row(report: DriftReport) -> dict[str, Any]:
+    return {
+        "report_id": report.id,
+        "model": report.model_name,
+        "model_version": report.model_version,
+        "status": report.status,
+        "description": report.description,
+        "evidence_cases": report.case_numbers,
+        "filed_at": report.created_at.isoformat(),
+        "resolved_at": report.resolved_at.isoformat() if report.resolved_at else None,
+    }
+
+
+async def list_reports(
+    session: AsyncSession, *, model: str | None, status: DriftReportStatus | None, limit: int
+) -> dict[str, Any]:
+    """Filed drift reports, newest first - what the Models tab's Drift reports list shows."""
+
+    limit = max(1, min(limit, MAX_REPORTS))
+    reports = await drift_repo.list_drift_reports(
+        session, model_name=model, status=status, limit=limit + 1
+    )
+    return {
+        "shown": min(len(reports), limit),
+        "more_not_shown": len(reports) > limit,
+        "reports": [_report_row(r) for r in reports[:limit]],
+    }
+
+
+async def job_detail(session: AsyncSession, job_id: str | None) -> dict[str, Any]:
+    """One retraining job: where it stands, what it was drafted from and what it produced. With no
+    id, the newest job still on its way, else the newest job."""
+
+    freshness = await refresh_from_inference(session)
+    if job_id:
+        job = await job_repo.get_job(session, job_id)
+        if job is None:
+            raise PlanRefused(f"no retraining job {job_id!r}.")
+    else:
+        job = next(iter(await job_repo.list_jobs(session, statuses=_ACTIVE_JOB_STATUSES, limit=1)), None)
+        job = job or next(iter(await job_repo.list_jobs(session, limit=1)), None)
+        if job is None:
+            raise PlanRefused("there are no retraining jobs yet.")
+
+    flagged = [
+        {
+            k: sample.get(k)
+            for k in ("case_number", "sample_ref", "run_id", "observed_label", "expected_label")
+            if sample.get(k) is not None
+        }
+        for sample in job.samples[:MAX_JOB_SAMPLES]
+    ]
+    return {
+        **freshness,
+        "job_id": job.id,
+        "model": job.model_name,
+        "status": job.status,
+        "base_version": job.base_version,
+        "progress": job.progress,
+        "rationale": job.rationale,
+        "error": job.error,
+        # A simulated run produced no new weights; say so rather than let it read as an improvement.
+        "simulated": job.simulated,
+        "result_version": (
+            f"{job.artifact_repo_id}@{job.artifact_revision}" if job.artifact_repo_id else None
+        ),
+        "flagged_total": len(job.samples),
+        "flagged_shown": len(flagged),
+        "flagged": flagged,
+        "drift_report_ids": job.drift_report_ids,
+        "approval_needed": job.status == RetrainingJobStatus.PENDING_APPROVAL,
+        "created_at": job.created_at.isoformat(),
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
+
+
 async def status_overview(session: AsyncSession) -> dict[str, Any]:
+    freshness = await refresh_from_inference(session)
     live = [
         v for v in await version_repo.list_versions(session) if v.status == ModelVersionStatus.LIVE
     ]
     queue = await job_repo.list_jobs(session, statuses=_ACTIVE_JOB_STATUSES)
     overview: dict[str, Any] = {
+        **freshness,
         "live_models": {v.model_name: v.version for v in live},
         "open_drift_reports": await drift_repo.count_reports_by_model(
             session, status=DriftReportStatus.OPEN

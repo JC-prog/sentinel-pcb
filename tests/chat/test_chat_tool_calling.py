@@ -66,6 +66,8 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
         "get_drift_summary",
         "draft_retraining_plan",
         "monitoring_status",
+        "list_drift_reports",
+        "get_retraining_job",
         "create_case",
         "get_sample",
         "list_review_cases",

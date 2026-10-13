@@ -90,6 +90,8 @@ def test_admin_sees_every_tool(
         "get_drift_summary",
         "draft_retraining_plan",
         "monitoring_status",
+        "list_drift_reports",
+        "get_retraining_job",
         "create_case",
         "get_sample",
         "list_review_cases",
