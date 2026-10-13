@@ -226,7 +226,7 @@ precedents and no longer lets physical telemetry decide the verdict. Deliberate 
   (adapted to the OpenAI-embedding reader) and `test_metadata_and_telemetry`. Not ported: `main.py`
   (CLI) and `integrate_ui.py`; `evals/` is ported as manual scripts - see the Oct 13 section below.
   `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
-  `test_agent2_security[../../../../../../etc/passwd]` fail the same way upstream.
+  `test_agent2_security[../../../../../../etc/passwd]` (and `[/etc/shadow]` on Linux, where the file exists) fail the same way upstream.
   Run them from `app/workflow/`, one file per process (`test_mcp_tools` replaces `src.data` with a
   stub and `test_agent_graph` sets a dummy `OPENAI_API_KEY` on import, so together they interfere):
   `PYTHONPATH=<repo>:. python -m pytest tests/<file>`. CI does this (job "Ported Agent 2 tests").

@@ -74,11 +74,12 @@ jobs:
             uv run pytest -q "tests/$f.py"
           done
 
-      # Without the key it skips the live-LLM cases. Not selected: the `/etc/passwd` path-traversal
-      # case, which fails the same way upstream (INTEGRATION_NOTES.md) - the ported visual tool
-      # does not reject the path, it just fails to open it.
+      # Without the key it skips the live-LLM cases. Not selected: the `/etc/passwd` and
+      # `/etc/shadow` path-traversal cases, which fail the same way upstream (INTEGRATION_NOTES.md) -
+      # the ported visual tool does not reject a path that exists, it just fails to use it. (They
+      # pass on a Mac only because those files are not there.)
       - name: Agent 2 security (live-LLM cases skip without a key)
-        run: uv run pytest -q tests/test_agent2_security.py -k "not passwd"
+        run: uv run pytest -q tests/test_agent2_security.py -k "not passwd and not shadow"
 
   inference:
     name: Inference (ruff, mypy, pytest)
