@@ -26,6 +26,7 @@ uploads directory the backend writes to.
 import contextlib
 import importlib
 import logging
+import os
 import sys
 import types
 from collections.abc import Callable, Iterator
@@ -95,7 +96,20 @@ class Tools:
     grounding: Callable[..., dict[str, Any]]
 
 
+def ensure_openai_key() -> None:
+    """The ported tools read `OPENAI_API_KEY` straight from the process environment, but the app's
+    settings also read it from `.env`, where a service started with `python -m ...` finds it without
+    ever exporting it. Mirror it, as the Work tab's run does (services/streaming.py), so a key that
+    works for the backend works here. An environment variable that is already set wins."""
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        key = settings.orchestrator_api_key or settings.openai_api_key
+        if key:
+            os.environ["OPENAI_API_KEY"] = key
+
+
 def load_ported_tools() -> Tools:
+    ensure_openai_key()
     root = str(_WORKFLOW_ROOT)
     if root not in sys.path:
         sys.path.insert(0, root)  # the ported code uses bare `src.` / `models.` imports

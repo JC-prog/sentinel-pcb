@@ -258,3 +258,29 @@ async def test_the_served_tool_is_the_only_one_and_works_through_a_real_mcp_clie
     # the raw ported tools - including the one that reads any path - are not reachable
     assert listed == ["explain_inspection"]
     assert result.data["label"] == "tombstone" and result.data["agrees_with_model"] is True
+
+
+def test_a_key_that_only_the_settings_know_is_given_to_the_ported_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `python -m ...` finds the key in .env via the settings; the ported tools read os.environ
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "openai_api_key", "sk-from-dotenv")
+    monkeypatch.setattr(type(settings), "orchestrator_api_key", property(lambda self: "sk-from-dotenv"))
+
+    service.ensure_openai_key()
+
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "sk-from-dotenv"
+
+
+def test_an_environment_key_is_not_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-environment")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-from-dotenv")
+
+    service.ensure_openai_key()
+
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "sk-from-environment"
