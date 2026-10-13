@@ -146,6 +146,10 @@ def list_models(registry: RegistryDep) -> list[ModelInfo]:
     return [_model_info(registry, name) for name in registry.names()]
 
 
+def _is_commit_sha(revision: str) -> bool:
+    return len(revision) == 40 and all(c in "0123456789abcdef" for c in revision)
+
+
 @app.post("/models/{name}/activate", response_model=ModelInfo)
 async def activate_model(
     name: str,
@@ -163,6 +167,14 @@ async def activate_model(
         raise HTTPException(
             status_code=404, detail=f"unknown model {name!r}; available: {registry.names()}"
         )
+
+    # Asking for the commit that is already live needs no Hub lookup, so it stays a no-op when the
+    # Hub is unreachable. A branch or tag is not skipped: it may have moved since it was loaded.
+    if _is_commit_sha(body.revision) and (current.spec.repo_id, current.spec.revision) == (
+        body.repo_id,
+        body.revision,
+    ):
+        return _model_info(registry, name)
 
     try:
         # A branch or tag is pinned to its commit SHA first, so the version this reports (and

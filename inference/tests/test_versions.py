@@ -129,6 +129,22 @@ def test_activate_pins_a_moving_ref_to_its_commit_sha(
     assert spec.revision == "c0ffee"  # the download is of the SHA, not the moving ref
 
 
+def test_reactivating_the_live_commit_does_not_need_the_hub(
+    client: TestClient, fetcher: FakeFetcher, resolver: FakeResolver
+) -> None:
+    sha = "a" * 40
+    body = {"repo_id": "JcProg/example", "revision": sha}
+    assert client.post("/models/classifier_1/activate", json=body).status_code == 200
+    resolver.calls.clear()
+    fetcher.specs.clear()
+
+    response = client.post("/models/classifier_1/activate", json=body)
+
+    assert response.status_code == 200
+    assert resolver.calls == []
+    assert fetcher.specs == []
+
+
 def test_activating_a_ref_that_resolves_to_the_live_sha_is_a_no_op(
     client: TestClient, fetcher: FakeFetcher, resolver: FakeResolver
 ) -> None:
