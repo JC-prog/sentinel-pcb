@@ -9,11 +9,13 @@
     <div
       class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-400 bg-slate-900/5 dark:bg-slate-100/5"
     >
-      <p class="text-sm font-medium text-slate-600 dark:text-slate-300">Drop images to attach</p>
+      <p class="text-sm font-medium text-slate-600 dark:text-slate-300">
+        Drop images or an inspection XML to attach
+      </p>
     </div>
   }
   @if (!conversation() || conversation()!.messages.length === 0) {
-    <div class="flex flex-1 flex-col items-center justify-center gap-6 px-4">
+    <div class="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-4 py-6">
       <div class="max-w-2xl text-center">
         <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">
           Hi, I'm the Sentinel PCB assistant
@@ -23,15 +25,23 @@
           have one) to classify it, flag an ambiguous result as a case for a person to review, or
           check on cases already flagged.
         </p>
+        <p class="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          Drop or paste images anywhere, or use the paperclip to attach images and XML.
+        </p>
       </div>
       <div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
         @for (suggestion of suggestions; track suggestion.label) {
           <button
             type="button"
-            class="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            class="rounded-xl border border-slate-200 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
             (click)="useSuggestion(suggestion)"
           >
-            {{ suggestion.label }}
+            <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{
+              suggestion.label
+            }}</span>
+            <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{{
+              suggestion.hint
+            }}</span>
           </button>
         }
       </div>
@@ -40,10 +50,17 @@
       </div>
     </div>
   } @else {
-    <div class="flex-1 overflow-y-auto">
+    <div
+      #scrollContainer
+      class="flex-1 overflow-y-auto"
+      role="log"
+      aria-label="Conversation"
+      (scroll)="onScroll()"
+    >
       <div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
+        <p class="sr-only" role="status" aria-live="polite">{{ announcement() }}</p>
         @for (message of conversation()!.messages; track message.id) {
-          <div class="flex flex-col gap-2" [class.items-end]="message.role === 'user'">
+          <div class="group flex flex-col gap-1" [class.items-end]="isUserMessage(message)">
             @if (message.toolResults?.length) {
               <div class="flex w-full max-w-[80%] flex-col gap-2">
                 @for (toolResult of message.toolResults; track $index) {
@@ -51,32 +68,157 @@
                 }
               </div>
             }
-            @if (message.content || message.imageUrls?.length) {
-              <div
-                class="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
-                [class]="
-                  message.role === 'user'
-                    ? 'bg-slate-200 dark:bg-slate-700'
-                    : 'bg-slate-100 dark:bg-slate-800'
-                "
-              >
-                @if (message.imageUrls?.length) {
-                  <div class="mb-2 flex flex-wrap gap-2">
-                    @for (url of message.imageUrls; track url) {
-                      <img [src]="url" alt="Attached image" class="h-32 w-32 rounded-lg object-cover" />
+
+            @if (isUserMessage(message)) {
+              @if (message.content || message.imageUrls?.length || message.attachmentCount) {
+                <div
+                  class="max-w-[80%] rounded-2xl bg-slate-200 px-4 py-2 text-sm whitespace-pre-wrap dark:bg-slate-700"
+                >
+                  @if (message.imageUrls?.length) {
+                    <div class="mb-2 flex flex-wrap gap-2">
+                      @for (url of message.imageUrls; track url) {
+                        <img
+                          [src]="url"
+                          alt="Attached image"
+                          class="h-32 w-32 rounded-lg object-cover"
+                        />
+                      }
+                    </div>
+                  } @else if (message.attachmentCount) {
+                    <p
+                      class="mb-1 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"
+                    >
+                      <app-icon name="paperclip" [size]="12" />
+                      {{ message.attachmentCount }}
+                      {{ message.attachmentCount === 1 ? 'attachment' : 'attachments' }}
+                    </p>
+                  }
+                  {{ message.content }}
+                </div>
+              }
+            } @else if (message.content || message.error) {
+              <div class="w-full text-sm">
+                @if (message.content) {
+                  <app-markdown [source]="message.content" />
+                }
+                @if (streamingMessageId() === message.id) {
+                  <div class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span class="flex gap-1" aria-hidden="true">
+                      <span class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse"></span>
+                      <span
+                        class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse motion-safe:[animation-delay:150ms]"
+                      ></span>
+                      <span
+                        class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse motion-safe:[animation-delay:300ms]"
+                      ></span>
+                    </span>
+                    @if (toolCallLabel(); as label) {
+                      <span>Calling {{ label }}…</span>
                     }
                   </div>
                 }
-                {{ message.content }}
+                @if (message.interrupted && !message.error) {
+                  <p class="mt-2 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                    <app-icon name="stop" [size]="12" />
+                    Reply stopped
+                  </p>
+                }
+                @if (message.error) {
+                  <div
+                    role="alert"
+                    class="mt-2 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                  >
+                    <span class="flex-1">
+                      {{
+                        message.errorMessage ??
+                          (message.content
+                            ? 'The reply was interrupted by an error.'
+                            : 'Something went wrong reaching the assistant.')
+                      }}
+                    </span>
+                    @if (isLastMessage(message) && canResend()) {
+                      <button
+                        type="button"
+                        class="flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 font-medium hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-red-500 dark:border-red-800 dark:hover:bg-red-900/40"
+                        (click)="retry()"
+                      >
+                        <app-icon name="refresh" [size]="12" />
+                        Retry
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+
+            @if (message.content && streamingMessageId() !== message.id) {
+              <div
+                class="flex items-center gap-1 text-xs text-slate-400 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 dark:text-slate-500"
+              >
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  [attr.aria-label]="copiedMessageId() === message.id ? 'Copied' : 'Copy message'"
+                  (click)="copyMessage(message)"
+                >
+                  <app-icon [name]="copiedMessageId() === message.id ? 'check' : 'copy'" [size]="14" />
+                  {{ copiedMessageId() === message.id ? 'Copied' : 'Copy' }}
+                </button>
+                @if (isUserMessage(message)) {
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    aria-label="Edit as a new message"
+                    title="Put this back in the message box to change and send again"
+                    (click)="editMessage(message)"
+                  >
+                    <app-icon name="pencil" [size]="14" />
+                    Edit
+                  </button>
+                } @else if (isLastMessage(message) && !message.error && canResend()) {
+                  <button
+                    type="button"
+                    class="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    aria-label="Regenerate reply"
+                    (click)="retry()"
+                  >
+                    <app-icon name="refresh" [size]="14" />
+                    Regenerate
+                  </button>
+                }
+                @if (message.usage; as usage) {
+                  <span
+                    class="px-1.5"
+                    [title]="
+                      'Prompt ' + usage.inputTokens + ' tokens, reply ' + usage.outputTokens + ' tokens'
+                    "
+                    >{{ usage.inputTokens + usage.outputTokens | number }} tokens</span
+                  >
+                }
+                <time
+                  class="px-1.5"
+                  [attr.datetime]="message.createdAt | date: 'yyyy-MM-ddTHH:mm:ss'"
+                  [title]="message.createdAt | date: 'medium'"
+                  >{{ message.createdAt | date: 'shortTime' }}</time
+                >
               </div>
             }
           </div>
         }
-        @if (isLoading()) {
+        @if (showPendingBubble()) {
           <div class="flex flex-col gap-2">
             <div
-              class="max-w-[80%] rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+              class="flex max-w-[80%] items-center gap-2 rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-400"
             >
+              <span class="flex gap-1" aria-hidden="true">
+                <span class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse"></span>
+                <span
+                  class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse motion-safe:[animation-delay:150ms]"
+                ></span>
+                <span
+                  class="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse motion-safe:[animation-delay:300ms]"
+                ></span>
+              </span>
               @if (toolCallLabel(); as label) {
                 Calling {{ label }}…
               } @else {
@@ -85,9 +227,32 @@
             </div>
           </div>
         }
-        <div #scrollAnchor></div>
+        @if (followUps().length > 0) {
+          <div class="flex flex-wrap gap-2" aria-label="Suggested replies">
+            @for (text of followUps(); track text) {
+              <button
+                type="button"
+                class="rounded-full border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                (click)="sendFollowUp(text)"
+              >
+                {{ text }}
+              </button>
+            }
+          </div>
+        }
       </div>
     </div>
+
+    @if (!stickToBottom()) {
+      <button
+        type="button"
+        class="absolute bottom-28 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+        (click)="jumpToLatest()"
+      >
+        <app-icon name="arrow-down" [size]="14" />
+        Jump to latest
+      </button>
+    }
 
     <div class="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
       <div class="mx-auto max-w-3xl">
@@ -98,6 +263,22 @@
 </div>
 
 <ng-template #inputBar>
+  @if (attachmentNotice(); as notice) {
+    <div
+      role="status"
+      class="mb-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+    >
+      <span class="flex-1">{{ notice }}</span>
+      <button
+        type="button"
+        class="rounded p-0.5 hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-amber-600 dark:hover:bg-amber-900/40"
+        aria-label="Dismiss"
+        (click)="dismissNotice()"
+      >
+        <app-icon name="x" [size]="12" />
+      </button>
+    </div>
+  }
   @if (pendingImages().length > 0) {
     <div class="mb-2 flex flex-wrap gap-2">
       @for (image of pendingImages(); track image.previewUrl; let i = $index) {
@@ -105,11 +286,11 @@
           <img [src]="image.previewUrl" alt="Pending upload" class="h-16 w-16 rounded-lg object-cover" />
           <button
             type="button"
-            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-300 text-xs text-slate-700 hover:bg-slate-400 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            class="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-300 text-slate-700 hover:bg-slate-400 focus-visible:outline-2 focus-visible:outline-slate-500 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
             aria-label="Remove image"
             (click)="removePendingImage(i)"
           >
-            ✕
+            <app-icon name="x" [size]="12" />
           </button>
         </div>
       }
@@ -122,14 +303,15 @@
         <div
           class="flex items-center gap-2 rounded-lg bg-slate-200 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200"
         >
-          <span>📄 {{ xml.file.name }}</span>
+          <app-icon name="file" [size]="14" />
+          <span>{{ xml.file.name }}</span>
           <button
             type="button"
-            class="flex h-4 w-4 items-center justify-center rounded-full hover:bg-slate-300 dark:hover:bg-slate-600"
+            class="flex h-4 w-4 items-center justify-center rounded-full hover:bg-slate-300 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-600"
             aria-label="Remove XML"
             (click)="removePendingXml(i)"
           >
-            ✕
+            <app-icon name="x" [size]="12" />
           </button>
         </div>
       }
@@ -142,51 +324,52 @@
     <input
       #fileInput
       type="file"
-      accept="image/*"
+      accept="image/*,.xml,application/xml,text/xml"
       multiple
       hidden
       (change)="onFilesSelected($event)"
     />
     <button
       type="button"
-      class="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-      aria-label="Attach image"
+      class="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      aria-label="Attach images or an inspection XML"
+      title="Attach images or an inspection XML"
       (click)="fileInput.click()"
     >
-      📎
-    </button>
-    <input
-      #xmlInput
-      type="file"
-      accept=".xml,application/xml,text/xml"
-      multiple
-      hidden
-      (change)="onXmlFilesSelected($event)"
-    />
-    <button
-      type="button"
-      class="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-      aria-label="Attach inspection XML"
-      title="Attach inspection XML"
-      (click)="xmlInput.click()"
-    >
-      📄
+      <app-icon name="paperclip" [size]="18" />
     </button>
     <textarea
-      class="max-h-40 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+      #messageInput
+      class="max-h-40 flex-1 resize-none overflow-y-auto bg-transparent py-2 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
       rows="1"
+      aria-label="Message"
       placeholder="Message…"
       [ngModel]="draftText()"
       (ngModelChange)="draftText.set($event)"
       (keydown)="onTextareaKeydown($event)"
+      (paste)="onPaste($event)"
     ></textarea>
-    <button
-      type="button"
-      class="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-600 dark:disabled:text-slate-400"
-      [disabled]="!draftText().trim() && pendingImages().length === 0 && pendingXmlFiles().length === 0"
-      (click)="send()"
-    >
-      Send
-    </button>
+    @if (isLoading()) {
+      <button
+        type="button"
+        class="flex shrink-0 items-center gap-1 rounded-lg border border-slate-400 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-500 dark:text-slate-200 dark:hover:bg-slate-700"
+        aria-label="Stop generating"
+        (click)="stop()"
+      >
+        <app-icon name="stop" [size]="14" />
+        Stop
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="flex shrink-0 items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-600 dark:disabled:text-slate-400"
+        aria-label="Send message"
+        [disabled]="!draftText().trim() && pendingImages().length === 0 && pendingXmlFiles().length === 0"
+        (click)="send()"
+      >
+        Send
+        <app-icon name="arrow-up" [size]="14" />
+      </button>
+    }
   </div>
 </ng-template>

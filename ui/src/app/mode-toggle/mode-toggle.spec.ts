@@ -25,7 +25,7 @@ describe('ModeToggle', () => {
   function tabs(): { label: string; selected: string | null; href: string | null }[] {
     return Array.from(fixture.nativeElement.querySelectorAll('a')).map((el) => ({
       label: (el as HTMLElement).textContent?.trim() ?? '',
-      selected: (el as HTMLElement).getAttribute('aria-selected'),
+      selected: (el as HTMLElement).getAttribute('aria-current'),
       href: (el as HTMLElement).getAttribute('href'),
     }));
   }
@@ -44,18 +44,18 @@ describe('ModeToggle', () => {
   });
 
   it('marks Chat as selected on the chat route', () => {
-    expect(tabs().map((t) => t.selected)).toEqual(['true', 'false', 'false']);
+    expect(tabs().map((t) => t.selected)).toEqual(['page', null, null]);
   });
 
   it('marks Work as selected after navigating to /work', async () => {
     await goTo('/work');
 
-    expect(tabs().map((t) => t.selected)).toEqual(['false', 'true', 'false']);
+    expect(tabs().map((t) => t.selected)).toEqual([null, 'page', null]);
   });
 
   it('marks Models as selected after navigating to /models', async () => {
     await goTo('/models');
 
-    expect(tabs().map((t) => t.selected)).toEqual(['false', 'false', 'true']);
+    expect(tabs().map((t) => t.selected)).toEqual([null, null, 'page']);
   });
 });

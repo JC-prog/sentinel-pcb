@@ -27,8 +27,8 @@ resource "aws_service_discovery_service" "inference" {
   }
 }
 
-resource "aws_service_discovery_service" "litellm" {
-  name = "litellm"
+resource "aws_service_discovery_service" "qdrant" {
+  name = "qdrant"
 
   dns_config {
     namespace_id   = aws_service_discovery_private_dns_namespace.internal.id

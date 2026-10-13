@@ -65,8 +65,11 @@ reference; sections 3-8 explain each row.
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
 
-**Provider.** The chat settings let you pick the **Local LLM (Ollama)** or **OpenAI** as the model
-behind the assistant. Both call the same tools.
+**Model.** The assistant runs on **OpenAI**, through the server's key. **Settings** lets you pick
+which model writes the chat reply from the list the server offers (the operator's `CHAT_MODELS`; the
+server's default is first). The choice only affects the reply: memory, guardrails and the inspection
+agents keep their own models, and tool behaviour (what gets saved, the confirm step) is the same
+whichever you pick.
 
 **If a prompt does nothing useful**
 - *"Inspect this board"* with **no image attached** - the inspect tool is only offered when an image
@@ -184,7 +187,7 @@ If it looks wrong:
 > plan with status **pending approval**.
 
 Tickets come from either place: a confirmed **relabel** in chat, or an operator's **queued
-correction** in the Work tab's Drift & Retraining tab (section 8). **Approving a plan and promoting
+correction** sent from the Work tab's Retraining queue tab (section 8). **Approving a plan and promoting
 a retrained model are Admin actions in the Models tab - never from chat.**
 
 **Admin only:** *"What is the model status?"* - which version of each model is live, open drift
@@ -205,7 +208,12 @@ reports, open tickets and the retraining queue.
 3. Optionally tick **Use real LLM Planner** (otherwise a deterministic planner is used).
 4. Buttons: **1. Prepare**, **2. Prepare + Verify**, **3. Run Agentic Workflow** (the full run).
 
-The **Workflow Summary** row counts Input / Prep Ready / Verified / Inference / Accepted / Review.
+The **Workflow Summary** counts Input / Prepared / Verified / Inference / **Failed** / Accepted /
+Review. **Failed** adds up samples that dropped out at preparation, verification or inference; it
+turns red when above 0, the line under the status says at which stage ("76 failed verification"),
+and the server's reasons are listed beneath it ("Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s)
+(e.g. S000001)"). A run that ends *Aborted* with Verified 0 almost always means the image paths in
+the CSV did not resolve under the Image Folder.
 The log below shows the planner's steps. When the run finishes, Agent 2 automatically reviews every
 flagged sample (about 35 seconds for 11 samples) and the log prints each one:
 
@@ -233,42 +241,65 @@ Click **Open Review Console**. On the **Explanation Review** tab:
 
 Nothing is ever auto-approved - even when the two agents agree, the operator makes the call.
 
-### 8.3 Drift & Retraining - the tab follows your decisions
+### 8.3 Model feedback and the Retraining queue - how the models did, and sending your labels for retraining
 
-Every time you save a decision, the **Drift & Retraining** tab refreshes (a badge on the tab shows
-how many corrections are waiting to be queued). It shows:
+The Review Console has three tabs. **Review** is where you decide. **Model feedback** is a read-only
+report: how the region model and the defect models did on this run, where flagged samples dropped
+out, and how useful Agent 2 was. **Retraining queue** is the work list: the corrections you made,
+grouped by the model they teach (the region model, and each defect model), each with its own send
+button. A sample can appear twice: once for the part area you corrected and once for the defect label.
 
-- a per-model table - samples, **Reviewed** (decided / flagged), **Corrected** (and the rate),
-  **Agent 2 disagreed**, low-confidence rate, mean confidence. These numbers are computed on the
-  server from the stored run, not from the browser;
-- **Operator corrections** - every sample where your final result **differs from Agent 1's label**
-  (Accept Machine counts as agreement). Each row shows Agent 1 -> your label, your decision type,
-  your notes and a status: *Ready*, *Queued*, or *No model recorded* (the sample never reached a
-  defect model, so there is nothing to retrain);
-- **Queue N for retraining** - ticks the ready corrections by default; click to file one retraining
-  ticket per correction. Doing it twice files nothing twice. **Nothing is queued automatically** -
-  you decide.
+The tab opens with three steps and marks the one you are on: **1. Review flagged samples** (the
+Explanation Review tab), **2. Send your corrections for retraining** (this tab), **3. An Admin
+approves the plan** (the Models tab).
 
-Below that, a **Manual** section keeps the older forms: *Report drift* for a model, and *Flag
-selected samples for retraining* from the results table.
+**Your final decision is the correct label.** Whatever you pick under *User Final Decision* - Accept
+Machine, Accept AI or Manual - the saved final result is the sample's label. The tab compares it
+with what the **defect model** predicted, and refreshes every time you save a decision (the tab
+shows a badge such as "2 to send"). Only samples **flagged for review** are counted, so this is not
+the model's overall accuracy. Each reviewed sample is one of:
 
-### 8.4 From tickets to a plan to an approved job
+| | What it means |
+| --- | --- |
+| **Model right** | the defect model predicted your label |
+| **Model wrong** | the defect model predicted something else |
+| **Couldn't decide** | the first-stage model wasn't confident enough, so no defect model ran |
 
-**Queueing creates tickets, not a job.** The Models tab's **Retraining queue** lists *jobs*, so right
-after you queue it still says "No retraining jobs yet" and shows the tickets as **"N unplanned"**.
-A *plan* is what turns a model's open tickets into a job:
+**Error rate on reviewed samples** = of the samples the defect model classified (right + wrong), the
+share it got wrong. It says how many flagged samples you have reviewed ("4 of 6 flagged samples
+reviewed - this changes as you review"), so treat it as partial until you finish. *Couldn't decide*
+samples do **not** count toward it - the model never answered - and show on their own; if the model
+classified none of the reviewed samples the rate shows "-". The tab, top to bottom:
 
-1. In the **Drift & Retraining** tab, scroll to **Retraining plan**. Each model with tickets waiting
-   is listed ("pcb_text_defect - 2 tickets waiting"). Click **Draft retraining plan**.
-   *(Alternative: in chat, "Draft a retraining plan for pcb_text_defect.")*
-2. The tab confirms "Plan drafted for pcb_text_defect: 2 samples, pending approval. An Admin approves
-   it in the Models tab." The tickets move from *unplanned* to *in a plan*.
-3. An **Admin** opens **Models -> Retraining queue**, finds the job (status *pending approval*), uses
-   **Show flagged cases** to see what it contains, and clicks **Approve**. That sends it to the
-   inference service (whose trainer is currently a stub that simulates the job).
+- **How accurate was the defect model on the flagged samples?** - the error rate ("67% - 2 of 3 the
+  defect model classified were wrong"), one bar split into model right / model wrong / couldn't
+  decide / not reviewed yet with a count for each, and a per-model table (reviewed, right, wrong,
+  couldn't decide, error rate). Samples no defect model ran on sit in their own **No defect model
+  ran** row. Computed on the server from the stored run, not from the browser.
+- **Most common mistakes** - "model said *missing part* -> correct label *wrong part* x 2".
+- **Send corrections for retraining** - every sample the model got wrong or couldn't decide, with the
+  defect model it belongs to, what the model said, your label (and which decision you used, in the
+  review tab's words), your notes and its status. A *couldn't decide* sample goes to the model the
+  first guess points to (Body / Lead / Text -> the body / lead / text defect model), marked **(from
+  first guess)**. **Nothing is ticked until you choose**: tick rows or use the select-all box, then
+  **Send N corrections for retraining**. That creates the retraining tickets *and* puts them in a
+  retraining plan for each model, ready for an Admin. Sending twice sends nothing twice; nothing is
+  sent automatically. Sent rows show a tick instead of a checkbox.
 
-QA can draft a plan but only an Admin can approve it. Samples from the Work tab reach the inference
-service as `<run id>:<sample id>`.
+Statuses: *Not sent yet* -> *In a retraining plan, awaiting Admin approval* -> *Retrained*.
+*Sent, waiting for a retraining plan* means the plan step did not go through (usually the inference
+service was down); a **Create retraining plan** prompt then appears below, counting only samples from
+this run and noting any others it would also take. *Can't send: no defect model to route it to*: the
+first guess has no defect model (rare). Confirmations and errors share one status line.
+
+### 8.4 After you send corrections: the Admin approves the plan
+
+The plan appears under **Models -> Retraining queue** as *pending approval*. An **Admin** uses
+**Show flagged cases** to see what it contains (Work-tab samples show their run) and clicks
+**Approve**, which sends it to the inference service (whose trainer is currently a stub that
+simulates the job). QA can send corrections and create plans; only an Admin can approve one. In chat,
+*"Draft a retraining plan for pcb_text_defect"* does the same plan step for any samples already in
+the open tickets (including chat relabels).
 
 ---
 
@@ -292,10 +323,12 @@ versions and job progress from the service when reachable.
 1. **Work tab:** run the dataset -> Agent 2 reviews every flagged sample.
 2. **Review Console:** for `S000001` (Agent 1 said *no defect*, Agent 2 said *wrong part*) choose
    **Accept AI**, note *"text is wrong on the part"*, **Confirm Decision**.
-3. **Drift & Retraining:** the correction appears (`Golden -> wrong part`); click **Queue 1 for retraining**.
+3. **Retraining queue:** the correction appears (`Golden -> wrong part`); tick it and click
+   **Send 1 correction for retraining**.
 4. **Chat:** *"How did the models do in the last run?"* - the assistant reports the correction.
-5. **Drift & Retraining:** under **Retraining plan** click **Draft retraining plan** (or ask chat:
-   *"Draft a retraining plan for pcb_text_defect."*) - a plan awaiting approval.
+5. **Retraining queue:** sending already drafted the plan; if it could not (the leftover
+   prompt appears), click **Create retraining plan** (or ask chat: *"Draft a retraining plan for
+   pcb_text_defect."*) - a plan awaiting approval.
 6. **Models (Admin):** the job is now in the **Retraining queue**; **Approve** it.
 
 ---
@@ -305,9 +338,9 @@ versions and job progress from the service when reachable.
 | Symptom | Likely cause |
 | --- | --- |
 | Inspect result is always *Review required*, no defect shown | Region confidence is below the 0.70 threshold. Lower `ADC_REGION_CONFIDENCE_THRESHOLD` (and restart the backend) - see [`DEMO.md`](DEMO.md#before-you-start). |
-| Work-tab corrections say *No model recorded* (Model column: "no model reached") | Those samples stopped at the first stage. Re-run with a lower **feature threshold** (e.g. 0.3) - an existing run can't be changed. |
-| Retraining queue says "No retraining jobs yet" after queueing | Queueing only creates tickets ("N unplanned"). Click **Draft retraining plan** (Drift & Retraining tab) or ask chat for a plan; then the job appears. |
-| "Run could not be read" in Drift & Retraining | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
+| Error rate shows "-" and every sample *couldn't decide* | No defect model ran (region model below the 0.7 threshold). Your labels can still be sent (by first guess); to measure the model, re-run with a lower **feature threshold** (e.g. 0.3). |
+| Retraining queue shows "N unplanned" but no job | Samples are in the training data without a plan. Click **Create retraining plan** in the Corrections & Retraining tab, or ask chat for a plan. |
+| "Run could not be read" in Model feedback or Retraining queue | Qdrant is unreachable. Start it (`docker compose ... up -d qdrant`) and click **Refresh**. |
 | "inference service ..." errors | The inference service (port 8001) isn't running or `INFERENCE_BASE_URL` is blank. `start-dev` sets it. |
 | Assistant says a tool isn't available | Your role doesn't allow it, or its kill switch is off. |
 | "unknown run" / images missing in the Review Console after a redeploy | Uploaded images live on the backend's local disk; re-run the dataset. |

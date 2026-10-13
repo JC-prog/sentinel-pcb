@@ -35,7 +35,6 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     employee_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    department_shift: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default=UserRole.QA, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

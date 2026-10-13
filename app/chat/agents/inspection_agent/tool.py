@@ -104,7 +104,7 @@ INSPECT_IMAGE = ChatTool(
     requires_image=True,
     shows_card=True,
 )
-CREATE_CASE = ChatTool(create_case, label="Case creation", enabled=_enabled)
+CREATE_CASE = ChatTool(create_case, label="Case creation", enabled=_enabled, shows_card=True)
 
 
 def _request(ctx: ToolContext, **identity: Any) -> InspectionRequest:

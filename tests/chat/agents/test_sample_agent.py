@@ -155,7 +155,7 @@ async def test_get_sample_reports_what_the_run_stored(client: AsyncQdrantClient)
     assert list(inspection["measurements"]) == ["ConfidenceLevel"]
     assert result["agent2"] is None and result["human_decision"] is None
     assert result["review_state"] == "awaiting_agent2"
-    assert "other_runs" not in result
+    assert "other_runs" not in result and "instruction" not in result
     # server-side image paths are not handed to the model
     assert "secret" not in json.dumps(result)
 
@@ -221,12 +221,15 @@ async def test_a_sample_in_several_runs_answers_from_the_latest_and_names_the_ot
     latest = await call(GET_SAMPLE, _ctx(), sample_id="S1")
     assert latest["run_id"] == "run-new"
     assert [r["run_id"] for r in latest["other_runs"]] == ["run-old"]
+    # the model is told to name the run it answered from, since the user didn't pick one
+    assert "run-new" in latest["instruction"] and "another run" in latest["instruction"]
 
     older = await call(GET_SAMPLE, _ctx(), sample_id="S1", run_id="run-old")
     assert older["run_id"] == "run-old"
     assert older["agent1"]["final_decision"] == "ACCEPTED"
     assert older["review_state"] == "not_flagged"
     assert "other_runs" not in older
+    assert "instruction" not in older
 
 
 async def test_a_run_that_is_still_being_written_is_not_read(client: AsyncQdrantClient) -> None:
@@ -366,9 +369,7 @@ def _routed(sample_id: str, label: str = "MissingPart") -> dict[str, Any]:
 async def _run_with_one_correction(client: AsyncQdrantClient) -> Any:
     repo = _repo()
     repo.save_run("run-a", _state([_routed("S1"), _routed("S2")]))
-    repo.save_decision(
-        "run-a", "S1", {"selected_source": "MACHINE", "final_result": "missing part"}
-    )
+    repo.save_decision("run-a", "S1", {"selected_source": "AI", "final_result": "missing part"})
     repo.save_decision(
         "run-a",
         "S2",
@@ -388,7 +389,8 @@ async def test_get_run_drift_reports_the_operators_corrections_and_who_still_nee
     result = await call(GET_RUN_DRIFT, ctx)
 
     assert result["run_id"] == "run-a"
-    assert result["totals"] == {"samples": 2, "review_required": 2, "decided": 2, "corrected": 1}
+    assert result["totals"] == {"samples": 2, "review_required": 2, "decided": 2, "confirmed": 1, "relabelled": 1, "no_prediction": 0, "corrected": 1}
+    assert result["drift_rate"] == 0.5
     (model,) = result["models"]
     assert (model["model_name"], model["corrected"], model["correction_rate"]) == (
         "pcb_body_defect",
@@ -401,8 +403,12 @@ async def test_get_run_drift_reports_the_operators_corrections_and_who_still_nee
         "MissingPart",
         "Tombstone",
     )
+    # how the operator's decisions split, for "what did the operator do?" questions
+    assert result["decisions"]["by_source"]["AI"] == {"chosen": 1, "overruled_model": 0}
+    assert result["decisions"]["by_source"]["MANUAL"] == {"chosen": 1, "overruled_model": 1}
+    assert result["decisions"]["pending"] == 0
     assert correction["queued"] is False and result["corrections_not_queued"] == 1
-    assert "Drift & Retraining tab" in result["instruction"]
+    assert "Retraining queue tab" in result["instruction"]
     assert "draft_retraining_plan" not in result["instruction"]  # nothing queued yet
 
     await ticket_repo.create_ticket(

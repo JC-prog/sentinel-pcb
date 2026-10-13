@@ -1,0 +1,133 @@
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+  data-testid="work-settings-backdrop"
+  (click)="cancel()"
+>
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="work-settings-title"
+    class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="mb-4 flex items-center justify-between">
+      <h2 id="work-settings-title" class="text-lg font-semibold">Work settings</h2>
+      <button
+        type="button"
+        class="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        aria-label="Close settings"
+        (click)="cancel()"
+      >
+        ✕
+      </button>
+    </div>
+
+    <h3 class="mb-2 text-sm font-semibold">Policy</h3>
+    <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1 text-sm">
+        <span>Feature confidence threshold</span>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          data-testid="feature-threshold"
+          class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+          [ngModel]="featureThreshold()"
+          (ngModelChange)="featureThreshold.set($event)"
+        />
+      </label>
+      <label class="flex flex-col gap-1 text-sm">
+        <span>Defect confidence threshold</span>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          data-testid="defect-threshold"
+          class="w-28 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+          [ngModel]="defectThreshold()"
+          (ngModelChange)="defectThreshold.set($event)"
+        />
+      </label>
+    </div>
+
+    @if (invalid()) {
+      <p role="alert" data-testid="threshold-error" class="-mt-2 mb-4 text-xs text-red-700 dark:text-red-300">
+        Thresholds must be a number from 0 to 1.
+      </p>
+    }
+
+    <h3 class="mb-2 text-sm font-semibold">LLM planner</h3>
+    <div class="flex flex-col gap-3">
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          data-testid="use-llm"
+          class="accent-slate-900 dark:accent-slate-100"
+          [ngModel]="useLlm()"
+          (ngModelChange)="useLlm.set($event)"
+        />
+        Use real LLM Planner
+      </label>
+
+      <label class="flex flex-col gap-1 text-sm">
+        <span>OpenAI model</span>
+        <input
+          type="text"
+          placeholder="gpt-5.6-luna"
+          data-testid="llm-model"
+          class="w-full rounded border border-slate-300 bg-transparent px-2 py-1 disabled:opacity-50 dark:border-slate-700"
+          [disabled]="!useLlm()"
+          [ngModel]="llmModel()"
+          (ngModelChange)="llmModel.set($event)"
+        />
+      </label>
+
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          data-testid="llm-fallback"
+          class="accent-slate-900 disabled:opacity-50 dark:accent-slate-100"
+          [disabled]="!useLlm()"
+          [ngModel]="llmFallback()"
+          (ngModelChange)="llmFallback.set($event)"
+        />
+        Fallback to deterministic planner if LLM call fails
+      </label>
+
+      @if (llmConfigured() !== null) {
+        <p
+          class="text-sm"
+          [class]="
+            llmConfigured() === false && useLlm()
+              ? 'text-amber-700 dark:text-amber-400'
+              : 'text-slate-500 dark:text-slate-400'
+          "
+        >
+          {{ llmConfigured() ? 'OPENAI_API_KEY detected' : 'OPENAI_API_KEY not detected' }}
+        </p>
+      }
+    </div>
+
+    <div class="mt-6 flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+      <button
+        type="button"
+        data-testid="settings-cancel"
+        (click)="cancel()"
+        class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        data-testid="settings-save"
+        [disabled]="invalid()"
+        (click)="save()"
+        class="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+      >
+        Save settings
+      </button>
+    </div>
+  </div>
+</div>

@@ -40,3 +40,24 @@ def test_missing_file_is_skipped_when_not_required(tmp_path: Path) -> None:
     registry = ModelRegistry.from_manifest(manifest, tmp_path, require_all=False)
 
     assert registry.names() == ["present"]
+
+
+def test_revision_sidecar_pins_the_reported_version(tmp_path: Path) -> None:
+    build_tiny_onnx(tmp_path / "one.onnx", num_classes=3)
+    (tmp_path / "one.revision").write_text("abc123\n")
+
+    registry = ModelRegistry.from_manifest(Manifest(models=[_spec("one")]), tmp_path)
+
+    classifier = registry.get("one")
+    assert classifier is not None
+    assert classifier.spec.version == "JcProg/one@abc123"
+
+
+def test_without_a_sidecar_the_manifest_revision_is_used(tmp_path: Path) -> None:
+    build_tiny_onnx(tmp_path / "one.onnx", num_classes=3)
+
+    registry = ModelRegistry.from_manifest(Manifest(models=[_spec("one")]), tmp_path)
+
+    classifier = registry.get("one")
+    assert classifier is not None
+    assert classifier.spec.version == "JcProg/one@main"

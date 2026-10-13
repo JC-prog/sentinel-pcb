@@ -9,6 +9,132 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Work tab: the Review Console's **Model feedback** tab is now charts first. A one-line read-out
+  (how the defect model did, with the next step as a button) sits above headline rings, then:
+  the outcome donut; **Stage 1 - Region model** (accuracy, kept vs corrected per part area) and
+  **Stage 2 - Defect models** (one stacked bar of right / wrong / not classified / not reviewed per
+  model, with confidence bars) as two separate sections, so the region model is never mistaken for
+  a defect model; where the flagged samples went; who made the final call; how useful Agent 2 was;
+  the commonest mistakes; and a grid of what the model is confused with. The numbers are also
+  available as a table. **Retraining queue** puts the status and the road to a retrained model
+  (To send -> Sent -> Awaiting Admin -> Retrained, current step marked) in one card, labels its
+  columns "Model said" / "Corrected to" / "Where it stands", colours the label mix legend to match
+  its bar, and keeps one send button in reach (per-model buttons only when there are several
+  models). Each tab says what it is for ("Step 1/2/3").
+- Chat: assistant replies are rendered as Markdown (headings, lists, tables, code, bold/italic,
+  http(s) links) by a small built-in renderer that never uses `innerHTML`; a **Stop** button cancels
+  a reply that is streaming (the text so far is kept); the "Thinking / Calling …" status now sits
+  inside the reply being written; the message box grows with its content and keeps focus after
+  sending; the thread only follows new text while you are at the bottom, with a **Jump to latest**
+  button when you have scrolled up. Sending is disabled while a reply is streaming.
+- Chat: a failed reply is shown as an error with a **Retry** button (text that arrived is kept);
+  **Regenerate**, **Copy** and **Edit** (puts a sent message back in the box as a new message) on
+  messages, with timestamps; a **Copy** button on code blocks; one paperclip attaches images and
+  inspection XML, and pasted images attach too; assistant replies use the full width; SVG icons
+  replace the emoji; focus rings and reduced-motion support. A message sent with files still says
+  "N attachments" after a reload. The empty state has eight suggestions (the self-contained ones
+  send on click; the image one opens the attach picker), and an inspection or a relabel/review
+  proposal is followed by one-click replies ("Open a case…", "Yes, confirm…"). Retry and
+  Regenerate resend the last user message, so the backend sees it twice.
+- Chat: a reply that is stopped or fails part-way is now saved (`messages.interrupted`) instead of
+  lost, and the cards a reply showed are saved with it (`messages.tool_results`), so a reopened
+  conversation or another device shows both. New migration `d4a1c6e8b2f7`. Conversations can be
+  renamed (`PATCH /api/conversations/{id}`) and searched in the sidebar, and a conversation
+  continued on another device is refreshed when opened. `create_case` now shows a **Case created**
+  card with the case number and status, followed by one-click Approve / Override / Relabel replies.
+- Chat: failures say what happened (session expired, rate limited, can't reach the server, a file
+  the server rejected) instead of one generic message; unsupported or over-20 MB files say why
+  they were not attached; Enter no longer sends while an input method is composing; screen
+  readers hear the reply's progress rather than every streamed chunk; deleting a chat asks first
+  and its buttons are always visible on touch screens; the sidebar becomes a menu drawer on narrow
+  screens; replies render nested lists, quotes and rules.
+- Chat: each reply shows the tokens the turn used (prompt plus reply, summed over its tool-calling
+  rounds) next to its timestamp, from the `usage` the backend now sends on the `done` SSE frame
+  (absent when the provider reports none).
+- Infra: a **daily** cost budget alongside the monthly one (`daily_budget_usd`, default 3), so a
+  stack left running emails you the next morning instead of after a week; and an optional
+  `auto_stop_schedule` that scales the three ECS services to zero on a schedule (`auto_stop.tf`;
+  `terraform apply` starts them again).
+- Infra: an optional monthly AWS cost budget (`infra/production/budget.tf`). Set `budget_alert_email`
+  (and `monthly_budget_usd`, default 50) to get emails at 50% and 80% of actual spend and when the
+  forecast passes 100%; unset, nothing is created.
+- Chat: the Settings window lets you pick the model for the assistant's replies from the models the
+  server allows (`CHAT_MODELS`, default `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1`, `gpt-5-mini`, `gpt-5`, `gpt-6-luna`, `gpt-6-sol`; the
+  `OPENAI_MODEL` default is always offered first). The choice is remembered in the browser and only
+  changes the reply: memory extraction, the guardrails check and the agents keep their own models.
+  `GET /api/chat/models` lists the options; an unknown model falls back to the default.
+- Work tab: the Review Console now has three tabs. **Model feedback** is a report that adds the
+  **region model** (accuracy, confidence, what you changed it to), a funnel of where flagged samples
+  went, and how useful Agent 2 was. **Retraining queue** is the work list: your corrections grouped by
+  the model they teach, each group with its label mix, a hint when the batch is tiny or lopsided, and
+  its own send button. Part-area corrections can now be sent for retraining as tickets for the region
+  model, so one sample can carry a region and a defect correction. The ticket uniqueness now includes
+  the model: on an existing database run
+  `DROP INDEX uq_retraining_tickets_run_sample; CREATE UNIQUE INDEX uq_retraining_tickets_run_sample ON retraining_tickets (run_id, sample_ref, model_name) WHERE run_id IS NOT NULL;`.
+- Work tab: the Review Console separates the two agents. **Agent 1** is a card with the model
+  inference only (Machine is the label from the uploaded folder; AI is the defect model, with the
+  region model's and defect model's confidence). **Agent 2** is its own advisory card: verdict,
+  diagnosis, where its visual evidence came from, whether physical measurements were recorded, and
+  the IPC clauses it weighed. The decision is Machine, AI or Manual (plus the part area).
+- Work tab: the Review Console shows how sure both models were (the region model that picks the
+  part area, then the defect model, or that no defect model ran) and lets the operator correct the
+  part area as well as the defect. A corrected region sends the label to the defect model for that
+  area. The region choice is stored with the decision (`region_result`) on the run's Qdrant point; the
+  Postgres fallback keeps the defect decision only.
+- Work tab: **Corrections & Retraining** is now **Model feedback**, built around one question:
+  where do my corrections stand? It opens with a plain status sentence (with a way back to review
+  when samples are still unreviewed), a four-stage tracker (to send, sent, awaiting Admin, retrained),
+  and the corrections ready to send, all pre-ticked so it is one click. Below, analytics show
+  reviewed share, model accuracy, an outcome donut, error rate by model, how you decided and the most
+  common mistakes. The list shows the same machine verdict as the Review Console, and samples the defect
+  model never classified are labelled "Not classified" with the reason.
+- Work tab: the workflow summary has a **Failed** tile (preparation, verification and inference
+  failures added up; red when above 0). The status line says at which stage samples failed, and the
+  server's reasons ("Verification GOLDEN_IMAGE_NOT_FOUND: 76 sample(s) (e.g. S000001)") are listed
+  under it, so an aborted run explains itself instead of showing only "Verified 0". The run status
+  frames now carry `preparation_failed`, `verification_failed` and `inference_aborted`.
+- Work tab: the Review Console is easier to scan. The queue shows machine and AI verdicts as
+  coloured chips, Pending and Reviewed as badges and a progress bar; the case view compares Machine
+  and AI side by side with an agree or disagree banner and a confidence meter, and the final decision
+  options are colour-coded cards with a green confirm button. Tabs, buttons and image panels carry icons.
+- Work tab: the Review Console no longer jumps when you pick another sample. The window has a
+  fixed size, the queue and the detail pane scroll on their own, images load into fixed boxes, and
+  the result of saving a decision appears below the form. Arrow keys move through the queue.
+- Work tab: the Settings button is a visible bordered button, and the settings window applies
+  changes only when you press **Save settings**; Cancel, Escape or clicking outside discards them.
+- Work tab: renamed to the AOI Inspection Agent, with a short three-step guide, a status light
+  (ready, uploading, running, failed, to review, complete), icons on the inputs and buttons, the run
+  controls inside the Inputs card, and colour on the Accepted and Review counters.
+- Work tab: a cleaner layout. The Output JSON field and the long explanatory note are gone (the
+  result downloads as `result-<run id>.json`), inputs show what each file is for and which are
+  required, and the run counters are tiles instead of a text line. Each run now starts with an empty
+  log.
+- Work tab: the Review Console traps keyboard focus, returns it to the button on close and will not
+  close while a decision is saving. **Confirm & next pending** saves and opens the next unreviewed
+  sample. The queue, images and Save show loading states, the log and form controls are labelled for
+  screen readers, low-contrast text is darker, and a slow response can no longer overwrite newer data.
+- Work tab: a **Stop** button cancels a run in progress, upload and run failures show the server's
+  reason instead of a bare status code, and the review queue can be driven from the keyboard.
+- Work tab: the policy thresholds and LLM planner options moved into a **Settings** panel (button
+  bar), with a one-line summary of the active choices left on the page. They are remembered across
+  reloads in the browser. Thresholds are kept within 0 to 1, and a cleared field no longer sends an
+  invalid value that the server rejects.
+- Work tab: the execution log is easier to follow and keep. It scrolls to the newest line while
+  you are at the bottom and pauses when you scroll up, with a "N new lines - jump to latest" button.
+  Lines carry the time they arrived, plan steps show their planner source and flag policy rejections,
+  and errors stand out. A filter narrows it to plan steps and errors, or errors only. **Download log**
+  saves the whole run as a text file and **Copy log** puts it on the clipboard. Only the latest 500
+  lines are drawn (the download always has everything), which keeps long bulk runs responsive.
+- Work tab: the Drift & Retraining tab is rebuilt around one idea - the operator's final decision in
+  the Explanation Review is the correct label. It shows how often the model was wrong in the run
+  (drift: of the samples the model classified, the share it got wrong - samples it couldn't decide on,
+  where no defect model ran, are counted separately and are not drift), per model, with a breakdown of
+  the final decisions and the model's commonest mistakes; then **Add N to training data** adds the
+  samples the model got wrong or couldn't decide - with the operator's label, for the defect model
+  they belong to (the region model's guess, routed like Agent 1 does, when no defect model ran) - and
+  puts them in a retraining plan in one step, with each sample's training-data status. Drafting a plan
+  syncs model versions from the inference service when none are recorded yet. The manual tools
+  (report drift, flag samples) are removed from the tab.
 - Work tab: the Drift & Retraining tab has a **Retraining plan** section. Queued corrections wait as
   tickets (shown as "unplanned" in the Models tab); **Draft retraining plan** turns a model's open
   tickets into a retraining job awaiting Admin approval, so the whole flow works without leaving the
@@ -95,6 +221,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Models tab: the Approve confirmation now says retraining is currently simulated (the inference
+  service's only trainer is a stub), so an Admin isn't led to expect a new model.
+- Chat: `get_sample` looking a sample id up in several runs without a run id now tells the model to
+  name the run it answered from and offer the others (a sample id restarts every run), instead of
+  leaving that to the tool description.
+- Docs: README no longer lists a current-time/weather tool (neither exists); the User Guide
+  describes the chat model picker in Settings; CLAUDE.md no longer mentions the golden-image bank
+  removed in migration `f2a7c4e9d013`.
+- Infra: the ALB accepts traffic only from CloudFront - its security group allows CloudFront's
+  origin-facing prefix list instead of `0.0.0.0/0`, and the listener answers 403 unless the
+  `X-Origin-Verify` header CloudFront adds is present - so the ALB's own DNS name no longer reaches
+  the API. The deploy health check is now `<cloudfront_domain>/api/health` (new route; `/health`
+  remains).
+- Agent 2 was re-ported from `pcb_agentic_inspector` (Oct 10): its grounding prompt weights visual
+  evidence and IPC precedents instead of letting laser/ICT readings decide. Missing readings are no
+  longer invented as a 0.0 um height, which had made every review say "missing part". Its vision step
+  now uses an OpenAI vision model.
+- **Ollama is removed.** Chat, memory embeddings and Agent 2 use OpenAI only (`OPENAI_API_KEY` is
+  required). The Settings window no longer offers a Local LLM, `OLLAMA_*` settings and the
+  `langchain-ollama` dependency are gone, and the setup scripts, compose file and docs no longer
+  mention it.
+
+- Work tab: the Review Console's **Drift & Retraining** tab is renamed **Corrections & Retraining**
+  and reworded so it can be used without knowing the pipeline. It opens with the three steps (review
+  flagged samples, send corrections for retraining, an Admin approves the plan in the Models tab) and
+  marks the current one. The headline is now the **error rate on reviewed samples**, with how many
+  flagged samples have been reviewed (it is partial until all are). The row of counts becomes one bar
+  (right, wrong, couldn't decide, not reviewed). The per-model table credits a model only with samples
+  it classified; samples no defect model ran on are their own "No defect model ran" row. The
+  "Your final decisions" bars are removed. **Add N to training data** is now **Send N corrections for
+  retraining**: nothing is ticked until chosen (with select all), sent samples show a tick, labels and
+  decision kinds use the Explanation Review's wording, and errors and confirmations share one status
+  line. The tab says what to do first when there is no run yet. The "create retraining plan" prompt
+  counts only samples from this run and notes how many more waiting from chat or other runs the plan
+  would also take (`run-drift` returns `run_open_tickets` beside `open_tickets`). Chat's wording for
+  the tab follows.
+
+- Agent 2 review pipeline (`app/workflow/.../review_graph.py`) updated from the upstream `pcb_agentic_inspector`: tombstone precedent, telemetry read from the local cache with more field names and an explicit ICT flag, vision images downscaled to 384px with shorter prompts and a longer timeout, and revised cross-modal contradiction rules. Our config-path and no-repo-crawl fixes are kept. Adds `tests/test_agent_graph.py`.
 - Defect-label comparison (Agent 1 vs Agent 2 conflicts and run corrections) now treats the AOI
   datasets' misspelling `SolderInsuffcient` as `solder insufficient`, as Agent 1's own pipeline
   already did; before, those samples showed false conflicts and false corrections.
@@ -132,6 +296,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Registration no longer asks for a department or shift (`users.department_shift` is dropped, and the
+  API no longer takes or returns it). On an existing database:
+  `ALTER TABLE users DROP COLUMN department_shift;` (Alembic `b3d8f2a6c914` does the same). Until
+  then a database that still has the old NOT NULL column rejects new users.
+- LiteLLM proxy. The app now calls OpenAI directly with `OPENAI_API_KEY` (a real `sk-` key);
+  `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and only needs setting for another
+  OpenAI-compatible endpoint. Removed `infra/litellm/`, the `litellm` compose service and its
+  `LITELLM_*` variables, the production Fargate service, task definition, log group, security group,
+  Cloud Map entry and `sentinelchat/litellm` secret. **Upgrading:** in `.env`, delete
+  `OPENAI_BASE_URL=http://localhost:4000/v1`, put your real key in `OPENAI_API_KEY` (it used to hold
+  `sk-litellm-dev`), and drop `LITELLM_OPENAI_API_KEY`; then
+  `docker compose -f infra/development/docker-compose.yml --env-file .env down --remove-orphans`.
+  In production, `terraform apply` creates `sentinelchat/openai` and rolls the backend; review the
+  plan first. The dev proxy used to alias `gpt-4o` to `gpt-4o-mini`, so the Explainability agent now
+  bills real `gpt-4o`. The Work tab's planner and Agent 2 use `ORCHESTRATOR_OPENAI_API_KEY` if set,
+  else `OPENAI_API_KEY` (new `settings.orchestrator_api_key`).
 - Chat: the weather and time agents (`get_weather`, `current_time`), the intent router, and the case
   agent - `find_similar_cases`, `get_case`, `list_cases`, `review_case`, the heavy diagnosis pipeline
   (`explainability_review`, `investigate_case`, `POST /api/agents/explainability-review`, its CLIP /

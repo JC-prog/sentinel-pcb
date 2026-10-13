@@ -1,5 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import {
+  CaseCreated,
   InspectionResult,
   RelabelDone,
   RelabelProposal,
@@ -26,6 +27,11 @@ export class ToolResultCard {
     return t.name === 'inspect_image' ? t.result : null;
   });
 
+  protected readonly caseCreated = computed<CaseCreated | null>(() => {
+    const t = this.toolResult();
+    return t.name === 'create_case' ? t.result : null;
+  });
+
   protected readonly proposal = computed<RelabelProposal | null>(() => {
     const t = this.toolResult();
     return t.name === 'relabel_case' ? t.result : null;
@@ -49,6 +55,12 @@ export class ToolResultCard {
   /** What a decision means, for the card's wording. */
   protected meaning(decision: 'approve' | 'override'): string {
     return decision === 'approve' ? 'defect confirmed' : 'false positive';
+  }
+
+  /** A case status as words: review_required -> "Review required". */
+  protected statusLabel(status: string): string {
+    const text = status.replace(/_/g, ' ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   /** 0.8731 -> "87%". */

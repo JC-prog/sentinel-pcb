@@ -67,7 +67,7 @@ async def orchestrator_status(
     if not settings.orchestrator_agent_enabled:
         raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
     _require_qa_or_admin(user)
-    return OrchestratorStatus(llm_configured=bool(settings.orchestrator_openai_api_key))
+    return OrchestratorStatus(llm_configured=bool(settings.orchestrator_api_key))
 
 
 @router.post("/api/orchestrator/uploads/dataset")

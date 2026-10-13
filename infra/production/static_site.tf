@@ -4,7 +4,8 @@
 # CloudFront's one HTTPS domain).
 
 resource "aws_s3_bucket" "ui" {
-  bucket = "${var.project_name}-ui-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.project_name}-ui-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true # the UI build is re-uploadable; a short-lived stack must tear down with objects in it
 }
 
 resource "aws_s3_bucket_public_access_block" "ui" {
@@ -74,6 +75,11 @@ resource "aws_cloudfront_distribution" "site" {
   origin {
     domain_name = aws_lb.main.dns_name
     origin_id   = "api-alb"
+    # The ALB listener only forwards requests carrying this header (ecs.tf).
+    custom_header {
+      name  = local.origin_verify_header
+      value = random_password.origin_verify.result
+    }
     custom_origin_config {
       # The ALB has no cert (no custom domain yet - see the plan) - CloudFront still serves the
       # browser over HTTPS on its own domain regardless of the origin's protocol.
@@ -81,6 +87,10 @@ resource "aws_cloudfront_distribution" "site" {
       http_port              = 80
       https_port             = 443
       origin_ssl_protocols   = ["TLSv1.2"]
+      # How long CloudFront waits for the backend to send the next byte before answering 504. The
+      # default is 30 s, and a Work-tab run can be silent that long while it prepares the dataset;
+      # 60 s is the most an account allows without a quota increase.
+      origin_read_timeout = 60
     }
   }
 

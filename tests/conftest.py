@@ -31,6 +31,14 @@ def _jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _openai_key_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat is OpenAI-only, and the stream route answers 503 without a server key. Tests that cover
+    the "not configured" case blank it explicitly."""
+
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-key-for-tests-only")
+
+
+@pytest.fixture(autouse=True)
 def _memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Long-term memory (app/chat/memory/) makes its own embedding/LLM calls through the same
     httpx.AsyncClient chat tests mock - left enabled, those calls would interleave with (and
@@ -53,7 +61,7 @@ def _log_to_file_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _guardrails_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """The chat guardrails check (app/chat/guardrails/) makes its own NeMo Guardrails LLM call
-    against the LiteLLM proxy - a real network call outside the mocked httpx.AsyncClient chat
+    against OpenAI - a real network call outside the mocked httpx.AsyncClient chat
     tests use, same risk _memory_disabled_by_default guards
     against. Disabled here by default; tests/chat/services/test_guardrails.py re-enables it
     explicitly."""
@@ -85,7 +93,7 @@ async def db_session() -> AsyncGenerator[None, None]:
             "volume most likely predates the current credentials. Reset it:\n"
             "    docker compose -f infra/development/docker-compose.yml --env-file .env down -v\n"
             "    docker compose -f infra/development/docker-compose.yml --env-file .env "
-            "up -d --wait db qdrant litellm",
+            "up -d --wait db qdrant",
             returncode=1,
         )
 
@@ -124,7 +132,6 @@ _REGISTER_PAYLOAD = {
     "email": "qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-001",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 
@@ -144,7 +151,6 @@ _OTHER_REGISTER_PAYLOAD = {
     "email": "other-qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-002",
-    "department_shift": "QA Night Shift",
     "role": "qa",
 }
 
@@ -173,7 +179,6 @@ _QA_REGISTER_PAYLOAD = {
     "email": "second-qa@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-003",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 

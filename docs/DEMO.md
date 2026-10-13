@@ -3,6 +3,7 @@
 A step-by-step script for presenting SentinelChat (about 20 minutes): what to set up, exactly what to
 type and click, what you should see, and what to say. Companion to [`USER_GUIDE.md`](USER_GUIDE.md)
 (the full reference) and [`REVIEW_DRIFT_RETRAINING.md`](REVIEW_DRIFT_RETRAINING.md) (how it works).
+For a shorter, chat-only demo see [`CHAT-DEMO.md`](CHAT-DEMO.md).
 
 > **Rehearsed.** Every step below was run against the real stack on 2026-10-05 (local `gemma4:12b`
 > as the chat model). Numbers marked *(rehearsal)* came from that run - your run of the same data
@@ -47,10 +48,9 @@ bash infra/development/scripts/unix/start-dev.sh                    # macOS/Linu
 powershell -File infra\development\scripts\windows\start-dev.ps1    # Windows
 ```
 
-You need these running: Postgres, Qdrant, LiteLLM (Docker), the backend (`:8000`), the **inference
-service (`:8001`)**, the UI (`http://localhost:4200`), and **Ollama** with a tool-calling model if you
-use the local LLM (`OLLAMA_MODEL`, default `gemma4:12b`). For OpenAI instead, set
-`LITELLM_OPENAI_API_KEY` in `.env` (see ONBOARDING).
+You need these running: Postgres and Qdrant (Docker), the backend (`:8000`), the **inference
+service (`:8001`)**, the UI (`http://localhost:4200`), and `OPENAI_API_KEY` set in `.env`
+(see ONBOARDING).
 
 Quick checks: `curl localhost:8000/health`, `curl localhost:8001/health` (should list four models),
 and `http://localhost:6333/dashboard` (Qdrant).
@@ -93,8 +93,6 @@ it will be QA.)
 - [ ] Chat provider works: send "hello" in Chat.
 - [ ] Do **one full dry run** of Act 4-5 (the Work tab takes ~35 s plus Agent 2). Then click
       **Clear Log** so you start the demo from an empty Work tab.
-- [ ] Decide Local LLM vs OpenAI in the chat settings. The local 12B model handled every prompt
-      below correctly; a hosted model is usually faster.
 
 ---
 
@@ -171,8 +169,8 @@ same question as 2a, say **"Yes, please create a case for it."**, then:
    [Troubleshooting](#if-something-goes-wrong).*
 3. Click **3. Run Agentic Workflow**.
 
-*Expect (~35 s, rehearsal):* the **Workflow Summary** reads **Input 11 / Prep Ready 11 / Verified 11 /
-Inference 11 / Accepted 0 / Review 11**; the log streams the planner's steps, then
+*Expect (~35 s, rehearsal):* the **Workflow Summary** reads **Input 11 / Prepared 11 / Verified 11 /
+Inference 11 / Failed 0 / Accepted 0 / Review 11**; the log streams the planner's steps, then
 `[Agent 2] Escalating 11 sample(s) for Explainability Review...` with a block per sample:
 
 ```
@@ -187,36 +185,47 @@ When they disagree, a human decides. In my rehearsal, 7 of 11 samples were disag
 
 ---
 
-## Act 5 - The human decision (3 min)  - **Work -> Review Console**
+## Act 5 - The human decision: relabel the data (3 min)  - **Work -> Review Console**
 
-Click **Open Review Console** (Explanation Review tab).
+Click **Open Review Console** (Explanation Review tab). *Say:* "The operator's final decision is the
+label - this is where the data gets relabelled."
 
-1. Select **S000001** (Agent 1: *no defect*, Agent 2: *wrong part*). Show the golden vs defect
-   images and Agent 2's explanation.
+1. Select **S000001** (model: *no defect*, Agent 2: *wrong part*). Show the golden vs defect images and
+   Agent 2's explanation.
 2. **User Final Decision -> Accept AI**, notes: `text is wrong on the part`, **Confirm Decision**.
    *Expect:* "Saved S000001: wrong part"; its status becomes *Reviewed*.
 3. Select **S000004** -> **Manual**, choose **Tombstone**, notes `pad lifted`, **Confirm Decision**.
-4. Select **S000003** (the agents agree) -> **Accept Machine** -> Confirm. *Say:* "Even when they agree
-   the operator makes the call; nothing is auto-approved."
+4. Select **S000003** -> **Accept Machine** -> Confirm. (The console's *Machine* value here is the
+   model's own *wrong part*.) *Say:* "Here I agree with the model - watch how the next tab counts it."
 
 ---
 
-## Act 6 - The Drift & Retraining tab follows your decisions (2 min)  - **Work -> Review Console**
+## Act 6 - How often was the model wrong, and send your labels for retraining (2 min)  - **Review Console**
 
-Click the **Drift & Retraining** tab. *Expect (rehearsal):*
+Click the **Retraining queue** tab (badge **"2 to send"**); the analytics are in **Model feedback**. *Expect (rehearsal):*
 
-- the tab title shows a badge **"2 to queue"**;
-- a per-model table; `pcb_text_defect`: 9 samples, **Reviewed 3 / 11**, **Corrected 2 (67%)**,
-  Agent 2 disagreed 6;
-- **Operator corrections:** `S000001  Golden -> wrong part (AI)` and `S000004  Golden -> Tombstone
-  (MANUAL)`, both *Ready*.
+- the **three steps** across the top, with step 2 (*Send your corrections for retraining*) marked;
+- **Error rate on reviewed samples: 67%** - *2 of 3 the defect model classified were wrong*, and
+  *3 of 11 flagged samples reviewed - this changes as you review*; the bar and legend read Model right
+  **1** (S000003), Model wrong **2**, Couldn't decide **0**, Not reviewed yet **8**; the
+  `pcb_text_defect` row shows the same;
+- **Most common mistakes:** model said *no defect* -> correct label *wrong part* / *tombstone*;
+- **Send corrections for retraining:** `S000001` (model said no defect, your label **wrong part**
+  (Accept AI)) and `S000004` (model said no defect, your label **tombstone** (Manual)), both *Not sent
+  yet* and **unticked**.
 
-*Say:* "Every decision I just made updated this immediately - and these numbers are computed on the
-server from what's stored, not from the browser. A *correction* means my final answer differs from
-Agent 1's."
+*Say:* "My final decision is the correct label. Of the samples the defect model classified, it got two
+of three wrong - and this is only the flagged ones, so it's the error rate on what I've reviewed, not
+the model's overall accuracy. Those samples, with my labels, are what it should learn from."
 
-Click **Queue 2 for retraining**. *Expect:* "Queued 2 corrections for retraining"; both rows show
-*Queued*; the badge disappears. Click it again (or Refresh): nothing is filed twice.
+Tick **select all**, then click **Send 2 corrections for retraining**. *Expect:* "Sent 2 corrections
+for retraining. The retraining plan for pcb_text_defect is waiting for an Admin to approve it in the
+Models tab."; both rows now show a tick and read *In a retraining plan, awaiting Admin approval*; the
+badge disappears and step 3 is marked. Sending again sends nothing twice. (For a run where the model
+couldn't decide anything, see the Variant in [`WORK-DEMO.md`](WORK-DEMO.md).)
+
+> The numbers above were carried over from the previous rehearsal; the wording is the current UI's.
+> Re-run the dataset once before presenting and adjust if your run differs.
 
 ---
 
@@ -235,7 +244,7 @@ explanation, and **the operator decision you just made**.* (tool: *Sample lookup
 
 > **How did the models do in the last run, and what did the operator correct?**
 
-*Per-model numbers matching the Drift & Retraining tab, and the two corrections - already queued.*
+*Per-model numbers matching the Model feedback tab, and the two relabelled samples - already in a retraining plan.*
 (tool: *Run drift*)
 
 > **What do you know about sample S999999?**
@@ -247,28 +256,20 @@ truth."
 
 ---
 
-## Act 8 - Close the loop: plan -> approve (2 min)  - **Work or Chat -> Models**
+## Act 8 - Close the loop: an Admin approves (2 min)  - **Models**
 
-Queueing in Act 6 created *tickets*; the Models tab's Retraining queue lists *jobs*, so it still says
-"No retraining jobs yet" (and "2 unplanned") - a good moment to explain the two steps. Now draft the
-plan, either way:
+Switch to **Models -> Retraining queue** (as Admin): the job for `pcb_text_defect` shows **2
+samples**, status *pending approval*. Click **Show flagged cases** to see `S000001` and `S000004` with
+their run and observed -> expected labels. Click **Approve**.
 
-- **Work tab:** in **Drift & Retraining -> Retraining plan**, click **Draft retraining plan** next to
-  `pcb_text_defect - 2 tickets waiting`. *Expect:* "Plan drafted for pcb_text_defect: 2 samples,
-  pending approval. An Admin approves it in the Models tab."
-- **or Chat:** type **Draft a retraining plan for pcb_text_defect.** *Expect:* "I've drafted a
-  retraining plan... status **pending approval**..." (tool: *Retraining plan*)
-
-Switch to **Models -> Retraining queue** (as Admin): the job shows **2 samples**, status *pending
-approval*. Click **Show flagged cases** to see `S000001` and `S000004` with their run and
-observed -> expected labels. Click **Approve**.
-
-*Say:* "Anyone on the QA side can draft a plan; only an Admin in the Models tab can approve it. The inference service's
-trainer here is a stub - it simulates the job - so this shows the control flow, not a real retrain."
+*Say:* "Adding samples drafted the plan; only an Admin can approve it. The inference service's trainer
+here is a stub - it simulates the job - so this shows the control flow, not a real retrain." (In
+chat, *"Draft a retraining plan for pcb_text_defect"* does the plan step too, for samples already in
+the training data.)
 
 Optional extras if time allows:
 
-> **Is the pcb_text_defect model drifting?** *(over saved cases)*
+> **Is the pcb_text_defect model drifting?** *(over saved chat cases)*
 > **What is the model status?** *(Admin overview: live versions, open reports/tickets/queue)*
 > **Write me a poem about cats.** *(politely declined - it stays on topic)*
 
@@ -283,7 +284,7 @@ Optional extras if time allows:
 | *What stops the AI from inventing data?* | It can only report what tools return; unknown samples/cases return an error; tools it isn't allowed to call aren't even given to the model. |
 | *Why are some classifier results low confidence / odd?* | The bundled models are weak on this data. Low confidence is the trigger for human review - which is the point of the workflow. |
 | *What's Agent 1 vs Agent 2?* | Agent 1 = two-stage classifier (region -> defect). Agent 2 = an explainability review (precedents, telemetry, optional vision) that audits Agent 1. |
-| *What is a "correction"?* | The operator's final result differs from Agent 1's label (after normalising names like `WrongPart_13` -> `wrong part`). |
+| *What does "drift" mean here?* | The operator's final decision is the correct label. The tab shows an error rate for the run: of the reviewed samples the model classified, the share where it didn't predict that label (it only covers flagged samples, so it is not overall accuracy) (names normalised, `WrongPart_13` -> `wrong part`). Samples it couldn't decide on are counted separately, not as drift. |
 | *Where is the data stored?* | Cases, users, tickets, plans: Postgres. Work-tab runs, Agent 2 reviews and decisions: Qdrant. Long-term chat memory: Qdrant. |
 | *Does retraining really run?* | The trainer is a stub that simulates a job; the approval flow and bookkeeping are real. |
 
@@ -296,9 +297,9 @@ Optional extras if time allows:
 | Chat inspection says region uncertain, no defect | Thresholds are at 0.70. Lower them in `.env` and **restart the backend** (Before you start, step 2). |
 | Work-tab run: Verified 0 or all samples "FEATURE_CLASSIFICATION_UNCERTAIN", corrections say *No model recorded* | Feature threshold too high. Re-run with **0.3**. |
 | Verification fails / images not found | Choose the **folder** `Sample_data_2/Sample_data_2` as the Image Folder (not a parent folder). |
-| Drift tab says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
+| Model feedback / Retraining queue says the stored run could not be read | Qdrant is down: `docker compose -f infra/development/docker-compose.yml --env-file .env up -d qdrant`, then **Refresh**. |
 | Assistant doesn't call a tool | Rephrase closer to the prompts above; with a local model, be explicit ("Yes, confirm it."). A hosted model follows more reliably. |
 | *"cannot tell which version ... to retrain from"* when drafting a plan | Open the **Models** tab once - it syncs versions from the inference service - then try again. |
-| Retraining queue is empty after queueing | Expected: queueing makes *tickets*. Draft the plan (Drift & Retraining tab, or chat) and the job appears. |
+| Retraining queue is empty after sending | Sending makes *tickets* and drafts the plan. If the plan step failed, use **Create retraining plan** (Corrections & Retraining tab, or chat) and the job appears. |
 | Models tab "inference unreachable" | Start the inference service (port 8001). |
 | Weird leftovers from rehearsal | Use **Clear Log** in the Work tab; start a **new chat** for each act you want clean. Old cases/tickets from rehearsal stay in the database (they are harmless). |

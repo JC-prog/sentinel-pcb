@@ -114,8 +114,11 @@ async def _run_prepare(
         "status": result.status,
         "input_samples": result.metrics.get("total_samples", 0),
         "preparation_ready": result.metrics.get("ready_samples", 0),
+        "preparation_failed": result.metrics.get("failed_samples", 0),
         "verification_passed": 0,
+        "verification_failed": 0,
         "inference_attempted": 0,
+        "inference_aborted": 0,
         "accepted": 0,
         "review_required": 0,
     })
@@ -147,8 +150,11 @@ async def _run_prepare_verify(
         "status": verify.status,
         "input_samples": prep.metrics.get("total_samples", 0),
         "preparation_ready": prep.metrics.get("ready_samples", 0),
+        "preparation_failed": prep.metrics.get("failed_samples", 0),
         "verification_passed": verify.metrics.get("passed_samples", 0),
+        "verification_failed": verify.metrics.get("failed_samples", 0),
         "inference_attempted": 0,
+        "inference_aborted": 0,
         "accepted": 0,
         "review_required": 0,
     })
@@ -175,7 +181,7 @@ async def _run_full(
     from agents.orchestrator import OrchestratorAgent  # type: ignore[import-not-found]
     from state.workflow_state import WorkflowState  # type: ignore[import-not-found]
 
-    if settings.orchestrator_openai_api_key:
+    if settings.orchestrator_api_key:
         # agent1_orchestrator's planner (planner/llm_planner.py) and data/qdrant_indexer.py's
         # get_embeddings() both read OPENAI_API_KEY straight from the environment - their own
         # ported code, not settings. Mirror settings' key into it, the same carve-out CLAUDE.md
@@ -183,7 +189,7 @@ async def _run_full(
         # in the process environment. Set unconditionally (not just when request.use_llm) since
         # vector-db indexing below needs a real key for real embeddings regardless of whether
         # this particular run also uses the LLM planner.
-        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_openai_api_key)
+        os.environ.setdefault("OPENAI_API_KEY", settings.orchestrator_api_key)
 
     agent = OrchestratorAgent(
         str(_WORKFLOW_ROOT),
@@ -224,8 +230,11 @@ async def _run_full(
                     "status": state.status,
                     "input_samples": state.input_samples,
                     "preparation_ready": state.preparation_ready,
+                    "preparation_failed": state.preparation_failed,
                     "verification_passed": state.verification_passed,
+                    "verification_failed": state.verification_failed,
                     "inference_attempted": state.inference_attempted,
+                    "inference_aborted": state.inference_aborted,
                     "accepted": state.accepted,
                     "review_required": state.review_required,
                 },

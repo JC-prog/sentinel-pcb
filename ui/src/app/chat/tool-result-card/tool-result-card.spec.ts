@@ -194,4 +194,47 @@ describe('ToolResultCard', () => {
       expect(el.querySelector('[data-testid="review-proposal"]')).toBeNull();
     });
   });
+
+  describe('case created', () => {
+    it('shows the case number, its status and what the model found', () => {
+      const { el } = render({
+        name: 'create_case',
+        result: {
+          status: 'created',
+          case_number: 'CASE-000007',
+          verdict: 'review_required',
+          region: 'Body',
+          defect: 'Bridge',
+          defect_confidence: 0.6149,
+        },
+      });
+
+      expect(text(el, 'case-number')).toBe('CASE-000007');
+      expect(text(el, 'case-status')).toBe('Review required');
+      const card = text(el, 'case-created');
+      expect(card).toContain('Body');
+      expect(card).toContain('Bridge');
+      expect(card).toContain('61%');
+      expect(card).toContain('needs a person to approve or override');
+    });
+
+    it('tells the user an accepted case can still be relabelled', () => {
+      const { el } = render({
+        name: 'create_case',
+        result: {
+          status: 'created',
+          case_number: 'CASE-000008',
+          verdict: 'accepted',
+          region: null,
+          defect: null,
+          defect_confidence: null,
+        },
+      });
+
+      const card = text(el, 'case-created');
+      expect(card).toContain('Accepted');
+      expect(card).toContain('defect not classified');
+      expect(card).toContain('relabel it');
+    });
+  });
 });

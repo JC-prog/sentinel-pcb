@@ -1,27 +1,95 @@
-import { Component, HostListener, OnDestroy, Signal, computed, effect, signal, untracked } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import {
-  OrchestratorInferenceResult,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  HostListener,
+  OnDestroy,
+  Signal,
+  afterRenderEffect,
+  computed,
+  effect,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import {
   OrchestratorRunMode,
   WorkflowDecisionSource,
+  WorkflowRegion,
   WorkflowCorrection,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
 } from './models/orchestrator.models';
-import { WorkService } from './work.service';
+import { aiSaid, formatBytes, labelText, machineSaid, modelNote, percent, sourceLabel, trainingStatus } from './work-format';
+import {
+  CorrectionGroup,
+  Tone,
+  Verdict,
+  correctionKey,
+  correctionStatusClass,
+  feedbackVerdict,
+  groupCorrections,
+  mixColor,
+  modelLabel,
+  modelStatus,
+  toneChipClass,
+  toneDotClass,
+} from './work-feedback';
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ['KB', 'MB', 'GB'];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
+/** What the Work tab's third Review Console tab is called. One place, so a rename is one line. */
+const QUEUE_TAB_LABEL = 'Retraining queue';
+
+/** One card on the Model feedback tab: a model's error rate and how sure it was, in one place. */
+export interface ModelCard {
+  name: string;
+  title: string;
+  reviewed: number;
+  corrected: number;
+  /** 0-100, or null when the model classified nothing. */
+  rate: number | null;
+  detail: string;
+  meanConfidence: string;
+  lowConfidence: string;
+  agent2Disagreed: string;
+  /** 0-100 for the three small confidence bars. */
+  meanPct: number;
+  lowPct: number;
+  agent2Pct: number;
+  status: { tone: Tone; label: string };
+  /** The flagged samples as right / wrong / not classified / not reviewed, for the stacked bar. */
+  segments: { key: string; label: string; count: number; share: number; barClass: string }[];
+  flagged: number;
+  right: number;
+  wrong: number;
+  notClassified: number;
+}
+
+/** One cell of the "what it gets confused with" grid; level 0 is empty, 1-5 darkens with count. */
+export interface ConfusionCell {
+  col: string;
+  count: number;
+  level: number;
+}
+
+export interface ConfusionMatrix {
+  cols: string[];
+  rows: { label: string; cells: ConfusionCell[] }[];
+}
+import { WorkSettingsService } from './work-settings.service';
+import { WorkSettings } from './work-settings/work-settings';
+import { WorkAlert } from './work-alert/work-alert';
+import { WorkExecutionLog } from './work-execution-log/work-execution-log';
+import { WorkService } from './work.service';
+import { OrchestratorStatusEvent } from './models/orchestrator.models';
+
+/** Samples that dropped out before a decision: failed preparation, failed verification, or aborted
+ * in inference. Zero for an older server that doesn't send the three counts. */
+export function failedCount(status: OrchestratorStatusEvent): number {
+  return (
+    (status.preparation_failed ?? 0) + (status.verification_failed ?? 0) + (status.inference_aborted ?? 0)
+  );
 }
 
 /** IPC defect classes an operator can override with - the same canonical names Agent 2 and the
@@ -46,7 +114,8 @@ export const IPC_CLASSES = [
  * reachable from the Chat tab and never calls /api/chat/stream - see
  * work.service.ts/work-orchestrator-client.ts. */
 @Component({
-  imports: [FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, RouterLink, WorkAlert, WorkExecutionLog, WorkSettings],
   selector: 'app-work',
   styleUrl: './work.css',
   templateUrl: './work.html',
@@ -55,53 +124,381 @@ export class Work implements OnDestroy {
   protected readonly datasetFile = signal<File | null>(null);
   protected readonly xmlFile = signal<File | null>(null);
   protected readonly imageRootFiles = signal<File[]>([]);
-  protected readonly outputFilename = signal('result.json');
-
-  protected readonly featureThreshold = signal(0.7);
-  protected readonly defectThreshold = signal(0.7);
-  protected readonly useLlm = signal(false);
-  protected readonly llmModel = signal('');
-  protected readonly llmFallback = signal(true);
 
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
 
-  // Reporting drift / flagging samples for retraining, once a run has finished.
-  protected readonly selectedSampleIds = signal<ReadonlySet<string>>(new Set());
-  protected readonly driftModelName = signal('');
-  protected readonly driftDescription = signal('');
-  protected readonly retrainingReason = signal('');
+  // Sending corrections for retraining, from the Corrections & Retraining tab. One status line for
+  // both steps (tickets, then the plan), cleared at the start of each action.
   protected readonly monitoringBusy = signal(false);
-  protected readonly monitoringError = signal<string | null>(null);
-  protected readonly monitoringMessage = signal<string | null>(null);
+  protected readonly actionError = signal<string | null>(null);
+  protected readonly actionMessage = signal<string | null>(null);
 
-  // The Drift & Retraining tab's view of the run - per-model numbers and the operator's corrections,
-  // computed on the server from the stored decisions and refetched whenever one is saved.
+  // The Corrections & Retraining tab's view of the run: how often the defect model was wrong, judged
+  // by the operator's final decisions (their relabels), computed on the server and refetched
+  // whenever one is saved.
   protected readonly runDrift = signal<WorkflowRunDrift | null>(null);
   protected readonly driftLoading = signal(false);
   protected readonly driftError = signal<string | null>(null);
-  /** Corrections the operator unticked: every queueable, not-yet-queued one starts selected. */
-  protected readonly skippedCorrectionIds = signal<ReadonlySet<string>>(new Set());
+  /** Corrections the operator unticked. Everything sendable is ticked by default, so only the
+   * exclusions are remembered. */
+  protected readonly excludedCorrectionIds = signal<ReadonlySet<string>>(new Set());
 
   protected readonly corrections: Signal<WorkflowCorrection[]> = computed(
     () => this.runDrift()?.corrections ?? [],
   );
+  /** Corrections that can still be sent: they have a model to train and no ticket yet. */
   protected readonly pendingCorrections: Signal<WorkflowCorrection[]> = computed(() =>
     this.corrections().filter((c) => c.queueable && !c.queued),
   );
   protected readonly selectedCorrections: Signal<WorkflowCorrection[]> = computed(() =>
-    this.pendingCorrections().filter((c) => !this.skippedCorrectionIds().has(c.sample_id)),
+    this.pendingCorrections().filter((c) => !this.excludedCorrectionIds().has(correctionKey(c))),
   );
-  /** Models with queued tickets that no plan covers yet, with how many - what "Draft retraining
-   * plan" turns into a job. */
-  protected readonly planModels: Signal<{ name: string; tickets: number }[]> = computed(() =>
-    Object.entries(this.runDrift()?.open_tickets ?? {})
-      .map(([name, tickets]) => ({ name, tickets }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+  protected readonly allCorrectionsSelected: Signal<boolean> = computed(
+    () => this.pendingCorrections().length > 0 && this.selectedCorrections().length === this.pendingCorrections().length,
   );
+  /** Models with samples from this run waiting for a retraining plan, with how many - normally
+   * empty, since sending corrections also creates the plan; left over if that step failed. `others`
+   * is how many more (from chat or other runs) the plan would also take. */
+  protected readonly planModels: Signal<{ name: string; tickets: number; others: number }[]> = computed(
+    () => {
+      const drift = this.runDrift();
+      const all = drift?.open_tickets ?? {};
+      return Object.entries(drift?.run_open_tickets ?? {})
+        .map(([name, tickets]) => ({ name, tickets, others: Math.max((all[name] ?? 0) - tickets, 0) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+  );
+  /** The flagged samples split into one bar: model right / wrong / not classified / not reviewed. */
+  protected readonly outcomeSegments: Signal<
+    { key: string; label: string; count: number; share: number; barClass: string }[]
+  > = computed(() => {
+    const drift = this.runDrift();
+    if (!drift?.available) {
+      return [];
+    }
+    const parts = [
+      { key: 'confirmed', label: 'Model right', count: drift.totals.confirmed, barClass: 'viz-good' },
+      { key: 'relabelled', label: 'Model wrong', count: drift.totals.relabelled, barClass: 'viz-bad' },
+      { key: 'no-answer', label: 'Not classified', count: drift.totals.no_prediction, barClass: 'viz-warn' },
+      { key: 'pending', label: 'Not reviewed yet', count: drift.decisions.pending, barClass: 'viz-none' },
+    ];
+    const total = parts.reduce((sum, part) => sum + part.count, 0);
+    return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
+  });
+  /** The one-sentence answer to "where do my corrections stand?". */
+  protected readonly feedbackStatus: Signal<{ kind: 'review' | 'clear' | 'send' | 'sent'; text: string }> = computed(() => {
+    const drift = this.runDrift();
+    const flagged = drift?.totals.review_required ?? 0;
+    const pending = drift?.decisions.pending ?? 0;
+    const corrections = this.corrections().length;
+    const toSend = this.pendingCorrections().length;
+    const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+    if (pending > 0) {
+      return { kind: 'review', text: `${plural(pending, 'flagged sample')} still need${pending === 1 ? 's' : ''} review before the feedback is complete.` };
+    }
+    if (corrections === 0) {
+      return {
+        kind: 'clear',
+        text: flagged === 0 ? 'Nothing was flagged for review in this run.' : 'The model got every reviewed sample right. Nothing to send.',
+      };
+    }
+    if (toSend === 0) {
+      return { kind: 'sent', text: `All ${plural(corrections, 'correction')} have been sent.` };
+    }
+    const wrong = this.corrections().filter((c) => c.outcome === 'relabelled').length;
+    const unclassified = corrections - wrong;
+    const parts = [
+      wrong > 0 ? `${wrong} the model got wrong` : '',
+      unclassified > 0 ? `${unclassified} the defect model never classified` : '',
+    ].filter(Boolean);
+    return {
+      kind: 'send',
+      text: `${plural(corrections, 'reviewed sample')} can teach the model: ${parts.join(', ')}. ${toSend} ${toSend === 1 ? 'is' : 'are'} ready to send.`,
+    };
+  });
+
+  /** Where the corrections are on their way to a better model, stage by stage. */
+  protected readonly feedbackStages: Signal<{ key: string; label: string; hint: string; count: number }[]> = computed(() => {
+    const all = this.corrections();
+    const count = (status: string): number => all.filter((c) => c.queued && c.ticket_status === status).length;
+    return [
+      { key: 'to-send', label: 'To send', hint: 'Waiting for you', count: this.pendingCorrections().length },
+      { key: 'sent', label: 'Sent', hint: 'Waiting for a plan', count: count('open') },
+      { key: 'approval', label: 'Awaiting Admin', hint: 'Approve in Models tab', count: count('acknowledged') },
+      { key: 'retrained', label: 'Retrained', hint: 'Model updated', count: count('resolved') },
+    ];
+  });
+
+  /** Headline numbers for the analytics section. */
+  protected readonly feedbackKpis: Signal<{ label: string; value: string; hint: string; ring: number | null }[]> = computed(() => {
+    const drift = this.runDrift();
+    if (!drift?.available) {
+      return [];
+    }
+    const t = drift.totals;
+    const answered = t.confirmed + t.relabelled;
+    return [
+      {
+        label: 'Reviewed',
+        value: t.review_required === 0 ? '—' : `${Math.round((t.decided / t.review_required) * 100)}%`,
+        hint: `${t.decided} of ${t.review_required} flagged`,
+        ring: t.review_required === 0 ? 0 : (t.decided / t.review_required) * 100,
+      },
+      {
+        label: 'Model accuracy',
+        value: answered === 0 ? '—' : `${Math.round((t.confirmed / answered) * 100)}%`,
+        hint: answered === 0 ? 'nothing classified yet' : `${t.confirmed} of ${answered} right`,
+        ring: answered === 0 ? 0 : (t.confirmed / answered) * 100,
+      },
+      { label: 'Corrections', value: String(t.corrected), hint: 'wrong or not classified', ring: null },
+      { label: 'Not classified', value: String(t.no_prediction), hint: 'no defect model ran', ring: null },
+    ];
+  });
+
+  /** The outcome split as donut arcs (circumference 100, so a share is its own dash length). */
+  protected readonly outcomeDonut: Signal<{ key: string; label: string; count: number; dash: string; offset: number; stroke: string }[]> = computed(() => {
+    const strokes: Record<string, string> = {
+      confirmed: 'var(--viz-good)',
+      relabelled: 'var(--viz-bad)',
+      'no-answer': 'var(--viz-warn)',
+      pending: 'var(--viz-none)',
+    };
+    let offset = 25; // start at 12 o'clock
+    return this.outcomeSegments().map((s) => {
+      const arc = { key: s.key, label: s.label, count: s.count, dash: `${s.share} ${100 - s.share}`, offset, stroke: strokes[s.key] };
+      offset -= s.share;
+      return arc;
+    });
+  });
+
+  /** One card per defect model: how often it was wrong on the reviewed samples, how sure it was,
+   * how often Agent 2 disagreed with it - and a plain verdict, so the model that needs attention
+   * is the one that stands out. */
+  protected readonly modelCards: Signal<ModelCard[]> = computed(() =>
+    (this.runDrift()?.models ?? [])
+      .filter((m) => m.model_name !== null)
+      .map((m) => ({
+        name: m.model_name as string,
+        title: modelLabel(m.model_name),
+        reviewed: m.decided,
+        corrected: m.corrected,
+        rate: m.correction_rate === null ? null : m.correction_rate * 100,
+        detail: `${m.corrected} of ${m.decided} reviewed`,
+        meanConfidence: m.mean_confidence === null ? '—' : `${Math.round(m.mean_confidence * 100)}%`,
+        lowConfidence: m.low_confidence_rate === null ? '—' : `${Math.round(m.low_confidence_rate * 100)}%`,
+        agent2Disagreed: `${m.agent2_disagreed} of ${m.review_required}`,
+        meanPct: (m.mean_confidence ?? 0) * 100,
+        lowPct: (m.low_confidence_rate ?? 0) * 100,
+        agent2Pct: m.review_required === 0 ? 0 : (m.agent2_disagreed / m.review_required) * 100,
+        status: modelStatus(m.correction_rate, m.decided),
+        segments: this.outcomeParts(m),
+        flagged: m.review_required,
+        right: m.confirmed,
+        wrong: m.relabelled,
+        notClassified: m.no_prediction,
+      })),
+  );
+
+  /** A model's flagged samples split into right / wrong / not classified / not reviewed. The
+   * shares are of what was flagged for it, so the bar is to scale across models. */
+  private outcomeParts(m: {
+    review_required: number;
+    decided: number;
+    confirmed: number;
+    relabelled: number;
+    no_prediction: number;
+  }): ModelCard['segments'] {
+    const pending = Math.max(m.review_required - m.decided, 0);
+    const parts = [
+      { key: 'confirmed', label: 'Model right', count: m.confirmed, barClass: 'viz-good' },
+      { key: 'relabelled', label: 'Model wrong', count: m.relabelled, barClass: 'viz-bad' },
+      { key: 'no-answer', label: 'Not classified', count: m.no_prediction, barClass: 'viz-warn' },
+      { key: 'pending', label: 'Not reviewed yet', count: pending, barClass: 'viz-none' },
+    ];
+    const total = parts.reduce((sum, part) => sum + part.count, 0);
+    return parts.map((part) => ({ ...part, share: total === 0 ? 0 : (part.count / total) * 100 }));
+  }
+
+  /** The region model (stage 1) as a card next to the defect models, when it has been checked. */
+  protected readonly regionCard: Signal<{
+    reviewed: number;
+    corrected: number;
+    accuracy: string;
+    rightShare: number;
+    wrongShare: number;
+    status: { tone: Tone; label: string };
+  } | null> = computed(() => {
+    const region = this.runDrift()?.region;
+    if (!region || region.reviewed === 0) {
+      return null;
+    }
+    return {
+      reviewed: region.reviewed,
+      corrected: region.corrected,
+      accuracy: percent(region.accuracy),
+      rightShare: ((region.reviewed - region.corrected) / region.reviewed) * 100,
+      wrongShare: (region.corrected / region.reviewed) * 100,
+      status: modelStatus(region.corrected / region.reviewed, region.reviewed),
+    };
+  });
+
+  /** One column per part area for the region chart: how many samples, how many were corrected. */
+  protected readonly regionColumns: Signal<
+    { region: string; samples: number; corrected: number; keptHeight: number; correctedHeight: number; mean_confidence: number | null }[]
+  > = computed(() => {
+    const areas = this.runDrift()?.region?.by_region ?? [];
+    const max = Math.max(1, ...areas.map((a) => a.samples));
+    return areas.map((a) => ({
+      region: a.region,
+      samples: a.samples,
+      corrected: a.corrected,
+      keptHeight: ((a.samples - a.corrected) / max) * 100,
+      correctedHeight: (a.corrected / max) * 100,
+      mean_confidence: a.mean_confidence,
+    }));
+  });
+
+  /** What the model said against the correct label, for the defect corrections: the grid shows
+   * which labels it mixes up. The five commonest of each side; the rest are folded into "other". */
+  protected readonly confusion: Signal<ConfusionMatrix | null> = computed(() => {
+    const items = this.corrections().filter((c) => c.kind !== 'region');
+    if (items.length === 0) {
+      return null;
+    }
+    const said = (c: WorkflowCorrection): string => (c.agent1_label ? labelText(c.agent1_label) : 'not classified');
+    const fixed = (c: WorkflowCorrection): string => labelText(c.final_result);
+    const top = (pick: (c: WorkflowCorrection) => string): string[] => {
+      const counts = new Map<string, number>();
+      for (const c of items) {
+        counts.set(pick(c), (counts.get(pick(c)) ?? 0) + 1);
+      }
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 5)
+        .map(([label]) => label);
+    };
+    const rowLabels = top(said);
+    const colLabels = top(fixed);
+    const bucket = (labels: string[], value: string): string => (labels.includes(value) ? value : 'other');
+    const hasOtherRow = items.some((c) => !rowLabels.includes(said(c)));
+    const hasOtherCol = items.some((c) => !colLabels.includes(fixed(c)));
+    const rows = hasOtherRow ? [...rowLabels, 'other'] : rowLabels;
+    const cols = hasOtherCol ? [...colLabels, 'other'] : colLabels;
+    const counts = new Map<string, number>();
+    for (const c of items) {
+      const key = `${bucket(rowLabels, said(c))}|${bucket(colLabels, fixed(c))}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const max = Math.max(1, ...counts.values());
+    return {
+      cols,
+      rows: rows.map((label) => ({
+        label,
+        cells: cols.map((col) => {
+          const count = counts.get(`${label}|${col}`) ?? 0;
+          return { col, count, level: count === 0 ? 0 : Math.max(1, Math.ceil((count / max) * 5)) };
+        }),
+      })),
+    };
+  });
+
+  /** The run in one sentence: how the defect model did, and what to do about it. */
+  protected readonly verdict: Signal<Verdict> = computed(() => {
+    const drift = this.runDrift();
+    return feedbackVerdict(
+      drift?.totals ?? { decided: 0, confirmed: 0, relabelled: 0 },
+      drift?.decisions.pending ?? 0,
+    );
+  });
+
+  /** The step of the send-and-retrain flow the operator is waiting on, for the tracker. */
+  protected readonly currentStage: Signal<string | null> = computed(() => {
+    const stages = this.feedbackStages();
+    const to = stages.find((s) => s.key === 'to-send');
+    if (to && to.count > 0) {
+      return 'to-send';
+    }
+    return stages.find((s) => s.key !== 'to-send' && s.key !== 'retrained' && s.count > 0)?.key ?? null;
+  });
+
+  protected readonly queueTabLabel = QUEUE_TAB_LABEL;
+  protected readonly toneChipClass = toneChipClass;
+  protected readonly toneDotClass = toneDotClass;
+  protected readonly mixColor = mixColor;
+  protected readonly correctionStatusClass = correctionStatusClass;
+
+  /** Who made the final call, and how often that call overruled the model. */
+  protected readonly decisionSources: Signal<{ label: string; chosen: number; overruled: number; share: number }[]> = computed(() => {
+    const by = this.runDrift()?.decisions.by_source ?? {};
+    const rows = Object.entries(by).map(([source, v]) => ({
+      label: sourceLabel(source),
+      chosen: v.chosen,
+      overruled: v.overruled_model,
+    }));
+    const max = Math.max(1, ...rows.map((r) => r.chosen));
+    return rows.filter((r) => r.chosen > 0).map((r) => ({ ...r, share: (r.chosen / max) * 100 }));
+  });
+
+  /** The most common mistakes with a bar scaled to the commonest one. */
+  protected readonly mistakeBars: Signal<{ from: string; to: string; count: number; share: number }[]> = computed(() => {
+    const list = this.runDrift()?.decisions.top_overruled ?? [];
+    const max = Math.max(1, ...list.map((m) => m.count));
+    return list.map((m) => ({ from: m.model_label, to: m.chosen_label, count: m.count, share: (m.count / max) * 100 }));
+  });
+
   protected readonly planBusy = signal(false);
-  protected readonly planError = signal<string | null>(null);
-  protected readonly planMessage = signal<string | null>(null);
+
+  /** The corrections, one group per model they teach (region model first). */
+  protected readonly correctionGroups: Signal<CorrectionGroup[]> = computed(() =>
+    groupCorrections(this.corrections()),
+  );
+
+  /** Where the flagged samples went, stage by stage: flagged -> defect model ran -> reviewed ->
+   * corrected, each with its share of the flagged. */
+  protected readonly funnelSteps: Signal<{ key: string; label: string; count: number; share: number; ofFlagged: string }[]> = computed(() => {
+    const funnel = this.runDrift()?.funnel;
+    if (!funnel) {
+      return [];
+    }
+    const base = Math.max(funnel.flagged, 1);
+    return [
+      { key: 'flagged', label: 'Flagged for review', count: funnel.flagged },
+      { key: 'defect-ran', label: 'Defect model ran', count: funnel.defect_ran },
+      { key: 'reviewed', label: 'Reviewed by you', count: funnel.reviewed },
+      { key: 'corrected', label: 'Needed a correction', count: funnel.corrected },
+    ].map((step) => ({
+      ...step,
+      share: (step.count / base) * 100,
+      ofFlagged: funnel.flagged === 0 ? '—' : `${Math.round((step.count / funnel.flagged) * 100)}%`,
+    }));
+  });
+
+  /** Agent 2's usefulness as percentages the template can show. */
+  protected readonly agent2Rows: Signal<{ key: string; label: string; n: number; matched: number; rate: string }[]> = computed(() => {
+    const stats = this.runDrift()?.agent2;
+    if (!stats || stats.with_review === 0) {
+      return [];
+    }
+    const rate = (n: number, matched: number): string => (n === 0 ? '—' : `${Math.round((matched / n) * 100)}%`);
+    const evidence: Record<string, string> = {
+      vision_model: 'Looked at the image (vision model)',
+      fallback: 'Visual check did not run',
+      skipped: 'Image not found',
+    };
+    return [
+      { key: 'all', label: 'All reviewed samples', n: stats.with_review, matched: stats.matched, rate: rate(stats.with_review, stats.matched) },
+      ...Object.entries(stats.by_evidence).map(([source, v]) => ({
+        key: source,
+        label: evidence[source] ?? source,
+        n: v.n,
+        matched: v.matched,
+        rate: rate(v.n, v.matched),
+      })),
+      { key: 'measured', label: 'Had physical measurements', n: stats.with_measurements.n, matched: stats.with_measurements.matched, rate: rate(stats.with_measurements.n, stats.with_measurements.matched) },
+      { key: 'unmeasured', label: 'No measurements recorded', n: stats.without_measurements.n, matched: stats.without_measurements.matched, rate: rate(stats.without_measurements.n, stats.without_measurements.matched) },
+    ].filter((row) => row.key === 'all' || row.n > 0);
+  });
 
   protected readonly canQueueCorrections: Signal<boolean> = computed(
     () => this.selectedCorrections().length > 0 && !this.monitoringBusy(),
@@ -111,7 +508,7 @@ export class Work implements OnDestroy {
   protected readonly ipcClasses = IPC_CLASSES;
   protected readonly reviewCases = signal<WorkflowReviewCaseOut[]>([]);
   protected readonly consoleOpen = signal(false);
-  protected readonly consoleTab = signal<'review' | 'drift'>('review');
+  protected readonly consoleTab = signal<'review' | 'feedback' | 'queue'>('review');
   protected readonly caseFilter = signal<'all' | 'pending' | 'reviewed'>('all');
   protected readonly selectedCaseId = signal<string | null>(null);
   protected readonly goldenImageUrl = signal<string | null>(null);
@@ -119,7 +516,12 @@ export class Work implements OnDestroy {
   protected readonly decisionSource = signal<WorkflowDecisionSource>('MACHINE');
   protected readonly manualClass = signal<string>(IPC_CLASSES[0]);
   protected readonly operatorNotes = signal('');
+  /** The part area the operator is deciding on; starts as what the region model said. */
+  protected readonly regionResult = signal<WorkflowRegion>('Body');
+  protected readonly regions: readonly WorkflowRegion[] = ['Body', 'Lead', 'Text'];
   protected readonly reviewBusy = signal(false);
+  protected readonly casesLoading = signal(false);
+  protected readonly imagesLoading = signal(false);
   protected readonly reviewError = signal<string | null>(null);
   protected readonly reviewMessage = signal<string | null>(null);
 
@@ -127,7 +529,164 @@ export class Work implements OnDestroy {
     () => this.datasetFile() !== null && this.xmlFile() !== null && !this.uploading() && !this.workService.running(),
   );
 
-  protected readonly hasRun: Signal<boolean> = computed(() => this.workService.log().length > 0);
+  protected readonly summaryTiles: Signal<{ label: string; value: number; tone: string }[]> = computed(() => {
+    const status = this.workService.status();
+    const failed = failedCount(status);
+    const plain = 'border-slate-300 dark:border-slate-700';
+    // Colour only where it means something: green for accepted, amber for what needs a person, red
+    // for samples that dropped out before a decision.
+    return [
+      { label: 'Input', value: status.input_samples, tone: plain },
+      { label: 'Prepared', value: status.preparation_ready, tone: plain },
+      { label: 'Verified', value: status.verification_passed, tone: plain },
+      { label: 'Inference', value: status.inference_attempted, tone: plain },
+      {
+        label: 'Failed',
+        value: failed,
+        tone: failed > 0 ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30' : plain,
+      },
+      {
+        label: 'Accepted',
+        value: status.accepted,
+        tone: status.accepted > 0 ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30' : plain,
+      },
+      {
+        label: 'Review',
+        value: status.review_required,
+        tone: status.review_required > 0 ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30' : plain,
+      },
+    ];
+  });
+
+  /** The server's status word (REVIEW_REQUIRED) as a sentence-case label, with a light and what it
+   * means for the samples. */
+  protected readonly statusView: Signal<{ label: string; light: string; detail: string }> = computed(() => {
+    const status = this.workService.status();
+    const raw = status.status;
+    const words = raw.replace(/_/g, ' ').toLowerCase();
+    const label = words.charAt(0).toUpperCase() + words.slice(1);
+    const upper = raw.toUpperCase();
+    let light = 'bg-slate-400';
+    if (upper.includes('REVIEW')) {
+      light = 'bg-amber-500';
+    } else if (/(FAIL|ABORT|ERROR)/.test(upper)) {
+      light = 'bg-red-500';
+    } else if (/(ACCEPT|COMPLETE|PASS|SUCCESS)/.test(upper)) {
+      light = 'bg-emerald-500';
+    }
+    const parts: string[] = [];
+    if (status.review_required > 0) {
+      parts.push(
+        `${status.review_required} of ${status.input_samples} sample${status.input_samples === 1 ? '' : 's'} need a person to confirm`,
+      );
+    } else if (status.accepted > 0) {
+      parts.push(`${status.accepted} of ${status.input_samples} accepted`);
+    }
+    const failed = failedCount(status);
+    if (failed > 0) {
+      const stages = [
+        [status.preparation_failed, 'failed preparation'],
+        [status.verification_failed, 'failed verification'],
+        [status.inference_aborted, 'aborted in inference'],
+      ] as const;
+      parts.push(
+        stages
+          .filter(([count]) => (count ?? 0) > 0)
+          .map(([count, what]) => `${count} ${what}`)
+          .join(', '),
+      );
+      // A run where nothing got through is red whatever the server calls it.
+      if (light === 'bg-slate-400' && failed >= status.input_samples) {
+        light = 'bg-red-500';
+      }
+    }
+    return { label, light, detail: parts.join(' · ') };
+  });
+
+  /** Why samples failed, in the server's words (e.g. "Verification GOLDEN_IMAGE_NOT_FOUND: 47
+   * sample(s) (e.g. S000002)"), shown under the status so a failed run explains itself. */
+  protected readonly failureReasons: Signal<string[]> = computed(() => {
+    if (failedCount(this.workService.status()) === 0) {
+      return [];
+    }
+    const errors = this.workService.result()?.errors;
+    return Array.isArray(errors) ? errors.map(String).slice(0, 4) : [];
+  });
+
+  /** Accepted against needs-review as shares of everything the agent decided on. */
+  protected readonly outcomeBar: Signal<{
+    total: number;
+    accepted: number;
+    review: number;
+    acceptedShare: number;
+    reviewShare: number;
+  }> = computed(() => {
+    const { accepted, review_required: review } = this.workService.status();
+    const total = accepted + review;
+    return {
+      total,
+      accepted,
+      review,
+      acceptedShare: total === 0 ? 0 : (accepted / total) * 100,
+      reviewShare: total === 0 ? 0 : (review / total) * 100,
+    };
+  });
+
+  /** What the agent is doing, as one word and a light - so the state is visible at a glance. */
+  protected readonly runState: Signal<{ key: string; label: string; pill: string; light: string }> = computed(() => {
+    const idle = {
+      key: 'idle',
+      label: 'Ready',
+      pill: 'border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-300',
+      light: 'bg-slate-400',
+    };
+    if (this.uploading()) {
+      return {
+        key: 'uploading',
+        label: 'Uploading files',
+        pill: 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-200',
+        light: 'bg-amber-500 animate-pulse',
+      };
+    }
+    if (this.workService.running()) {
+      return {
+        key: 'running',
+        label: 'Running',
+        pill: 'border-sky-300 text-sky-800 dark:border-sky-700 dark:text-sky-200',
+        light: 'bg-sky-500 animate-pulse',
+      };
+    }
+    const log = this.workService.log();
+    if (this.uploadError() !== null || log[log.length - 1]?.kind === 'error') {
+      return {
+        key: 'error',
+        label: 'Failed',
+        pill: 'border-red-300 text-red-800 dark:border-red-700 dark:text-red-200',
+        light: 'bg-red-500',
+      };
+    }
+    if (this.workService.result() !== null) {
+      return this.pendingCount() > 0
+        ? {
+            key: 'review',
+            label: `${this.pendingCount()} to review`,
+            pill: 'border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-200',
+            light: 'bg-amber-500',
+          }
+        : {
+            key: 'done',
+            label: 'Complete',
+            pill: 'border-emerald-300 text-emerald-800 dark:border-emerald-700 dark:text-emerald-200',
+            light: 'bg-emerald-500',
+          };
+    }
+    return idle;
+  });
+
+  protected readonly hasNextPending: Signal<boolean> = computed(() => {
+    const selected = this.selectedCaseId();
+    return this.reviewCases().some((c) => c.decision === null && c.sample_id !== selected);
+  });
 
   protected readonly imageRootSummary: Signal<string> = computed(() => {
     const files = this.imageRootFiles();
@@ -136,29 +695,6 @@ export class Work implements OnDestroy {
     }
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     return `${files.length} file${files.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`;
-  });
-
-  protected readonly resultJson: Signal<string | null> = computed(() => {
-    const result = this.workService.result();
-    return result === null ? null : JSON.stringify(result, null, 2);
-  });
-
-  protected readonly results: Signal<OrchestratorInferenceResult[]> = computed(
-    () => this.workService.result()?.results ?? [],
-  );
-
-  /** Distinct real model names (routing.service_model, not the routing key) actually seen in this
-   * run's results - what the "Report drift" model picker offers. A sample that never reached
-   * stage 2 (e.g. FEATURE_CLASSIFICATION_UNCERTAIN) contributes nothing here. */
-  protected readonly modelsInResults: Signal<string[]> = computed(() => {
-    const names = new Set<string>();
-    for (const sample of this.results()) {
-      const name = sample.routing?.service_model;
-      if (name) {
-        names.add(name);
-      }
-    }
-    return [...names].sort();
   });
 
   protected readonly runId: Signal<string | null> = computed(
@@ -201,25 +737,38 @@ export class Work implements OnDestroy {
     () => this.reviewCases().filter((reviewCase) => reviewCase.decision !== null).length,
   );
 
-  protected readonly selectedSamples: Signal<OrchestratorInferenceResult[]> = computed(() => {
-    const ids = this.selectedSampleIds();
-    return this.results().filter((sample) => ids.has(sample.sample_id));
-  });
-
-  protected readonly canReportDrift: Signal<boolean> = computed(
-    () => this.driftModelName() !== '' && this.driftDescription().trim() !== '' && !this.monitoringBusy(),
-  );
-
-  protected readonly canFlagSelected: Signal<boolean> = computed(
-    () => this.selectedSampleIds().size > 0 && this.retrainingReason().trim() !== '' && !this.monitoringBusy(),
-  );
-
   // Mirrors ui.py's one-time `os.getenv("OPENAI_API_KEY")` check next to its "Use real LLM
   // Planner" checkbox - null while the initial GET /api/orchestrator/status is in flight (or if
   // it fails, e.g. orchestrator_agent_enabled is off), so the label only appears once it's known.
   protected readonly llmConfigured = signal<boolean | null>(null);
 
-  constructor(protected readonly workService: WorkService) {
+  // Only the newest cases / drift request may write its answer: a slow earlier one (or one for a
+  // run that has since been replaced) would otherwise overwrite fresher data.
+  private casesRequest = 0;
+  private driftRequest = 0;
+  private destroyed = false;
+  private consoleOpener: HTMLElement | null = null;
+  private readonly consoleDialog = viewChild<ElementRef<HTMLElement>>('consoleDialog');
+
+  /** One line of the active policy and planner choices, so they stay visible with the panel closed. */
+  protected readonly settingsSummary: Signal<string> = computed(() => {
+    const s = this.workSettings;
+    const planner = s.useLlm() ? `LLM planner (${s.llmModel() || 'default model'})` : 'deterministic planner';
+    return `Thresholds ${s.featureThreshold().toFixed(2)} feature / ${s.defectThreshold().toFixed(2)} defect, ${planner}`;
+  });
+
+  constructor(
+    protected readonly workService: WorkService,
+    protected readonly workSettings: WorkSettingsService,
+  ) {
+    // Move focus into the Review Console when it opens, so keyboard and screen reader users land in it.
+    afterRenderEffect(() => {
+      const dialog = this.consoleDialog()?.nativeElement;
+      if (dialog && !dialog.contains(document.activeElement)) {
+        dialog.focus();
+      }
+    });
+
     // The Review Console follows the run: its cases exist as soon as the result arrives (Agent 2
     // still pending), and are refetched whenever Agent 2 finishes another sample.
     effect(() => {
@@ -238,7 +787,7 @@ export class Work implements OnDestroy {
     this.workService
       .getStatus()
       .then((status) => this.llmConfigured.set(status.llm_configured))
-      .catch(() => this.llmConfigured.set(null));
+      .catch(() => undefined);
   }
 
   onDatasetFileChange(event: Event): void {
@@ -269,18 +818,21 @@ export class Work implements OnDestroy {
   clearLog(): void {
     this.workService.clearLog();
     this.resetReviews();
-    this.selectedSampleIds.set(new Set());
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.revokeImages();
   }
 
   /** Opens the Review Console popup (the source app's "Open Review Console" button), refetching
    * first so it never shows a stale queue, and selecting the first pending case. */
   async openConsole(): Promise<void> {
+    if (!this.consoleOpen()) {
+      this.consoleOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
     this.consoleOpen.set(true);
     await Promise.all([this.refreshCases(), this.refreshDrift()]);
     if (this.selectedCase() === null) {
@@ -293,7 +845,40 @@ export class Work implements OnDestroy {
 
   @HostListener('document:keydown.escape')
   closeConsole(): void {
+    // Closing mid-save would hide the outcome of the decision being written.
+    if (!this.consoleOpen() || this.reviewBusy()) {
+      return;
+    }
     this.consoleOpen.set(false);
+    this.consoleOpener?.focus();
+    this.consoleOpener = null;
+  }
+
+  /** Keeps Tab inside the open console, so focus cannot wander to the page behind the backdrop. */
+  trapConsoleFocus(keyEvent: Event): void {
+    const event = keyEvent as KeyboardEvent;
+    const dialog = this.consoleDialog()?.nativeElement;
+    if (event.key !== 'Tab' || !dialog) {
+      return;
+    }
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialog)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   async refreshCases(): Promise<void> {
@@ -301,79 +886,168 @@ export class Work implements OnDestroy {
     if (runId === null) {
       return;
     }
+    const request = ++this.casesRequest;
+    this.casesLoading.set(true);
     try {
-      this.reviewCases.set(await this.workService.getReviewCases(runId));
-      this.reviewError.set(null);
+      const cases = await this.workService.getReviewCases(runId);
+      if (request === this.casesRequest && runId === this.runId()) {
+        this.reviewCases.set(cases);
+        this.reviewError.set(null);
+      }
     } catch (error) {
-      this.reviewError.set(error instanceof Error ? error.message : 'Could not load review cases.');
+      if (request === this.casesRequest) {
+        this.reviewError.set(error instanceof Error ? error.message : 'Could not load review cases.');
+      }
+    } finally {
+      if (request === this.casesRequest) {
+        this.casesLoading.set(false);
+      }
     }
   }
 
-  /** Refetches the server's drift numbers and corrections for the run - the Drift & Retraining
+  /** Refetches the server's drift numbers and corrections for the run - the Corrections & Retraining
    * tab follows every decision the operator saves in the Explanation Review. */
   async refreshDrift(): Promise<void> {
     const runId = this.runId();
     if (runId === null) {
       return;
     }
+    const request = ++this.driftRequest;
     this.driftLoading.set(true);
     try {
-      this.runDrift.set(await this.workService.getRunDrift(runId));
-      this.driftError.set(null);
+      const drift = await this.workService.getRunDrift(runId);
+      if (request === this.driftRequest && runId === this.runId()) {
+        this.runDrift.set(drift);
+        this.driftError.set(null);
+      }
     } catch (error) {
-      this.driftError.set(error instanceof Error ? error.message : 'Could not load the drift numbers.');
+      if (request === this.driftRequest) {
+        this.driftError.set(error instanceof Error ? error.message : 'Could not load the drift numbers.');
+      }
     } finally {
-      this.driftLoading.set(false);
+      if (request === this.driftRequest) {
+        this.driftLoading.set(false);
+      }
     }
   }
 
-  async showDriftTab(): Promise<void> {
-    this.consoleTab.set('drift');
+  async showFeedbackTab(): Promise<void> {
+    this.consoleTab.set('feedback');
     await this.refreshDrift();
   }
 
-  isCorrectionSelected(sampleId: string): boolean {
-    return !this.skippedCorrectionIds().has(sampleId);
+  async showQueueTab(): Promise<void> {
+    this.consoleTab.set('queue');
+    await this.refreshDrift();
   }
 
-  toggleCorrection(sampleId: string): void {
-    this.skippedCorrectionIds.update((ids) => {
+  isCorrectionSelected(correction: WorkflowCorrection): boolean {
+    return !this.excludedCorrectionIds().has(correctionKey(correction));
+  }
+
+  toggleCorrection(correction: WorkflowCorrection): void {
+    const key = correctionKey(correction);
+    this.excludedCorrectionIds.update((ids) => {
       const next = new Set(ids);
-      if (!next.delete(sampleId)) {
-        next.add(sampleId);
+      if (!next.delete(key)) {
+        next.add(key);
       }
       return next;
     });
   }
 
-  /** Queues a retraining ticket for each selected correction. The server builds the tickets from
-   * the stored sample and decision, so only the ids go over the wire. */
-  async queueCorrections(): Promise<void> {
+  /** The group's pending corrections that are still ticked. */
+  protected groupSelected(group: CorrectionGroup): WorkflowCorrection[] {
+    return group.pending.filter((c) => this.isCorrectionSelected(c));
+  }
+
+  protected groupAllSelected(group: CorrectionGroup): boolean {
+    return group.pending.length > 0 && this.groupSelected(group).length === group.pending.length;
+  }
+
+  /** Unticks every pending correction of one model, or ticks them all again when none is. */
+  toggleGroup(group: CorrectionGroup): void {
+    const keys = group.pending.map(correctionKey);
+    const all = this.groupAllSelected(group);
+    this.excludedCorrectionIds.update((ids) => {
+      const next = new Set(ids);
+      for (const key of keys) {
+        if (all) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+      }
+      return next;
+    });
+  }
+
+  /** Unticks every correction that can still be sent, or ticks them all again when none is. */
+  toggleAllCorrections(): void {
+    this.excludedCorrectionIds.set(
+      this.allCorrectionsSelected() ? new Set(this.pendingCorrections().map(correctionKey)) : new Set(),
+    );
+  }
+
+  /** Sends the ticked corrections for retraining - all of them, or one model's group: one retraining
+   * ticket each (built on the server from the stored sample and final decision - only the sample
+   * and model go over the wire), then a retraining plan for each model involved, so an Admin can
+   * approve it in the Models tab. */
+  async sendForRetraining(group?: CorrectionGroup): Promise<void> {
     const runId = this.runId();
-    if (runId === null || !this.canQueueCorrections()) {
+    if (runId === null || this.monitoringBusy()) {
       return;
     }
-    const sampleIds = this.selectedCorrections().map((c) => c.sample_id);
+    const selected = group ? this.groupSelected(group) : this.selectedCorrections();
+    if (selected.length === 0) {
+      return;
+    }
+    const models = [...new Set(selected.map((c) => c.model_name).filter((m): m is string => m !== null))];
     this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
     try {
-      const out = await this.workService.queueCorrections({ run_id: runId, sample_ids: sampleIds });
-      const queued = out.created.length;
-      this.monitoringMessage.set(
-        `Queued ${queued} correction${queued === 1 ? '' : 's'} for retraining` +
-          (out.already_queued.length > 0 ? ` (${out.already_queued.length} already queued)` : '') +
-          '.',
+      const out = await this.workService.queueCorrections({
+        run_id: runId,
+        items: selected.map((c) => ({ sample_id: c.sample_id, model_name: c.model_name as string })),
+      });
+      const sent = out.created.length;
+      const planned: string[] = [];
+      const unplanned: string[] = [];
+      for (const model of models) {
+        try {
+          await this.workService.draftRetrainingPlan(model);
+          planned.push(model);
+        } catch {
+          unplanned.push(model);
+        }
+      }
+      this.actionMessage.set(
+        `Sent ${sent} correction${sent === 1 ? '' : 's'} for retraining.` +
+          (planned.length > 0
+            ? ` The retraining plan for ${planned.join(', ')} is waiting for an Admin to approve it in the Models tab.`
+            : '') +
+          (unplanned.length > 0
+            ? ` No plan could be created for ${unplanned.join(', ')} yet - use "Create retraining plan" below.`
+            : ''),
       );
       await this.refreshDrift();
     } catch (error) {
-      this.monitoringError.set(
-        error instanceof Error ? error.message : 'Could not queue the corrections.',
+      this.actionError.set(
+        error instanceof Error ? error.message : 'Could not send the corrections for retraining.',
       );
     } finally {
       this.monitoringBusy.set(false);
     }
   }
+
+  protected readonly labelText = labelText;
+  protected readonly sourceLabel = sourceLabel;
+  protected readonly machineSaid = machineSaid;
+  protected readonly aiSaid = aiSaid;
+  protected readonly modelNote = modelNote;
+  protected readonly trainingStatus = trainingStatus;
+  protected readonly percent = percent;
 
   /** Drafts a retraining plan for a model from its open tickets. The plan is a job awaiting an
    * Admin's approval in the Models tab - nothing is retrained from here. */
@@ -382,20 +1056,68 @@ export class Work implements OnDestroy {
       return;
     }
     this.planBusy.set(true);
-    this.planError.set(null);
-    this.planMessage.set(null);
+    this.actionError.set(null);
+    this.actionMessage.set(null);
     try {
       const plan = await this.workService.draftRetrainingPlan(modelName);
-      this.planMessage.set(
+      this.actionMessage.set(
         `Plan drafted for ${plan.model_name}: ${plan.sample_count} sample${plan.sample_count === 1 ? '' : 's'}, ` +
           `${plan.status.replace('_', ' ')}. An Admin approves it in the Models tab.`,
       );
       await this.refreshDrift();
     } catch (error) {
-      this.planError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
+      this.actionError.set(error instanceof Error ? error.message : 'Could not draft the plan.');
     } finally {
       this.planBusy.set(false);
     }
+  }
+
+  private regionOf(value: string | null | undefined): WorkflowRegion | null {
+    return this.regions.find((r) => r === value) ?? null;
+  }
+
+  /** The region model's call for a case, as one of the three areas (null when unknown). */
+  protected modelRegion(reviewCase: WorkflowReviewCaseOut): WorkflowRegion | null {
+    return this.regionOf(reviewCase.region_label) ?? this.regionOf(reviewCase.feature_type);
+  }
+
+  protected regionChanged(reviewCase: WorkflowReviewCaseOut): boolean {
+    const model = this.modelRegion(reviewCase);
+    return model !== null && this.regionResult() !== model;
+  }
+
+  /** Confidence as the console shows it: 0.953 -> 95%, null -> an em dash. */
+  protected confidenceText(value: number | null | undefined): string {
+    return value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`;
+  }
+
+  /** The label from the uploaded folder (older backends sent only the baseline). */
+  protected machineVerdict(reviewCase: WorkflowReviewCaseOut): string | null {
+    return reviewCase.machine_verdict ?? reviewCase.agent1_verdict ?? null;
+  }
+
+  /** Machine and AI differ - the queue marks it so the operator looks closer. */
+  protected machineAiDiffer(reviewCase: WorkflowReviewCaseOut): boolean {
+    const machine = this.machineVerdict(reviewCase);
+    const ai = reviewCase.ai_verdict;
+    return !!machine && !!ai && machine !== ai;
+  }
+
+  /** Arrow keys in the queue: selects the neighbouring row and keeps focus on it. */
+  async moveSelection(step: 1 | -1): Promise<void> {
+    const cases = this.filteredCases();
+    const index = cases.findIndex((c) => c.sample_id === this.selectedCaseId());
+    const next = cases[Math.min(Math.max(index + step, 0), cases.length - 1)];
+    if (!next || next.sample_id === this.selectedCaseId()) {
+      return;
+    }
+    const selecting = this.selectCase(next.sample_id);
+    queueMicrotask(() => {
+      const row = document.querySelector<HTMLElement>(`[data-testid="case-${next.sample_id}"]`);
+      row?.focus();
+      row?.scrollIntoView?.({ block: 'nearest' });
+    });
+    await selecting;
   }
 
   /** Opens one case in the console's detail pane, pre-filling the form from a saved decision. */
@@ -408,30 +1130,29 @@ export class Work implements OnDestroy {
     this.reviewError.set(null);
     this.reviewMessage.set(null);
     const decision = reviewCase.decision;
-    this.decisionSource.set(decision?.selected_source ?? 'MACHINE');
+    this.decisionSource.set(decision?.selected_source ?? (this.machineVerdict(reviewCase) ? 'MACHINE' : 'MANUAL'));
     this.manualClass.set(decision?.selected_source === 'MANUAL' ? decision.final_result : IPC_CLASSES[0]);
     this.operatorNotes.set(decision?.operator_notes ?? '');
+    this.regionResult.set(this.regionOf(decision?.region_result) ?? this.regionOf(reviewCase.region_label) ?? this.regionOf(reviewCase.feature_type) ?? 'Body');
     await this.loadImages(reviewCase);
   }
 
   /** Saves the operator's call: Agent 1's verdict (MACHINE), Agent 2's (AI), or an IPC class
    * (MANUAL). Only possible for AI once Agent 2 has actually reviewed the case. */
-  async submitDecision(): Promise<void> {
+  async submitDecision(advance = false): Promise<void> {
     const reviewCase = this.selectedCase();
     if (reviewCase === null || this.reviewBusy()) {
       return;
     }
     const source = this.decisionSource();
-    const agent2Verdict = reviewCase.review?.agent2_verdict ?? null;
-    if (source === 'AI' && agent2Verdict === null) {
+    const machine = this.machineVerdict(reviewCase);
+    const ai = reviewCase.ai_verdict ?? null;
+    // Accept AI needs Agent 1's defect model to have answered; Agent 2 is advisory and not a choice.
+    if (source === 'AI' && ai === null) {
       return;
     }
     const finalResult =
-      source === 'MACHINE'
-        ? reviewCase.agent1_verdict
-        : source === 'AI'
-          ? (agent2Verdict ?? '')
-          : this.manualClass();
+      source === 'MACHINE' ? (machine ?? '') : source === 'AI' ? (ai ?? '') : this.manualClass();
 
     this.reviewBusy.set(true);
     this.reviewError.set(null);
@@ -442,13 +1163,24 @@ export class Work implements OnDestroy {
         sample_id: reviewCase.sample_id,
         selected_source: source,
         final_result: finalResult,
-        machine_result: reviewCase.agent1_verdict,
-        ai_result: agent2Verdict,
+        machine_result: machine,
+        ai_result: ai,
         ai_diagnosis: reviewCase.review?.diagnosis ?? null,
         operator_notes: this.operatorNotes().trim() || null,
+        // Always the area the operator settled on, so "confirmed" is told apart from "not looked at".
+        region_result: this.regionResult(),
       });
       this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
       await Promise.all([this.refreshCases(), this.refreshDrift()]);
+      if (advance) {
+        const next = this.reviewCases().find(
+          (c) => c.decision === null && c.sample_id !== reviewCase.sample_id,
+        );
+        if (next) {
+          await this.selectCase(next.sample_id);
+          this.reviewMessage.set(`Saved ${reviewCase.sample_id}: ${finalResult}`);
+        }
+      }
     } catch (error) {
       this.reviewError.set(error instanceof Error ? error.message : 'Could not save the decision.');
     } finally {
@@ -458,12 +1190,16 @@ export class Work implements OnDestroy {
 
   private async loadImages(reviewCase: WorkflowReviewCaseOut): Promise<void> {
     this.revokeImages();
+    this.imagesLoading.set(true);
     const [golden, defect] = await Promise.all([
       this.fetchImage(reviewCase, 'golden', reviewCase.has_golden_image),
       this.fetchImage(reviewCase, 'defect', reviewCase.has_defect_image),
     ]);
-    if (this.selectedCaseId() !== reviewCase.sample_id) {
-      // The operator moved on while these downloaded - do not leak or show them.
+    if (this.selectedCaseId() === reviewCase.sample_id) {
+      this.imagesLoading.set(false);
+    }
+    if (this.destroyed || this.selectedCaseId() !== reviewCase.sample_id) {
+      // The operator moved on (or left) while these downloaded - do not leak or show them.
       for (const url of [golden, defect]) {
         if (url !== null) {
           URL.revokeObjectURL(url);
@@ -508,103 +1244,10 @@ export class Work implements OnDestroy {
     this.reviewMessage.set(null);
     this.runDrift.set(null);
     this.driftError.set(null);
-    this.planError.set(null);
-    this.planMessage.set(null);
-    this.skippedCorrectionIds.set(new Set());
+    this.actionError.set(null);
+    this.actionMessage.set(null);
+    this.excludedCorrectionIds.set(new Set());
     this.revokeImages();
-  }
-
-  /** 0.5 -> "50%"; "—" when there is nothing to measure. */
-  percent(value: number | null): string {
-    return value === null ? '—' : `${Math.round(value * 100)}%`;
-  }
-
-  confidencePercent(sample: OrchestratorInferenceResult): number | null {
-    const confidence = sample.defect_classification?.confidence;
-    return confidence === undefined ? null : Math.round(confidence * 100);
-  }
-
-  isSampleSelected(sampleId: string): boolean {
-    return this.selectedSampleIds().has(sampleId);
-  }
-
-  toggleSample(sampleId: string): void {
-    this.selectedSampleIds.update((ids) => {
-      const next = new Set(ids);
-      if (!next.delete(sampleId)) {
-        next.add(sampleId);
-      }
-      return next;
-    });
-  }
-
-  async reportDrift(): Promise<void> {
-    if (!this.canReportDrift()) {
-      return;
-    }
-    this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
-    try {
-      const runId = this.runId();
-      await this.workService.reportDrift({
-        model_name: this.driftModelName(),
-        description: this.driftDescription().trim(),
-        ...(runId !== null ? { run_id: runId } : {}),
-        samples: this.results(),
-      });
-      this.driftDescription.set('');
-      this.monitoringMessage.set(`Drift report filed for ${this.driftModelName()}.`);
-    } catch (error) {
-      this.monitoringError.set(error instanceof Error ? error.message : 'Could not file the drift report.');
-    } finally {
-      this.monitoringBusy.set(false);
-    }
-  }
-
-  async flagSelectedForRetraining(): Promise<void> {
-    if (!this.canFlagSelected()) {
-      return;
-    }
-    const reason = this.retrainingReason().trim();
-    this.monitoringBusy.set(true);
-    this.monitoringError.set(null);
-    this.monitoringMessage.set(null);
-    try {
-      const runId = this.runId();
-      const tickets = await this.workService.flagForRetraining({
-        ...(runId !== null ? { run_id: runId } : {}),
-        tickets: this.selectedSamples().map((sample) => ({ sample, reason })),
-      });
-      this.monitoringMessage.set(
-        `Flagged ${tickets.length} sample${tickets.length === 1 ? '' : 's'} for retraining.`,
-      );
-      this.selectedSampleIds.set(new Set());
-      this.retrainingReason.set('');
-    } catch (error) {
-      this.monitoringError.set(
-        error instanceof Error ? error.message : 'Could not flag the selected samples.',
-      );
-    } finally {
-      this.monitoringBusy.set(false);
-    }
-  }
-
-  downloadResult(): void {
-    const json = this.resultJson();
-    if (json === null) {
-      return;
-    }
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = this.outputFilename().trim() || 'result.json';
-    link.click();
-    // Revoking on the same tick races the browser actually starting the download - some
-    // browsers haven't read the blob yet, so the save can silently fail or produce a truncated
-    // file. Deferring a tick gives the download a chance to begin first.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   private async runMode(mode: OrchestratorRunMode): Promise<void> {
@@ -626,11 +1269,11 @@ export class Work implements OnDestroy {
         : null;
 
       this.workService.run(mode, datasetId, xmlId, imageRootId, {
-        featureThreshold: this.featureThreshold(),
-        defectThreshold: this.defectThreshold(),
-        useLlm: this.useLlm(),
-        llmModel: this.llmModel(),
-        llmFallback: this.llmFallback(),
+        featureThreshold: this.workSettings.featureThreshold(),
+        defectThreshold: this.workSettings.defectThreshold(),
+        useLlm: this.workSettings.useLlm(),
+        llmModel: this.workSettings.llmModel(),
+        llmFallback: this.workSettings.llmFallback(),
       });
     } catch (error) {
       this.uploadError.set(error instanceof Error ? error.message : 'Upload failed.');

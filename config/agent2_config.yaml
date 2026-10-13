@@ -25,14 +25,11 @@ server:
 # 2. AI Model Providers & Endpoints
 # ------------------------------------------------------------------------------
 models:
-  # Local Vision-Language Model (LLaVA via Ollama)
+  # Vision-Language Model (OpenAI, uses OPENAI_API_KEY from the environment)
   vlm:
-    provider: "ollama"
-    base_url: "http://localhost:11434"
-    model_name: "llava"              # pulled via: ollama pull llava
-    temperature: 0.1
-    top_p: 0.9
-    max_tokens: 512
+    provider: "openai"
+    model_name: "gpt-4o"
+    max_tokens: 150
     timeout_seconds: 45
     system_prompt: >
       You are an expert industrial PCB inspection vision model. Analyze the provided 

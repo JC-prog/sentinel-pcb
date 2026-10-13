@@ -1,13 +1,11 @@
-<div
-  role="tablist"
+<nav
   aria-label="Mode"
   class="flex items-center gap-0.5 rounded-full border border-slate-300 bg-slate-100 p-0.5 text-sm font-medium dark:border-slate-700 dark:bg-slate-900"
 >
   @for (tab of tabs; track tab.label) {
     <a
       [routerLink]="tab.link"
-      role="tab"
-      [attr.aria-selected]="active() === tab"
+      [attr.aria-current]="active() === tab ? 'page' : null"
       class="rounded-full px-4 py-1.5 transition-colors"
       [class]="
         active() === tab
@@ -18,4 +16,4 @@
       {{ tab.label }}
     </a>
   }
-</div>
+</nav>

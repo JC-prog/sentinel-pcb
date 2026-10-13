@@ -4,6 +4,8 @@ itself lives in app/chat/services/repository.py, mirroring app/shared/auth/servi
 app/shared/auth/repository.py.
 """
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.core.chat import ChatTurn, ConversationNotFound
@@ -45,10 +47,22 @@ async def load_history(
 
 
 async def append_message(
-    session: AsyncSession, conversation_id: str, role: str, content: str, image_ids: list[str]
+    session: AsyncSession,
+    conversation_id: str,
+    role: str,
+    content: str,
+    image_ids: list[str],
+    *,
+    tool_results: list[dict[str, Any]] | None = None,
+    interrupted: bool = False,
 ) -> Message:
     message = Message(
-        conversation_id=conversation_id, role=role, content=content, image_ids=image_ids
+        conversation_id=conversation_id,
+        role=role,
+        content=content,
+        image_ids=image_ids,
+        tool_results=tool_results or [],
+        interrupted=interrupted,
     )
     return await repository.add_message(session, message)
 

@@ -12,7 +12,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, UnidentifiedImageError
 
-from inference_service.activation import ModelFetcher, fetch_from_hub, load_version
+from inference_service.activation import (
+    ModelFetcher,
+    ModelResolver,
+    fetch_from_hub,
+    load_version,
+    resolve_on_hub,
+)
 from inference_service.jobs import JobManager
 from inference_service.logging_config import configure_logging
 from inference_service.registry import ModelRegistry, NoPreviousVersion
@@ -43,6 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     logger.info("model registry ready: %s", app.state.registry.names())
     app.state.fetcher = fetch_from_hub
+    app.state.resolver = resolve_on_hub
     app.state.jobs = JobManager(get_trainer(settings), history_limit=settings.job_history_limit)
     yield
     app.state.jobs.shutdown()
@@ -71,7 +78,12 @@ def get_fetcher(request: Request) -> ModelFetcher:
     return request.app.state.fetcher  # type: ignore[no-any-return]
 
 
+def get_resolver(request: Request) -> ModelResolver:
+    return request.app.state.resolver  # type: ignore[no-any-return]
+
+
 RegistryDep = Annotated[ModelRegistry, Depends(get_registry)]
+ResolverDep = Annotated[ModelResolver, Depends(get_resolver)]
 JobsDep = Annotated[JobManager, Depends(get_jobs)]
 FetcherDep = Annotated[ModelFetcher, Depends(get_fetcher)]
 
@@ -134,9 +146,17 @@ def list_models(registry: RegistryDep) -> list[ModelInfo]:
     return [_model_info(registry, name) for name in registry.names()]
 
 
+def _is_commit_sha(revision: str) -> bool:
+    return len(revision) == 40 and all(c in "0123456789abcdef" for c in revision)
+
+
 @app.post("/models/{name}/activate", response_model=ModelInfo)
 async def activate_model(
-    name: str, body: ActivateRequest, registry: RegistryDep, fetcher: FetcherDep
+    name: str,
+    body: ActivateRequest,
+    registry: RegistryDep,
+    fetcher: FetcherDep,
+    resolver: ResolverDep,
 ) -> ModelInfo:
     """Hot-swaps `name` to `repo_id@revision`. The new weights are fetched, loaded and smoke-tested
     before the swap, so a failure leaves the current version serving untouched. Idempotent:
@@ -147,15 +167,27 @@ async def activate_model(
         raise HTTPException(
             status_code=404, detail=f"unknown model {name!r}; available: {registry.names()}"
         )
-    if (current.spec.repo_id, current.spec.revision) == (body.repo_id, body.revision):
+
+    # Asking for the commit that is already live needs no Hub lookup, so it stays a no-op when the
+    # Hub is unreachable. A branch or tag is not skipped: it may have moved since it was loaded.
+    if _is_commit_sha(body.revision) and (current.spec.repo_id, current.spec.revision) == (
+        body.repo_id,
+        body.revision,
+    ):
         return _model_info(registry, name)
 
     try:
+        # A branch or tag is pinned to its commit SHA first, so the version this reports (and
+        # /classify stamps on each verdict) always names one immutable set of weights.
+        revision = await run_in_threadpool(resolver, body.repo_id, body.revision)
+        if (current.spec.repo_id, current.spec.revision) == (body.repo_id, revision):
+            return _model_info(registry, name)
+
         classifier = await run_in_threadpool(
             load_version,
             current,
             repo_id=body.repo_id,
-            revision=body.revision,
+            revision=revision,
             store_dir=Path(settings.model_store_dir),
             fetch=fetcher,
         )

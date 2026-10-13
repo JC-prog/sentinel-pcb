@@ -27,7 +27,6 @@ async def make_user(session: AsyncSession, role: UserRole = UserRole.QA) -> User
         email=f"user-{n}@example.com",
         password_hash="x",
         employee_id=f"EMP-{n}",
-        department_shift="QA Day Shift",
         role=role,
     )
     session.add(user)

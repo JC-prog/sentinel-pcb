@@ -29,6 +29,12 @@ describe('Register', () => {
     expect(fixture.componentInstance['role']()).toBe('qa');
   });
 
+  it('does not ask for a department or shift', () => {
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text.toLowerCase()).not.toContain('shift');
+    expect((fixture.nativeElement as HTMLElement).querySelector('#department-shift')).toBeNull();
+  });
+
   it('offers qa and admin as selectable roles', () => {
     const options = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll('#role option'),
@@ -45,7 +51,6 @@ describe('Register', () => {
     component['email'].set('jane@example.com');
     component['password'].set('correct-horse-battery-staple');
     component['employeeId'].set('EMP-042');
-    component['departmentShift'].set('QA Day Shift');
     component['role'].set('admin');
     await component.submit();
 
@@ -54,7 +59,6 @@ describe('Register', () => {
       email: 'jane@example.com',
       password: 'correct-horse-battery-staple',
       employeeId: 'EMP-042',
-      departmentShift: 'QA Day Shift',
       role: 'admin',
     });
     expect(router.navigateByUrl).toHaveBeenCalledWith('/');

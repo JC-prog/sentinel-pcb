@@ -4,8 +4,9 @@ app/shared/db/models/auth.py for authentication models.
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, false, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +51,16 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # References app.chat.uploads' stored filenames, not blob data - see app/chat/services/schemas.py.
     image_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # The cards the UI showed for this reply (`{"name": ..., "result": {...}}`, as sent in the
+    # tool_result SSE frames), so a conversation reopened on another device shows them too.
+    tool_results: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    # The reply was cut short - the user pressed Stop, or the turn failed part-way - so `content`
+    # is only what had streamed by then.
+    interrupted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

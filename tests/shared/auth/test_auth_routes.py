@@ -8,7 +8,6 @@ _QA_PAYLOAD = {
     "email": "first@example.com",
     "password": "correct-horse-battery-staple",
     "employee_id": "EMP-001",
-    "department_shift": "QA Day Shift",
     "role": "qa",
 }
 
@@ -22,6 +21,13 @@ def test_first_user_becomes_admin_regardless_of_requested_role(client: TestClien
     response = _register(client, role="qa")
     assert response.status_code == 201
     assert response.json()["role"] == "admin"
+
+
+def test_registration_needs_no_department_or_shift(client: TestClient) -> None:
+    response = _register(client)
+
+    assert response.status_code == 201
+    assert "department_shift" not in response.json()
 
 
 def test_second_user_gets_the_role_they_requested(client: TestClient) -> None:

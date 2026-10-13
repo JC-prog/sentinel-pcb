@@ -1,7 +1,7 @@
 """Covers the Work tab's Agent 2 review + human-in-the-loop decision routes
 (POST /api/orchestrator/reviews/run, PUT .../reviews/decision, GET .../reviews/decisions) and the
 pure helpers in app/workflow/services/reviews.py. The LangGraph pipeline itself is stubbed - it
-needs images, Ollama and (optionally) OpenAI; these tests are about what the web layer does with
+needs images and OpenAI; these tests are about what the web layer does with
 its output.
 """
 
@@ -338,6 +338,9 @@ async def test_cases_list_merges_review_and_decision(
     assert cases[0]["decision"]["final_result"] == "missing part"
     assert cases[1]["review"] is None and cases[1]["decision"] is None
     assert cases[0]["component_ref"] == "C978" and cases[0]["agent1_verdict"] == "wrong part"
+    # both models' answers are on the case: the region model's label and confidence, then the defect
+    assert (cases[0]["region_label"], cases[0]["region_confidence"]) == ("Body", 0.95)
+    assert cases[0]["agent1_confidence"] == 0.6 and cases[0]["defect_model_ran"] is True
     assert authenticated_client.get(CASES_URL, params={"run_id": "other"}).json() == []
 
 
@@ -367,3 +370,95 @@ def test_image_route_serves_only_registered_files(authenticated_client: TestClie
     )
     assert bad_kind.status_code == 422
     tmp_dir.cleanup()
+
+
+def test_a_sample_the_defect_model_never_saw_still_reports_the_region_models_confidence() -> None:
+    stage_one_only = {
+        "sample_id": "S3",
+        "final_decision": "REVIEW_REQUIRED",
+        "details": {"feature_classification": {"prediction": "Text", "confidence": 0.31}},
+    }
+
+    agent2_input = reviews.build_agent2_input(_sample("S3"), stage_one_only)
+
+    assert agent2_input["region_label"] == "Text"
+    assert agent2_input["region_confidence"] == 0.31
+    assert agent2_input["defect_model_ran"] is False
+
+
+async def test_a_region_correction_is_saved_with_the_decision(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    saved: dict[str, Any] = {}
+
+    async def fake_save(run_id: str, sample_id: str, decision: dict[str, Any]) -> dict[str, Any]:
+        saved.update(decision)
+        return {"human_decision": decision}
+
+    monkeypatch.setattr("app.workflow.services.run_store.save_decision", fake_save)
+
+    response = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": "run-a",
+            "sample_id": "S1",
+            "selected_source": "MANUAL",
+            "final_result": "tombstone",
+            "region_result": "Lead",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["region_result"] == "Lead"
+    assert saved["region_result"] == "Lead"
+
+
+def test_a_region_correction_must_be_one_of_the_known_regions(authenticated_client: TestClient) -> None:
+    response = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": "r",
+            "sample_id": "S1",
+            "selected_source": "MANUAL",
+            "final_result": "x",
+            "region_result": "Corner",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_review_cases_separate_the_folder_label_from_the_models_prediction() -> None:
+    sample = {**_sample("S1"), "machine_defect": "Shift_4"}
+    agent2_input = reviews.build_agent2_input(sample, _result("S1", prediction="MissingPart"))
+    stage_one_only = reviews.build_agent2_input(
+        {**_sample("S2"), "machine_defect": "WrongPart_13"},
+        {"sample_id": "S2", "details": {"feature_classification": {"prediction": "Text", "confidence": 0.3}}},
+    )
+
+    assert agent2_input["machine_defect"] == "Shift_4"
+    assert agent2_input["ai_prediction"] == "MissingPart"
+    assert stage_one_only["machine_defect"] == "WrongPart_13"
+    assert stage_one_only["ai_prediction"] is None
+
+
+def test_a_review_says_where_its_visual_evidence_and_measurements_came_from() -> None:
+    case = {
+        "preliminary_defect": "WrongPart",
+        "aoi_measurements": {"BodyInspection": {"status": "Failed", "Coplanarity": 0.2}},
+    }
+    canned = {"visual_evidence": "Visual inspection of Body crop for C1 confirms anomaly flagged by AOI."}
+    real = {
+        "visual_evidence": "The body is absent and the pads are bare.",
+        "visual_evidence_source": "vision_model",
+        "telemetry_data": {"telemetry_source": "measured"},
+        "retrieved_precedents": [{"ipc_clause": "IPC-A-610 8.3.1", "standard": "Missing", "rule": "Absent."}],
+    }
+
+    older = reviews._build_review("run-a", "S1", case, {**canned, "predicted_defect": "missing part"})
+    newer = reviews._build_review("run-a", "S1", case, {**real, "predicted_defect": "tombstone"})
+
+    assert older.visual_evidence_source == "fallback"
+    assert older.telemetry_available is False  # no height or ICT key on the AOI record
+    assert newer.visual_evidence_source == "vision_model"
+    assert newer.telemetry_available is True
+    assert [p.ipc_clause for p in newer.precedents] == ["IPC-A-610 8.3.1"]

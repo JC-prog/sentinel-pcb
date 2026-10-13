@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from inference_service.classifier import OnnxClassifier
-from inference_service.main import app, get_fetcher
+from inference_service.main import app, get_fetcher, get_resolver
 from inference_service.manifest import ModelSpec
 from inference_service.registry import ModelRegistry, NoPreviousVersion
 from inference_service.settings import settings
@@ -34,6 +34,18 @@ class FakeFetcher:
         build_tiny_onnx(dest, num_classes=self.num_classes)
 
 
+class FakeResolver:
+    """Stands in for the hub's ref -> commit SHA lookup; unmapped refs are already SHAs."""
+
+    def __init__(self, shas: dict[str, str] | None = None) -> None:
+        self.shas = shas or {}
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, repo_id: str, revision: str) -> str:
+        self.calls.append((repo_id, revision))
+        return self.shas.get(revision, revision)
+
+
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(settings, "model_store_dir", str(tmp_path))
@@ -41,7 +53,15 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def fetcher(client: TestClient, store: Path) -> Iterator[FakeFetcher]:
+def resolver(client: TestClient) -> Iterator[FakeResolver]:
+    fake = FakeResolver()
+    app.dependency_overrides[get_resolver] = lambda: fake
+    yield fake
+    app.dependency_overrides.pop(get_resolver, None)
+
+
+@pytest.fixture
+def fetcher(client: TestClient, store: Path, resolver: FakeResolver) -> Iterator[FakeFetcher]:
     fake = FakeFetcher()
     app.dependency_overrides[get_fetcher] = lambda: fake
     yield fake
@@ -91,6 +111,48 @@ def test_activating_the_live_version_is_a_no_op(client: TestClient, fetcher: Fak
 
     assert response.status_code == 200
     assert response.json()["version"] == OLD_VERSION
+    assert response.json()["previous_version"] is None
+    assert fetcher.specs == []
+
+
+def test_activate_pins_a_moving_ref_to_its_commit_sha(
+    client: TestClient, fetcher: FakeFetcher, resolver: FakeResolver
+) -> None:
+    resolver.shas["main"] = "c0ffee"
+
+    response = client.post(
+        "/models/classifier_1/activate", json={"repo_id": "JcProg/example", "revision": "main"}
+    )
+
+    assert response.json()["version"] == "JcProg/example@c0ffee"
+    (spec,) = fetcher.specs
+    assert spec.revision == "c0ffee"  # the download is of the SHA, not the moving ref
+
+
+def test_reactivating_the_live_commit_does_not_need_the_hub(
+    client: TestClient, fetcher: FakeFetcher, resolver: FakeResolver
+) -> None:
+    sha = "a" * 40
+    body = {"repo_id": "JcProg/example", "revision": sha}
+    assert client.post("/models/classifier_1/activate", json=body).status_code == 200
+    resolver.calls.clear()
+    fetcher.specs.clear()
+
+    response = client.post("/models/classifier_1/activate", json=body)
+
+    assert response.status_code == 200
+    assert resolver.calls == []
+    assert fetcher.specs == []
+
+
+def test_activating_a_ref_that_resolves_to_the_live_sha_is_a_no_op(
+    client: TestClient, fetcher: FakeFetcher, resolver: FakeResolver
+) -> None:
+    resolver.shas["v2"] = "main"  # the live version's revision
+
+    response = client.post("/models/classifier_1/activate", json=NEW)
+
+    assert response.status_code == 200
     assert response.json()["previous_version"] is None
     assert fetcher.specs == []
 

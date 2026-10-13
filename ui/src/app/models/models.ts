@@ -41,6 +41,12 @@ const VERSION_STATUS_CLASSES: Record<ModelVersionStatus, string> = {
   retired: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
 };
 
+/** Appended to the Approve confirmation. The inference service's only trainer is a stub that
+ * trains nothing (inference/src/inference_service/trainer.py), so say so before an Admin approves.
+ * Set to '' (and drop this note) once a real trainer ships. */
+const SIMULATED_TRAINING_WARNING =
+  '\n\nNote: retraining is currently simulated. The job will finish, but no new model is trained.';
+
 type JobDetailState = RetrainingJobDetail | 'loading' | 'error';
 
 /** The Models tab: which version of each model is live and its history, drift reports, and the
@@ -220,7 +226,8 @@ export class Models implements OnInit, OnDestroy {
     const cases = `${job.sample_count} flagged case${job.sample_count === 1 ? '' : 's'}`;
     if (
       this.confirm(
-        `Approve retraining ${job.model_name} on ${cases}? It will be sent to the inference service.`,
+        `Approve retraining ${job.model_name} on ${cases}? It will be sent to the inference service.` +
+          SIMULATED_TRAINING_WARNING,
       )
     ) {
       await this.service.approveJob(job.id);

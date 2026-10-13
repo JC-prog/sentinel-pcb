@@ -53,7 +53,6 @@ async def register_user(session: AsyncSession, data: RegisterRequest) -> User:
         email=data.email,
         password_hash=hash_password(data.password),
         employee_id=data.employee_id,
-        department_shift=data.department_shift,
         role=role,
     )
     return await repository.add_user(session, user)

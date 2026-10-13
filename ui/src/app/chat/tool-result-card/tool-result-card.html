@@ -77,6 +77,56 @@
   </section>
 }
 
+@if (caseCreated(); as result) {
+  <section
+    class="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm dark:border-emerald-700 dark:bg-emerald-950/40"
+    aria-label="Case created"
+    data-testid="case-created"
+  >
+    <header class="flex items-center justify-between gap-2">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+          Case created
+        </p>
+        <p class="text-base font-semibold" data-testid="case-number">{{ result.case_number }}</p>
+      </div>
+      <span
+        class="rounded-full px-3 py-1 text-xs font-semibold"
+        [class]="
+          result.verdict === 'review_required'
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+        "
+        data-testid="case-status"
+        >{{ statusLabel(result.verdict) }}</span
+      >
+    </header>
+    <p class="mt-2">
+      @if (result.region) {
+        <span class="font-medium">{{ result.region }}</span>
+        <span class="text-slate-500 dark:text-slate-400"> · </span>
+      }
+      @if (result.defect) {
+        <span class="font-medium">{{ result.defect }}</span>
+        @if (result.defect_confidence !== null) {
+          <span class="text-slate-500 dark:text-slate-400">
+            · {{ percent(result.defect_confidence) }}</span
+          >
+        }
+      } @else {
+        <span class="text-slate-500 dark:text-slate-400">defect not classified</span>
+      }
+    </p>
+    <p class="mt-2 text-xs text-emerald-800 dark:text-emerald-200">
+      {{
+        result.verdict === 'review_required'
+          ? 'Saved - it needs a person to approve or override it.'
+          : 'Saved - you can still relabel it if the label is wrong.'
+      }}
+    </p>
+  </section>
+}
+
 @if (proposal(); as result) {
   <section
     class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950/40"

@@ -1,12 +1,13 @@
 import { Inject, Injectable, Signal, computed, effect, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../auth.service';
-import { CHAT_RESPONDER, ChatResponder } from './chat-responder';
+import { CHAT_RESPONDER, ChatResponder, ChatResponderError } from './chat-responder';
 import {
   ChatMessage,
   Conversation,
   MessageRole,
   PersistedConversation,
+  TOOL_RESULT_NAMES,
   ToolResult,
 } from './models/chat.models';
 
@@ -18,6 +19,8 @@ interface ServerMessage {
   role: MessageRole;
   content: string;
   created_at: string;
+  tool_results?: { name: string; result: unknown }[];
+  interrupted?: boolean;
 }
 
 interface ServerConversationSummary {
@@ -74,7 +77,17 @@ function saveToStorage(key: string, conversations: Conversation[]): void {
 }
 
 function fromServerMessage(message: ServerMessage): ChatMessage {
-  return { id: message.id, role: message.role, content: message.content, createdAt: Date.parse(message.created_at) };
+  const toolResults = (message.tool_results ?? []).filter((entry) =>
+    TOOL_RESULT_NAMES.includes(entry.name as ToolResult['name']),
+  ) as ToolResult[];
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    ...(toolResults.length ? { toolResults } : {}),
+    ...(message.interrupted ? { interrupted: true } : {}),
+    createdAt: Date.parse(message.created_at),
+  };
 }
 
 function fromServerSummary(summary: ServerConversationSummary): Conversation {
@@ -95,6 +108,14 @@ export class ChatService {
    * history. Cleared as soon as real reply text starts arriving, or the turn ends either way. */
   private readonly toolCallLabels = signal<ReadonlyMap<string, string>>(new Map());
   private readonly hydratedConversationIds = new Set<string>();
+  /** conversationId -> cancels its in-flight reply (see stop()). */
+  private readonly activeReplies = new Map<string, () => void>();
+  /** conversationId -> what the last send carried, so Retry/Regenerate can resend the files too.
+   * In memory only (File objects don't survive a reload). */
+  private readonly lastRequests = new Map<
+    string,
+    { text: string; images: File[]; xmlFiles: File[] }
+  >();
   private lastTimestamp = 0;
   private storageKey = storageKeyFor(null);
 
@@ -146,20 +167,16 @@ export class ChatService {
     }
   }
 
-  /** Fetches a conversation's full message history from the server the first time it's opened,
-   * if this browser doesn't already have messages for it locally - covers reopening a
-   * conversation after a reload or from a different device. Deliberately skipped once local
-   * messages exist (fresh sends, or an already-hydrated conversation) so a fetch racing an
-   * in-flight streaming reply can never overwrite it - see ui/src/app/chat/chat.ts's usage. */
+  /** Fetches a conversation's full message history from the server the first time it's opened in
+   * this session - covers reopening a conversation after a reload, and one continued on another
+   * device. The server's copy only replaces the local one when it has more messages (see
+   * hydrateConversation), and never while a reply is streaming into it - see
+   * ui/src/app/chat/chat.ts's usage. */
   ensureLoaded(id: string): void {
     if (this.hydratedConversationIds.has(id)) {
       return;
     }
     this.hydratedConversationIds.add(id);
-    const existing = this.conversations().find((c) => c.id === id);
-    if (existing && existing.messages.length > 0) {
-      return;
-    }
     void this.hydrateConversation(id);
   }
 
@@ -170,6 +187,12 @@ export class ChatService {
         return; // 404 - a brand-new conversation that hasn't been sent yet.
       }
       const detail: ServerConversationDetail = await response.json();
+      const current = this.conversations().find((c) => c.id === id);
+      // A reply is streaming into it, or this browser already has everything the server has
+      // (it also has local-only state: attachments' thumbnails, a failed reply to retry).
+      if (this.loadingIds().has(id) || (current && current.messages.length >= detail.messages.length)) {
+        return;
+      }
       const hydrated: Conversation = {
         id: detail.id,
         title: detail.title,
@@ -210,6 +233,32 @@ export class ChatService {
     return computed(() => this.toolCallLabels().get(id) ?? null);
   }
 
+  /** Renames a conversation. Optimistic; put back if the server refuses. */
+  rename(id: string, title: string): void {
+    const next = title.trim().replace(/\s+/g, ' ').slice(0, 80);
+    const previous = this.conversations().find((c) => c.id === id)?.title;
+    if (!next || previous === undefined || next === previous) {
+      return;
+    }
+    const setTitle = (value: string): void => {
+      this.conversations.update((all) => all.map((c) => (c.id === id ? { ...c, title: value } : c)));
+      this.persist();
+    };
+    setTitle(next);
+    void this.authService
+      .fetchWithAuth(`${environment.apiBaseUrl}/api/conversations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: next }),
+      })
+      .then((response) => {
+        if (!response.ok && response.status !== 404) {
+          setTitle(previous);
+        }
+      })
+      .catch(() => setTitle(previous));
+  }
+
   delete(id: string): void {
     this.conversations.update((all) => all.filter((c) => c.id !== id));
     this.persist();
@@ -232,6 +281,7 @@ export class ChatService {
       role: 'user',
       content: text,
       imageUrls: imageUrls.length ? imageUrls : undefined,
+      attachmentCount: images.length + xmlFiles.length || undefined,
       createdAt: now,
     };
 
@@ -254,8 +304,50 @@ export class ChatService {
       return [...all, created];
     });
     this.persist();
+    this.lastRequests.set(id, { text, images, xmlFiles });
     this.awaitReply(id, text, images, xmlFiles);
     return id;
+  }
+
+  /** Whether the conversation's last user message can be sent again (retry / regenerate): nothing
+   * is streaming, and any files it carried are still in memory - they are gone after a reload, and
+   * silently resending without them would change what the assistant is asked. */
+  canResend(id: string): boolean {
+    if (this.loadingIds().has(id)) {
+      return false;
+    }
+    const messages = this.conversations().find((c) => c.id === id)?.messages ?? [];
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser) {
+      return false;
+    }
+    return !lastUser.attachmentCount || this.lastRequests.has(id);
+  }
+
+  /** Drops everything after the last user message and asks again - used for Retry after a failed
+   * reply and for Regenerate. The user message is not added a second time here, though the
+   * backend does see it again. */
+  resend(id: string): void {
+    if (!this.canResend(id)) {
+      return;
+    }
+    const messages = this.conversations().find((c) => c.id === id)?.messages ?? [];
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    const text = messages[lastUserIndex].content;
+    const request = this.lastRequests.get(id);
+    this.conversations.update((all) =>
+      all.map((c) =>
+        c.id === id ? { ...c, messages: c.messages.slice(0, lastUserIndex + 1), updatedAt: this.now() } : c,
+      ),
+    );
+    this.persist();
+    this.awaitReply(id, text, request?.images ?? [], request?.xmlFiles ?? []);
   }
 
   /**
@@ -314,6 +406,7 @@ export class ChatService {
     };
 
     const finish = (): void => {
+      this.activeReplies.delete(conversationId);
       this.loadingIds.update((ids) => {
         const next = new Set(ids);
         next.delete(conversationId);
@@ -323,24 +416,47 @@ export class ChatService {
       this.persist();
     };
 
-    this.responder.respond(conversationId, text, images, xmlFiles).subscribe({
+    const subscription = this.responder.respond(conversationId, text, images, xmlFiles).subscribe({
       next: (event) => {
         if (event.type === 'toolCall') {
           setToolCallLabel(event.label);
         } else if (event.type === 'toolResult') {
           setToolCallLabel(null);
           appendToolResult(event.toolResult);
+        } else if (event.type === 'usage') {
+          updateAssistant((m) => ({
+            ...m,
+            usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens },
+          }));
         } else {
           setToolCallLabel(null);
           appendChunk(event.text);
         }
       },
-      error: () => {
-        appendChunk('Sorry, something went wrong reaching the assistant.');
+      error: (error: unknown) => {
+        const errorMessage = error instanceof ChatResponderError ? error.message : undefined;
+        updateAssistant((m) => ({ ...m, error: true, errorMessage }));
         finish();
       },
       complete: finish,
     });
+
+    // A synchronous responder has already finished by now - nothing left to stop.
+    if (this.loadingIds().has(conversationId)) {
+      this.activeReplies.set(conversationId, () => {
+        subscription.unsubscribe(); // aborts the HTTP stream (HttpChatResponder's teardown)
+        if (assistantMessageId !== null) {
+          updateAssistant((m) => ({ ...m, interrupted: true }));
+        }
+        finish();
+      });
+    }
+  }
+
+  /** Stops a reply that is still streaming. Whatever text has arrived so far stays in the
+   * conversation; the backend turn is aborted along with the stream. */
+  stop(conversationId: string): void {
+    this.activeReplies.get(conversationId)?.();
   }
 
   private persist(): void {

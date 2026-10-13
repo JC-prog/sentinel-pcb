@@ -62,7 +62,7 @@ def _fake_qdrant_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _deterministic_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never make a real OpenAI/LiteLLM call from a unit test - get_embeddings() already has a
+    """Never make a real OpenAI call from a unit test - get_embeddings() already has a
     deterministic offline fallback when no usable key is present; force that path."""
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

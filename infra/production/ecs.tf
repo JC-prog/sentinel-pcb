@@ -30,16 +30,18 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "CORS_ALLOW_ORIGINS", value = jsonencode(["https://${aws_cloudfront_distribution.site.domain_name}"]) },
         # Internal ONNX classification service (inference.tf), resolved over Cloud Map private DNS.
         { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
-        # LiteLLM proxy (litellm.tf) - every OpenAI-compatible call goes here, not to api.openai.com.
-        # The real provider key lives only on the proxy; the backend authenticates with the
-        # master key (OPENAI_API_KEY secret below). /v1 suffix required by settings.openai_base_url.
-        { name = "OPENAI_BASE_URL", value = "http://${aws_service_discovery_service.litellm.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.litellm_container_port}/v1" },
-        # No OLLAMA_BASE_URL override - there's no Ollama instance in this deployment. The Local
-        # LLM option in Settings simply won't work in production until one is stood up separately.
+        # No OPENAI_BASE_URL override - OpenAI-compatible calls go straight to api.openai.com
+        # (settings.openai_base_url's default) using the OPENAI_API_KEY secret below.
+        # The UI and API are both served over HTTPS from the CloudFront domain (static_site.tf), so
+        # the auth cookies must carry the Secure flag (settings.cookie_secure defaults to False).
+        { name = "COOKIE_SECURE", value = "True" },
+        # Qdrant (qdrant.tf), resolved over Cloud Map private DNS like the inference service.
+        { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
-        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.litellm.arn}:LITELLM_MASTER_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
+        { name = "JWT_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.jwt.arn}:JWT_SECRET_KEY::" },
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -59,6 +61,9 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+  # The backend imports a lot at start-up (LangChain, LangGraph, NeMo Guardrails) and creates its
+  # database tables; don't let the load balancer's health check kill it as "unhealthy" before then.
+  health_check_grace_period_seconds = 180
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids
@@ -72,7 +77,7 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener_rule.from_cloudfront, aws_ecs_service.qdrant]
 }
 
 resource "aws_lb" "main" {
@@ -81,6 +86,9 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = data.aws_subnets.default.ids
+  # Must be at least CloudFront's origin read timeout (static_site.tf), or the ALB drops a streaming
+  # response that CloudFront is still willing to wait for.
+  idle_timeout = 120
 }
 
 resource "aws_lb_target_group" "backend" {
@@ -104,8 +112,31 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Anything that did not come through this stack's CloudFront distribution (which adds the header
+  # below) gets a 403 from the ALB itself.
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
+    }
   }
 }

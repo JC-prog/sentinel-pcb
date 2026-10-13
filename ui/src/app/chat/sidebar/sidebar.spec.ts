@@ -17,7 +17,6 @@ const USER: AuthUser = {
   username: 'jane-qa',
   email: 'jane@example.com',
   employeeId: 'EMP-042',
-  departmentShift: 'QA Day Shift',
   role: 'qa',
 };
 
@@ -77,8 +76,72 @@ describe('Sidebar', () => {
     const deleteButton = fixture.nativeElement.querySelector('button[aria-label="Delete conversation"]');
     deleteButton.click();
     fixture.detectChanges();
+    expect(chatService.get(id)()).toBeDefined(); // asks first
+
+    fixture.nativeElement.querySelector('button[aria-label="Confirm delete"]').click();
+    fixture.detectChanges();
 
     expect(chatService.get(id)()).toBeUndefined();
+  });
+
+  it('keeps the conversation when the delete is cancelled', () => {
+    const id = chatService.send(null, 'keep me', []);
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('button[aria-label="Delete conversation"]').click();
+    fixture.detectChanges();
+    const cancel = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (btn) => (btn as HTMLElement).textContent?.trim() === 'Cancel',
+    ) as HTMLElement;
+    cancel.click();
+    fixture.detectChanges();
+
+    expect(chatService.get(id)()).toBeDefined();
+    expect(fixture.nativeElement.querySelector('button[aria-label="Delete conversation"]')).toBeTruthy();
+  });
+
+  it('renames a conversation from the sidebar', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true } as Response));
+    const id = chatService.send(null, 'untitled idea', []);
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('button[aria-label="Rename conversation"]').click();
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('input[aria-label="Conversation title"]') as HTMLInputElement;
+    input.value = '  Board A7   reflow ';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    fixture.detectChanges();
+
+    expect(chatService.get(id)()?.title).toBe('Board A7 reflow');
+  });
+
+  it('filters conversations by what you type in the search box', () => {
+    chatService.send(null, 'solder bridge on U7', []);
+    chatService.send(null, 'capacitor polarity', []);
+    fixture.detectChanges();
+
+    const search = fixture.nativeElement.querySelector('input[type="search"]') as HTMLInputElement;
+    search.value = 'solder';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const titles = Array.from(fixture.nativeElement.querySelectorAll('nav a span')).map(
+      (el) => (el as HTMLElement).textContent,
+    );
+    expect(titles).toEqual(['solder bridge on U7']);
+  });
+
+  it('says so when nothing matches the search', () => {
+    chatService.send(null, 'solder bridge on U7', []);
+    fixture.detectChanges();
+
+    const search = fixture.nativeElement.querySelector('input[type="search"]') as HTMLInputElement;
+    search.value = 'zzz';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No chats match your search.');
   });
 
   it('opens settings when the settings button is clicked', () => {

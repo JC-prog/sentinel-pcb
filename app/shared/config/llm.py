@@ -1,12 +1,12 @@
 """Every chat model the app uses, from one factory, so the model - or the provider - can change
 without touching a caller.
 
-- `build_chat_model("ollama" | "openai")` - the model behind a conversation, as the user picked it in
-  Settings: the chat supervisor and memory's fact extraction.
+- `build_chat_model("openai")` - the model behind a conversation: the chat supervisor and memory's
+  fact extraction.
 - `build_chat_model()` - the agents' own model (the inspect agent's ReAct pass), from
   `AGENT_LLM_PROVIDER` / `AGENT_LLM_MODEL` (blank model -> that provider's chat model).
 
-"openai" always goes through `openai_base_url`, the LiteLLM gateway, never api.openai.com directly.
+"openai" goes through `openai_base_url` (OpenAI direct unless overridden) with `openai_api_key`.
 Any other provider LangChain knows ("anthropic", ...) works for the agents too, with its
 `langchain-<name>` package installed and its credentials in the environment.
 
@@ -65,22 +65,31 @@ def build_chat_model(
     *,
     temperature: float | None = 0.0,
     timeout: float | None = None,
+    model: str | None = None,
 ) -> BaseChatModel:
+    """`model` overrides the configured one (the chat reply's model, picked in Settings)."""
+
     if provider is None:
         provider = settings.agent_llm_provider
-        model = settings.agent_llm_model or _default_model(provider)
+        chosen = settings.agent_llm_model or _default_model(provider)
     else:
-        model = _default_model(provider)
+        chosen = _default_model(provider)
+    chosen = model or chosen
 
     kwargs: dict[str, Any] = {"callbacks": [LlmDebugLogger()]}
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if provider == "openai" and chosen.startswith("gpt-6"):
+        # On the Chat Completions API a GPT-6 model only takes function calls with reasoning off, and
+        # every chat turn here is a tool-calling turn - so ask for none rather than fail on the first
+        # tool call.
+        kwargs["reasoning_effort"] = "none"
     timeout = timeout or settings.agent_llm_timeout_seconds
 
     model_obj: BaseChatModel
     if provider == "openai":
         model_obj = init_chat_model(
-            model,
+            chosen,
             model_provider="openai",
             api_key=SecretStr(settings.openai_api_key),
             base_url=settings.openai_base_url,
@@ -88,20 +97,9 @@ def build_chat_model(
             **kwargs,
         )
         return model_obj
-    if provider == "ollama":
-        model_obj = init_chat_model(
-            model,
-            model_provider="ollama",
-            base_url=settings.ollama_base_url,
-            client_kwargs={"timeout": timeout},
-            **kwargs,
-        )
-        return model_obj
-    model_obj = init_chat_model(model, model_provider=provider, timeout=timeout, **kwargs)
+    model_obj = init_chat_model(chosen, model_provider=provider, timeout=timeout, **kwargs)
     return model_obj
 
 
 def _default_model(provider: str) -> str:
-    if provider == "ollama":
-        return settings.ollama_model
     return settings.openai_model

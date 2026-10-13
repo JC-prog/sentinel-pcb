@@ -42,7 +42,7 @@ export class ModeToggle {
       { initialValue: this.router.url },
     );
     this.active = computed(
-      () => TABS.find((tab) => tab.prefix !== null && url().startsWith(tab.prefix)) ?? TABS[0],
+      () => TABS.find((tab) => tab.prefix !== null && url() === tab.prefix || url().startsWith(`${tab.prefix}/`) || url().startsWith(`${tab.prefix}?`)) ?? TABS[0],
     );
   }
 }

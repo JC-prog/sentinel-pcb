@@ -21,6 +21,10 @@ export interface OrchestratorStatusEvent {
   inference_attempted: number;
   accepted: number;
   review_required: number;
+  /** Samples that dropped out at each stage. Absent from an older server's frames. */
+  preparation_failed?: number;
+  verification_failed?: number;
+  inference_aborted?: number;
 }
 
 export interface OrchestratorPlanStepEvent {
@@ -49,10 +53,15 @@ export interface OrchestratorRunRequest {
 /** One line of the Execution Log panel - either a plain log line or a planner step, in the order
  * they arrived, so the log reads the same top-to-bottom sequence the tkinter source app's
  * Execution Log text widget showed. */
-export type OrchestratorLogEntry =
+export type OrchestratorLogEntry = (
   | { kind: 'log'; text: string }
   | { kind: 'plan_step'; step: OrchestratorPlanStepEvent }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+) & {
+  /** When the browser received it (epoch ms); set by WorkService, so the log and its download can
+   * show how long a step took. */
+  at?: number;
+};
 
 /** One of orchestrator.py's per-sample stage results ("feature_classification"/
  * "defect_classification"), whichever of the two ran - see monitoring.py's module docstring for
@@ -99,35 +108,10 @@ export interface OrchestratorRunResult {
   workflow_status: string;
   termination_reason: string | null;
   results: OrchestratorInferenceResult[];
+  /** The run's problems in words, e.g. "Verification GOLDEN_IMAGE_NOT_FOUND: 47 sample(s) (e.g.
+   * S000002)" - why samples failed. Absent for the prepare-only modes. */
+  errors?: string[];
   [key: string]: unknown;
-}
-
-export interface WorkflowDriftReportRequest {
-  model_name: string;
-  description: string;
-  model_version?: string | null;
-  /** The run being reported on - the server then snapshots its own numbers for the model. */
-  run_id?: string | null;
-  samples: OrchestratorInferenceResult[];
-}
-
-export interface WorkflowDriftReportOut {
-  id: string;
-  model_name: string;
-  model_version: string | null;
-  status: string;
-}
-
-export interface WorkflowRetrainingTicketItem {
-  sample: OrchestratorInferenceResult;
-  reason: string;
-  correct_label?: string | null;
-}
-
-export interface WorkflowRetrainingTicketsRequest {
-  /** With a run id, a sample already flagged for that run is skipped instead of flagged twice. */
-  run_id?: string | null;
-  tickets: WorkflowRetrainingTicketItem[];
 }
 
 export interface WorkflowRetrainingTicketOut {
@@ -145,7 +129,12 @@ export interface WorkflowModelDrift {
   model_version: string | null;
   samples: number;
   review_required: number;
+  /** Reviewed samples, split by how the operator's final decision compares with the model. */
   decided: number;
+  confirmed: number;
+  relabelled: number;
+  no_prediction: number;
+  /** Reviewed samples the model did not get right (relabelled + no_prediction) and their share. */
   corrected: number;
   correction_rate: number | null;
   agent2_disagreed: number;
@@ -153,18 +142,71 @@ export interface WorkflowModelDrift {
   mean_confidence: number | null;
 }
 
-/** A sample where the operator's final result differs from Agent 1's label. `queueable` is false
- * when no model was recorded to file a retraining ticket against; `queued` when one exists. */
+/** A reviewed sample the model did not get right: the operator's final decision (`final_result`,
+ * their relabel) differs from the model's prediction (`outcome` "relabelled"), or the model gave
+ * none (`outcome` "no_prediction"). Only a relabelled one with a model can be added to training
+ * data (`queueable`); `ticket_status` says where it stands once added. */
 export interface WorkflowCorrection {
   sample_id: string;
+  /** "defect": the defect label, for a defect model. "region": the part area, for the region model. */
+  kind?: 'defect' | 'region';
+  /** The defect model the sample belongs to - the one that classified it, or the one its region
+   * guess routes to (`model_source`). */
   model_name: string | null;
   model_version: string | null;
+  model_source?: 'classified' | 'region_guess' | 'operator_region' | null;
+  /** The region the operator set when they changed the region model's call. */
+  region_result?: string | null;
+  /** The region model's answer - its best guess even when below the threshold. */
+  region_guess?: { label: string; confidence: number | null } | null;
+  /** The model's prediction; null when no defect model ran (it couldn't decide). */
   agent1_label: string | null;
+  /** The AOI machine's own call. */
+  machine_label: string | null;
+  agent2_label: string | null;
   final_result: string;
   selected_source: string | null;
   operator_notes: string | null;
+  outcome: 'relabelled' | 'no_prediction';
   queueable: boolean;
   queued: boolean;
+  /** open: in the training data, no plan yet; acknowledged: in a retraining plan; resolved: retrained. */
+  ticket_status?: 'open' | 'acknowledged' | 'resolved' | null;
+}
+
+/** What the operator did in the Explanation Review: decisions per kind and how many of each
+ * overruled the model, the flagged samples still waiting, and the model's commonest misses. */
+export interface WorkflowDecisionStats {
+  by_source: Record<string, { chosen: number; overruled_model: number }>;
+  pending: number;
+  top_overruled: { model_label: string; chosen_label: string; count: number }[];
+}
+
+export interface WorkflowRegionStats {
+  reviewed: number;
+  confirmed: number;
+  corrected: number;
+  accuracy: number | null;
+  mean_confidence: number | null;
+  /** Flagged samples the region model was too unsure about for a defect model to run. */
+  stopped_here: number;
+  by_region: { region: string; samples: number; corrected: number; mean_confidence: number | null }[];
+  swaps: { model_region: string; chosen_region: string; count: number }[];
+}
+
+export interface WorkflowFunnel {
+  flagged: number;
+  defect_ran: number;
+  reviewed: number;
+  corrected: number;
+}
+
+export interface WorkflowAgent2Stats {
+  with_review: number;
+  matched: number;
+  by_evidence: Record<string, { n: number; matched: number }>;
+  with_measurements: { n: number; matched: number };
+  without_measurements: { n: number; matched: number };
 }
 
 export interface WorkflowRunDrift {
@@ -172,11 +214,27 @@ export interface WorkflowRunDrift {
   /** False when the stored run could not be read; `message` says so. */
   available: boolean;
   message?: string | null;
-  totals: { samples: number; review_required: number; decided: number; corrected: number };
+  totals: {
+    samples: number;
+    review_required: number;
+    decided: number;
+    confirmed: number;
+    relabelled: number;
+    no_prediction: number;
+    corrected: number;
+  };
+  /** Share of reviewed samples the model did not get right; null before anything is reviewed. */
+  drift_rate?: number | null;
   models: WorkflowModelDrift[];
   corrections: WorkflowCorrection[];
+  decisions: WorkflowDecisionStats;
+  region?: WorkflowRegionStats | null;
+  funnel?: WorkflowFunnel | null;
+  agent2?: WorkflowAgent2Stats | null;
   /** Open (not yet planned) retraining tickets per model - what a plan drafted now would contain. */
   open_tickets?: Record<string, number>;
+  /** The same, counting only tickets added from this run. */
+  run_open_tickets?: Record<string, number>;
 }
 
 /** A drafted retraining plan: a job awaiting an Admin's approval in the Models tab. */
@@ -189,9 +247,15 @@ export interface WorkflowRetrainingPlanOut {
   drift_reports_linked: number;
 }
 
+/** One correction to send: the sample and the model it is a correction for. */
+export interface WorkflowCorrectionRef {
+  sample_id: string;
+  model_name: string;
+}
+
 export interface WorkflowQueueCorrectionsRequest {
   run_id: string;
-  sample_ids: string[];
+  items: WorkflowCorrectionRef[];
 }
 
 export interface WorkflowQueueCorrectionsOut {
@@ -214,10 +278,18 @@ export interface WorkflowReviewOut {
   contradiction_detected: boolean;
   ipc_citations: string[];
   visual_evidence: string;
+  /** Where the visual evidence came from: the vision model, a fixed fallback sentence (model
+   * unavailable) or skipped (image not found). */
+  visual_evidence_source?: 'vision_model' | 'fallback' | 'skipped';
+  /** Whether the AOI record carried a physical reading the review could use. */
+  telemetry_available?: boolean;
+  precedents?: { ipc_clause: string; standard: string; rule: string }[];
   errors: string[];
 }
 
 export type WorkflowDecisionSource = 'MACHINE' | 'AI' | 'MANUAL';
+
+export type WorkflowRegion = 'Body' | 'Lead' | 'Text';
 
 export interface WorkflowReviewDecisionRequest {
   run_id: string;
@@ -228,6 +300,8 @@ export interface WorkflowReviewDecisionRequest {
   ai_result?: string | null;
   ai_diagnosis?: string | null;
   operator_notes?: string | null;
+  /** The part area, only when the operator changed the region model's call. */
+  region_result?: WorkflowRegion | null;
 }
 
 export interface WorkflowReviewDecisionOut {
@@ -238,6 +312,7 @@ export interface WorkflowReviewDecisionOut {
   machine_result: string | null;
   ai_result: string | null;
   operator_notes: string | null;
+  region_result?: string | null;
   decided_by_user_id: string;
 }
 
@@ -249,6 +324,15 @@ export interface WorkflowReviewCaseOut {
   board_id: string;
   component_ref: string;
   feature_type: string;
+  /** Stage 1, the region model: its label and confidence (null when not stored). */
+  region_label?: string | null;
+  region_confidence?: number | null;
+  /** Machine = the label from the uploaded folder; AI = Agent 1's defect model prediction (null when
+   * no defect model ran). */
+  machine_verdict?: string | null;
+  ai_verdict?: string | null;
+  /** False when the region model was unsure and no defect model ran. */
+  defect_model_ran?: boolean;
   agent1_verdict: string;
   agent1_confidence: number;
   has_golden_image: boolean;

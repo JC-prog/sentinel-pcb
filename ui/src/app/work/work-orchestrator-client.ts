@@ -9,10 +9,6 @@ import {
   OrchestratorStatus,
   OrchestratorStatusEvent,
   OrchestratorUploadRecord,
-  WorkflowDriftReportRequest,
-  WorkflowDriftReportOut,
-  WorkflowRetrainingTicketOut,
-  WorkflowRetrainingTicketsRequest,
   WorkflowReviewDecisionOut,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
@@ -117,7 +113,7 @@ export class WorkOrchestratorClient {
       { method: 'POST', body: formData },
     );
     if (!response.ok) {
-      throw new Error(`Image root upload failed: ${response.status}`);
+      throw new Error(await errorMessage(response));
     }
     const body: OrchestratorUploadRecord = await response.json();
     return body.id;
@@ -131,7 +127,7 @@ export class WorkOrchestratorClient {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(`Upload failed: ${response.status}`);
+      throw new Error(await errorMessage(response));
     }
     const body: OrchestratorUploadRecord = await response.json();
     return body.id;
@@ -151,8 +147,11 @@ export class WorkOrchestratorClient {
             signal: controller.signal,
           },
         );
-        if (!response.ok || !response.body) {
-          throw new Error(`Orchestrator run failed: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(await errorMessage(response));
+        }
+        if (!response.body) {
+          throw new Error('The run returned no data.');
         }
 
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -192,16 +191,6 @@ export class WorkOrchestratorClient {
 
       return () => controller.abort();
     });
-  }
-
-  async reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
-    return this.post('/api/orchestrator/monitoring/drift-report', request);
-  }
-
-  async flagForRetraining(
-    request: WorkflowRetrainingTicketsRequest,
-  ): Promise<WorkflowRetrainingTicketOut[]> {
-    return this.post('/api/orchestrator/monitoring/retraining-tickets', request);
   }
 
   async getRunDrift(runId: string): Promise<WorkflowRunDrift> {

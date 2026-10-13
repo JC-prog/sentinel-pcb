@@ -10,7 +10,6 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     employee_id: str
-    department_shift: str
     role: UserRole
 
 
@@ -24,7 +23,6 @@ class UserOut(BaseModel):
     username: str
     email: str
     employee_id: str
-    department_shift: str
     role: str
     created_at: datetime
 

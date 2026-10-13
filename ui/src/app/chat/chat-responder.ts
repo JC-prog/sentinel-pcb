@@ -9,12 +9,14 @@ import { ToolResult } from './models/chat.models';
  * never appended to message content - ChatService surfaces it as a separate, short-lived status
  * signal instead. A 'toolResult' carries a tool's structured result (an inspection, a relabel) to
  * be shown as a card on the assistant message. Mirrors the backend's `event: delta` /
- * `event: tool_call` / `event: tool_result` SSE frames (app/chat/services/streaming.py).
+ * `event: tool_call` / `event: tool_result` SSE frames (app/chat/services/streaming.py). A 'usage'
+ * is the tokens the turn used, which the backend reports on the final `event: done` frame.
  */
 export type ChatResponderEvent =
   | { type: 'delta'; text: string }
   | { type: 'toolCall'; label: string }
-  | { type: 'toolResult'; toolResult: ToolResult };
+  | { type: 'toolResult'; toolResult: ToolResult }
+  | { type: 'usage'; inputTokens: number; outputTokens: number };
 
 /**
  * Swap point for the real backend: provide CHAT_RESPONDER with an implementation that calls
@@ -34,6 +36,15 @@ export interface ChatResponder {
 }
 
 export const CHAT_RESPONDER = new InjectionToken<ChatResponder>('CHAT_RESPONDER');
+
+/** A failure whose message is written for the user - the UI shows it as is. Anything else a
+ * responder throws is unexpected and gets a generic message instead. */
+export class ChatResponderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChatResponderError';
+  }
+}
 
 export class MockChatResponder implements ChatResponder {
   respond(

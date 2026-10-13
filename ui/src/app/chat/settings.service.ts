@@ -1,32 +1,40 @@
 import { Injectable, signal } from '@angular/core';
 
-export type LlmProvider = 'ollama' | 'openai';
+/** Chat runs on OpenAI only, through the server's key. The field is still sent with every request
+ * so the API contract (`provider`) is unchanged. */
+export type LlmProvider = 'openai';
 
-const PROVIDER_STORAGE_KEY = 'sentinel-chat.llm-provider';
+const MODEL_STORAGE_KEY = 'sentinel-chat.model';
 
-function readStorage(key: string): string | null {
+function readModel(): string | null {
   try {
-    return localStorage.getItem(key);
+    return localStorage.getItem(MODEL_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-function writeStorage(key: string, value: string): void {
+function writeModel(model: string | null): void {
   try {
-    localStorage.setItem(key, value);
+    if (model === null) {
+      localStorage.removeItem(MODEL_STORAGE_KEY);
+    } else {
+      localStorage.setItem(MODEL_STORAGE_KEY, model);
+    }
   } catch {
     // Storage unavailable (private browsing) - the choice just won't persist across reloads.
   }
 }
 
-function initialProvider(): LlmProvider {
-  return readStorage(PROVIDER_STORAGE_KEY) === 'openai' ? 'openai' : 'ollama';
-}
-
 @Injectable({ providedIn: 'root' })
 export class SettingsService {
-  readonly provider = signal<LlmProvider>(initialProvider());
+  readonly provider = signal<LlmProvider>('openai');
+
+  /** The chat model the user picked; null means the server's default. */
+  readonly model = signal<string | null>(readModel());
+  /** What the server offers (GET /api/chat/models), empty until it has been asked. */
+  readonly models = signal<string[]>([]);
+  readonly defaultModel = signal<string | null>(null);
 
   readonly isOpen = signal(false);
 
@@ -38,8 +46,18 @@ export class SettingsService {
     this.isOpen.set(false);
   }
 
-  setProvider(provider: LlmProvider): void {
-    this.provider.set(provider);
-    writeStorage(PROVIDER_STORAGE_KEY, provider);
+  setModel(model: string | null): void {
+    this.model.set(model);
+    writeModel(model);
+  }
+
+  /** Records what the server offers, and drops a stored choice it no longer allows. */
+  setAvailableModels(models: string[], defaultModel: string): void {
+    this.models.set(models);
+    this.defaultModel.set(defaultModel);
+    const chosen = this.model();
+    if (chosen !== null && !models.includes(chosen)) {
+      this.setModel(null);
+    }
   }
 }

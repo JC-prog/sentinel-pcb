@@ -9,7 +9,6 @@ export interface AuthUser {
   username: string;
   email: string;
   employeeId: string;
-  departmentShift: string;
   role: UserRole;
 }
 
@@ -18,7 +17,6 @@ export interface RegisterInput {
   email: string;
   password: string;
   employeeId: string;
-  departmentShift: string;
   role: UserRole;
 }
 
@@ -27,7 +25,6 @@ interface UserResponseBody {
   username: string;
   email: string;
   employee_id: string;
-  department_shift: string;
   role: string;
 }
 
@@ -37,7 +34,6 @@ function toAuthUser(body: UserResponseBody): AuthUser {
     username: body.username,
     email: body.email,
     employeeId: body.employee_id,
-    departmentShift: body.department_shift,
     role: body.role as UserRole,
   };
 }
@@ -112,7 +108,6 @@ export class AuthService {
         email: input.email,
         password: input.password,
         employee_id: input.employeeId,
-        department_shift: input.departmentShift,
         role: input.role,
       }),
     });

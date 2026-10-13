@@ -26,7 +26,6 @@ const ADMIN: AuthUser = {
   username: 'ada-admin',
   email: 'ada@example.com',
   employeeId: 'EMP-1',
-  departmentShift: 'Day',
   role: 'admin',
 };
 const QA: AuthUser = { ...ADMIN, id: 'u-qa', username: 'jane-qa', role: 'qa' };
@@ -399,6 +398,7 @@ describe('Models', () => {
       await click('Approve');
 
       expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2 flagged cases'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('currently simulated'));
       expect(fake.service.approveJob).toHaveBeenCalledWith('j-1');
     });
 

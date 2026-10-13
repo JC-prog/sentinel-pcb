@@ -257,7 +257,7 @@ async def _turn(
     return [
         event
         async for event in supervisor.run_turn(
-            provider="ollama",
+            provider="openai",
             messages=[HumanMessage("override it")],
             ctx=_ctx(session, user, case, turn_started_at),
             tools=[REVIEW_CASE, CONFIRM_REVIEW],

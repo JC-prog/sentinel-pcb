@@ -51,10 +51,11 @@ describe('WorkService', () => {
     });
 
     expect(service.log()).toEqual([
-      { kind: 'log', text: 'hello' },
+      { kind: 'log', text: 'hello', at: expect.any(Number) },
       {
         kind: 'plan_step',
         step: expect.objectContaining({ decision: 'dataset_preparation' }),
+        at: expect.any(Number),
       },
     ]);
   });
@@ -107,7 +108,7 @@ describe('WorkService', () => {
     service.run('run_full', 'dataset-1', 'xml-1', null, OPTIONS);
     events$.error(new Error('boom'));
 
-    expect(service.log()).toEqual([{ kind: 'error', message: 'boom' }]);
+    expect(service.log()).toEqual([{ kind: 'error', message: 'boom', at: expect.any(Number) }]);
     expect(service.running()).toBe(false);
   });
 
@@ -139,5 +140,47 @@ describe('WorkService', () => {
     service.run('run_full', 'dataset-1', 'xml-1', null, OPTIONS);
 
     expect(runSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel stops the run, keeps what was logged and lets a new run start', () => {
+    const events$ = new Subject<WorkResponderEvent>();
+    const service = new WorkService(fakeClient(events$));
+    service.run('run_full', 'dataset-1', 'xml-1', null, OPTIONS);
+    events$.next({ type: 'log', text: 'hello' });
+
+    service.cancel();
+    events$.next({ type: 'log', text: 'after cancel' });
+
+    expect(service.running()).toBe(false);
+    expect(events$.observed).toBe(false);
+    expect(service.log().map((entry) => (entry.kind === 'log' ? entry.text : ''))).toEqual([
+      'hello',
+      'Run cancelled.',
+    ]);
+  });
+
+  it('cancel does nothing when no run is in flight', () => {
+    const service = new WorkService(fakeClient(new Subject()));
+    service.cancel();
+    expect(service.log()).toEqual([]);
+  });
+
+  it('starts each run with an empty log and fresh counters', () => {
+    const first$ = new Subject<WorkResponderEvent>();
+    const client = fakeClient(first$);
+    const service = new WorkService(client);
+    service.run('prepare', 'dataset-1', 'xml-1', null, OPTIONS);
+    first$.next({ type: 'log', text: 'old line' });
+    first$.next({ type: 'status', status: { ...service.status(), status: 'READY', input_samples: 9 } });
+    first$.complete();
+
+    const second$ = new Subject<WorkResponderEvent>();
+    client.run = () => second$.asObservable();
+    service.run('prepare_verify', 'dataset-1', 'xml-1', null, OPTIONS);
+
+    expect(service.log()).toEqual([]);
+    expect(service.status().input_samples).toBe(0);
+    second$.next({ type: 'log', text: 'new line' });
+    expect(service.log().map((e) => (e.kind === 'log' ? e.text : ''))).toEqual(['new line']);
   });
 });

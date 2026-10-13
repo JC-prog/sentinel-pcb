@@ -7,8 +7,7 @@ doubles as the "make an existing user an Admin" tool.
 
 Usage (run as a module, not a script path - it needs the repo root on sys.path to import `app`):
     uv run python -m scripts.create_admin_user \\
-        --username jane.doe --email jane@example.com --employee-id EMP-042 \\
-        --department-shift "QA Day Shift"
+        --username jane.doe --email jane@example.com --employee-id EMP-042
 
 Prompts for the password (not passed as a flag, so it never ends up in shell history).
 """
@@ -25,7 +24,7 @@ from app.shared.db.session import async_session_factory, engine
 
 
 async def create_or_promote_admin(
-    username: str, email: str, password: str, employee_id: str, department_shift: str
+    username: str, email: str, password: str, employee_id: str
 ) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -43,7 +42,6 @@ async def create_or_promote_admin(
             email=email,
             password_hash=hash_password(password),
             employee_id=employee_id,
-            department_shift=department_shift,
             role=UserRole.ADMIN,
         )
         await repository.add_user(session, user)
@@ -57,7 +55,6 @@ def main() -> None:
     parser.add_argument("--username", required=True)
     parser.add_argument("--email", required=True)
     parser.add_argument("--employee-id", required=True)
-    parser.add_argument("--department-shift", required=True)
     args = parser.parse_args()
 
     password = getpass.getpass("Password: ")
@@ -70,7 +67,6 @@ def main() -> None:
             email=args.email,
             password=password,
             employee_id=args.employee_id,
-            department_shift=args.department_shift,
         )
     )
 

@@ -2,4 +2,53 @@
   display: block;
   height: 100%;
   width: 100%;
+
+  /* Chart colours (the data-viz palette). Good / bad / warning are the fixed status steps and mean
+     the same thing on every chart here: the model was right / wrong / did not answer. A single
+     series is the blue categorical slot 1; the funnel is an ordinal blue ramp; the grid is a
+     sequential blue ramp. Every use sits beside a label or legend - never colour alone. */
+  --viz-good: #0ca30c;
+  --viz-bad: #d03b3b;
+  --viz-warn: #fab219;
+  --viz-none: #c3c2b7;
+  --viz-1: #2a78d6;
+  --viz-track: #e1e0d9;
+  --viz-ord-0: #86b6ef;
+  --viz-ord-1: #5598e7;
+  --viz-ord-2: #2a78d6;
+  --viz-ord-3: #1c5cab;
+  --viz-seq-1: #cde2fb;
+  --viz-seq-2: #9ec5f4;
+  --viz-seq-3: #5598e7;
+  --viz-seq-4: #2a78d6;
+  --viz-seq-5: #184f95;
 }
+
+:host-context(.dark) {
+  --viz-none: #4a4a46;
+  --viz-1: #3987e5;
+  --viz-track: #2c2c2a;
+}
+
+.viz-good { background-color: var(--viz-good); }
+.viz-bad { background-color: var(--viz-bad); }
+.viz-warn { background-color: var(--viz-warn); }
+.viz-none { background-color: var(--viz-none); }
+.viz-1 { background-color: var(--viz-1); }
+.viz-track-bg { background-color: var(--viz-track); }
+
+/* SVG rings */
+.viz-track { stroke: var(--viz-track); }
+.viz-series { stroke: var(--viz-1); }
+
+.viz-ord-0 { background-color: var(--viz-ord-0); }
+.viz-ord-1 { background-color: var(--viz-ord-1); }
+.viz-ord-2 { background-color: var(--viz-ord-2); }
+.viz-ord-3 { background-color: var(--viz-ord-3); }
+
+/* Grid cells: the text colour flips with the fill so the count always clears contrast */
+.viz-seq-1 { background-color: var(--viz-seq-1); color: #0b0b0b; }
+.viz-seq-2 { background-color: var(--viz-seq-2); color: #0b0b0b; }
+.viz-seq-3 { background-color: var(--viz-seq-3); color: #0b0b0b; }
+.viz-seq-4 { background-color: var(--viz-seq-4); color: #ffffff; }
+.viz-seq-5 { background-color: var(--viz-seq-5); color: #ffffff; }

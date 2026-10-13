@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../auth.service';
-import { ChatResponder, ChatResponderEvent } from './chat-responder';
+import { ChatResponder, ChatResponderError, ChatResponderEvent } from './chat-responder';
 import { TOOL_RESULT_NAMES, ToolResult } from './models/chat.models';
 import { SettingsService } from './settings.service';
 
@@ -24,6 +24,39 @@ function parseSseFrame(raw: string): SseFrame {
   return { event, data: JSON.parse(data) };
 }
 
+/** What went wrong with a response, in words for the user. The server's own `detail` is used only
+ * for statuses where it is written for people (a rejected file, a provider that isn't configured). */
+async function describeFailure(response: Response, what: string): Promise<ChatResponderError> {
+  let detail: string | null = null;
+  try {
+    const body: unknown = await response.json();
+    const value = (body as { detail?: unknown } | null)?.detail;
+    detail = typeof value === 'string' ? value : null;
+  } catch {
+    // not JSON - fall back to the status
+  }
+  const status = response.status;
+  if (status === 401 || status === 403) {
+    return new ChatResponderError('Your session has expired. Sign in again to continue.');
+  }
+  if (status === 413) {
+    return new ChatResponderError(`${what}: that file is too large.`);
+  }
+  if (status === 422 && detail) {
+    return new ChatResponderError(`${what}: ${detail}.`);
+  }
+  if (status === 429) {
+    return new ChatResponderError('Too many requests. Wait a moment and try again.');
+  }
+  if (status === 503 && detail) {
+    return new ChatResponderError(detail);
+  }
+  if (status >= 500) {
+    return new ChatResponderError(`The server had a problem (HTTP ${status}). Try again.`);
+  }
+  return new ChatResponderError(`${what} (HTTP ${status}).`);
+}
+
 @Injectable()
 export class HttpChatResponder implements ChatResponder {
   constructor(
@@ -39,7 +72,7 @@ export class HttpChatResponder implements ChatResponder {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(`Image upload failed: ${response.status}`);
+      throw await describeFailure(response, `Couldn't upload ${file.name}`);
     }
     const body: { id: string } = await response.json();
     return body.id;
@@ -53,7 +86,7 @@ export class HttpChatResponder implements ChatResponder {
       { method: 'POST', body: formData },
     );
     if (!response.ok) {
-      throw new Error(`XML upload failed: ${response.status}`);
+      throw await describeFailure(response, `Couldn't upload ${file.name}`);
     }
     const body: { id: string } = await response.json();
     return body.id;
@@ -73,6 +106,7 @@ export class HttpChatResponder implements ChatResponder {
         const xmlIds = await Promise.all(xmlFiles.map((file) => this.uploadXml(file)));
 
         const provider = this.settings.provider();
+        const model = this.settings.model();
         const response = await this.authService.fetchWithAuth(
           `${environment.apiBaseUrl}/api/chat/stream`,
           {
@@ -84,12 +118,16 @@ export class HttpChatResponder implements ChatResponder {
               image_ids: imageIds,
               xml_ids: xmlIds,
               provider,
+              ...(model !== null ? { model } : {}),
             }),
             signal: controller.signal,
           },
         );
-        if (!response.ok || !response.body) {
-          throw new Error(`Chat stream failed: ${response.status}`);
+        if (!response.ok) {
+          throw await describeFailure(response, 'The assistant could not answer');
+        }
+        if (!response.body) {
+          throw new ChatResponderError('The assistant sent no reply. Try again.');
         }
 
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -119,15 +157,36 @@ export class HttpChatResponder implements ChatResponder {
                 });
               }
             } else if (frame.event === 'error') {
-              throw new Error(String(frame.data['message'] ?? 'Chat stream error'));
+              throw new ChatResponderError(
+                String(frame.data['message'] ?? 'The assistant is unavailable right now.'),
+              );
             } else if (frame.event === 'done') {
+              const usage = frame.data['usage'] as
+                | { input_tokens?: unknown; output_tokens?: unknown }
+                | undefined;
+              if (usage && typeof usage === 'object') {
+                subscriber.next({
+                  type: 'usage',
+                  inputTokens: Number(usage.input_tokens) || 0,
+                  outputTokens: Number(usage.output_tokens) || 0,
+                });
+              }
               subscriber.complete();
               return;
             }
           }
         }
         subscriber.complete();
-      })().catch((error: unknown) => subscriber.error(error));
+      })().catch((error: unknown) => {
+        if (error instanceof ChatResponderError || controller.signal.aborted) {
+          subscriber.error(error);
+        } else {
+          // fetch itself failing (offline, DNS, the connection dropping mid-stream)
+          subscriber.error(
+            new ChatResponderError("Can't reach the server. Check your connection and try again."),
+          );
+        }
+      });
 
       return () => controller.abort();
     });

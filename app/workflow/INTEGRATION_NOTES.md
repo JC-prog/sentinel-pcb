@@ -184,15 +184,18 @@ Here that became:
   status) and, for the selected one, the golden and defect images side by side, the Machine / AI
   results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
   Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
-- **Drift & Retraining follows the decisions.** The console's second tab no longer trusts what the
+- **Model feedback and the Retraining queue (formerly Drift & Retraining) follow the decisions.** The console's second tab no longer trusts what the
   browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
   review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
-  drift plus the operator's *corrections* - a sample whose final decision differs from Agent 1's label
-  (normalised, so `WrongPart_13` == `wrong part`; Accept Machine is agreement) - with the pure
+  drift: the operator's final decision is the sample's label, and drift is - of the samples a defect
+  model classified - the share whose label it did not predict (normalised, so `WrongPart_13` ==
+  `wrong part`). Samples where no defect model ran ("couldn't decide") are counted separately, not as
+  drift, and are routed for training by the region model's guess, mirroring Agent 1's router. The
+  Review Console and what it saves are untouched. Computed with the pure
   `app/shared/modelops/run_drift.py`, which chat's `get_run_drift` tool shares (chat may not import
   workflow). The UI refetches after every saved decision. `POST .../run-retraining-tickets
   {run_id, sample_ids}` builds one `RetrainingTicket` per selected correction from the *stored*
-  sample and decision (model, version, observed = Agent 1's label, correct = the operator's), all or
+  sample and decision (model, version, observed = the model's prediction, correct = the operator's label), all or
   nothing; a sample with no correction or no routed model rejects the request, and one already
   queued is skipped (`retraining_tickets.run_id` + a partial unique index on `(run_id, sample_ref)`,
   because sample ids restart every run). Corrections are queued by the operator, never automatically.
@@ -203,6 +206,39 @@ Here that became:
   `EXPLAINABILITY_REVIEW_AGENT_ENABLED`. Nothing from `app/workflow/` is registered in `app/chat/`;
   chat reads the same Qdrant collections read-only through its own reader
   (`app/chat/services/run_samples.py`, the sample agent).
+
+## Agent 2 re-port (Oct 2026) and where it deviates from `pcb_agentic_inspector`
+
+`src/agent2_explainability/pipeline/review_graph.py` and `mcp/agent2_mcp_server.py` were re-ported
+from the upstream copy dated 2026-10-10. Its grounding prompt weights visual evidence and IPC
+precedents and no longer lets physical telemetry decide the verdict. Deliberate deviations:
+
+- **OpenAI only, no Ollama.** The visual step (and the MCP `visual_evidence_tool`) call an OpenAI
+  vision model (`models.vlm.model_name`, `gpt-4o`) with `OPENAI_API_KEY`, instead of a local LLaVA.
+  Without a key (or when the call fails) it falls back to the fixed sentence and says so:
+  `visual_evidence_source` is `vision_model`, `fallback` or `skipped`.
+- **No invented telemetry.** `extract_telemetry_node` still fills missing readings with 0.0 (so the
+  state shape is unchanged) but sets `telemetry_source: "not_recorded"` when the AOI record has no
+  laser height or ICT status. The heuristic self-check then keeps the baseline label and reports
+  `self_check_passed: false`, and the LLM is told the readings were not recorded.
+- Config path resolved from the file, and no `rglob` crawl for images (kept from the first port).
+- Ported tests: `test_agent_graph`, `test_agent2_security`, `test_mcp_tools`. Not ported: `main.py`
+  (CLI), `integrate_ui.py`, `evals/`, `src/data/qdrant_store.py` and its test (the MCP server is
+  unwired, and uses a local embedded Qdrant), `test_metadata_and_telemetry` (needs `main.py`).
+  `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
+  `test_agent2_security[../../../../../../etc/passwd]` fail the same way upstream.
+  Run them from `app/workflow/`: `PYTHONPATH=<repo>:. python -m pytest tests/<file>`.
+
+## Region corrections and ticket identity (Oct 2026)
+
+The Review Console records the part area (Body / Lead / Text) with every decision (`region_result`).
+`run_drift.corrections_of` turns a different area into a **region correction** for `pcb_region`, next
+to the defect correction a sample may already carry, so a sample can have two tickets. Ticket
+identity is therefore (run, sample, model): the partial unique index `uq_retraining_tickets_run_sample`
+covers `run_id, sample_ref, model_name` (Alembic `a9c4e17d3b52`). `POST .../run-retraining-tickets`
+takes `items: [{sample_id, model_name}]`; a bare `sample_ids` list still means each sample's defect
+correction. Run summaries gain `region`, `funnel` (shared) and `agent2` (workflow layer, it needs the
+review's evidence flags).
 
 ## Explicitly kept, not wired
 

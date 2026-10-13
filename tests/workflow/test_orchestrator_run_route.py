@@ -129,6 +129,27 @@ def test_prepare_run_streams_status_and_result(authenticated_client: TestClient)
     assert status_data["preparation_ready"] == 1
 
 
+def test_prepare_verify_status_reports_what_failed(authenticated_client: TestClient) -> None:
+    dataset_id, xml_id = _upload_dataset_and_xml(authenticated_client)
+
+    with authenticated_client.stream(
+        "POST",
+        "/api/orchestrator/run/stream",
+        json={"mode": "prepare_verify", "dataset_id": dataset_id, "xml_id": xml_id},
+    ) as response:
+        body = "".join(response.iter_text())
+    assert response.status_code == 200, body
+
+    status_data = next(data for event, data in _parse_sse(body) if event == "status")
+    # Prepared fine, but the referenced image files don't exist on disk: the sample fails
+    # verification, and the status now says so instead of only showing "verified: 0".
+    assert status_data["preparation_ready"] == 1
+    assert status_data["preparation_failed"] == 0
+    assert status_data["verification_passed"] == 0
+    assert status_data["verification_failed"] == 1
+    assert status_data["inference_aborted"] == 0
+
+
 def test_verification_issue_summary_groups_by_issue() -> None:
     from app.workflow.services.streaming import _verification_issue_summary
 

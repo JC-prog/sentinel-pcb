@@ -5,20 +5,31 @@ supervisor agent (app/chat/agents/supervisor.py), relaying what it does as SSE f
 - `event: delta` - reply text as it arrives
 - `event: tool_call` - `{name, label}` just before a tool runs (a UI progress indicator)
 - `event: tool_result` - `{name, result}` a tool's structured result, shown by the UI as a card
-- `event: error` - the turn failed; `event: done` - always last
+- `event: error` - the turn failed; `event: done` - always last, with the turn's `usage` (input and
+  output tokens) when the provider reported it
 
 Which tools exist and which a request may use are the agents' business (`tool_registry`); this
 module names none of them. Kept separate from app/chat/api/chat.py (the thin route layer).
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
 
+import anyio
+
 from app.chat.agents import tool_registry
-from app.chat.agents.supervisor import Answer, TextChunk, ToolFinished, ToolStarted, run_turn
+from app.chat.agents.supervisor import (
+    Answer,
+    TextChunk,
+    ToolFinished,
+    ToolStarted,
+    Usage,
+    run_turn,
+)
 from app.chat.agents.toolkit import ChatTool
 from app.chat.core.tools import ToolContext
 from app.chat.db import Conversation
@@ -48,6 +59,36 @@ def _available_tools(image_ids: list[str], role: UserRole) -> list[ChatTool]:
     return tool_registry.available(role=role, has_image=bool(image_ids))
 
 
+async def _save_interrupted(
+    session: SessionDep,
+    conversation: Conversation,
+    message: str,
+    text: str,
+    cards: list[dict[str, Any]],
+) -> None:
+    """Persists a reply that was stopped or failed part-way, flagged `interrupted`, so reopening the
+    conversation (here or on another device) shows what the user saw and the model's next turn
+    replays it. Nothing is written if nothing had streamed yet. Shielded: on a client disconnect
+    this runs inside a cancelled scope, where every await would otherwise be cancelled again."""
+
+    if not text and not cards:
+        return
+    with anyio.CancelScope(shield=True):
+        try:
+            await history.append_message(
+                session,
+                conversation.id,
+                "assistant",
+                text,
+                [],
+                tool_results=cards,
+                interrupted=True,
+            )
+            await history.maybe_set_title(session, conversation, message)
+        except Exception:
+            logger.exception("could not save the interrupted reply for %s", conversation.id)
+
+
 async def chat_sse(
     session: SessionDep,
     conversation: Conversation,
@@ -57,12 +98,15 @@ async def chat_sse(
     image_ids: list[str],
     xml_ids: list[str],
     user: User,
+    model: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """SSE body for POST /api/chat/stream (frames: see the module docstring).
 
     Persists the user's message before the model runs (durable even if the model fails partway) and
-    the assistant's final answer after it succeeds - see app/chat/services/history.py. Intermediate
-    tool-call rounds, tool_call and tool_result frames are never persisted. `conversation` is
+    the assistant's final answer after it succeeds - see app/chat/services/history.py - together with
+    the cards it showed. A reply cut short (Stop, a dropped connection, a failure part-way) is kept
+    as it was, flagged `interrupted`. Intermediate tool-call rounds and tool_call frames are never
+    persisted. `conversation` is
     already resolved/ownership-checked by the caller (app/chat/api/chat.py's chat_stream), since a
     StreamingResponse commits its 200 status before this generator's first item is requested -
     anything that should be able to 404 has to happen before this is called.
@@ -137,28 +181,48 @@ async def chat_sse(
     )
 
     final_text = ""
+    streamed = ""  # the reply text sent so far - what survives if the turn is cut short
+    cards: list[dict[str, Any]] = []
+    usage: dict[str, int] = {}
     try:
-        async for event in run_turn(provider=provider, messages=messages, ctx=ctx, tools=tools):
+        async for event in run_turn(
+            provider=provider, messages=messages, ctx=ctx, tools=tools, model=model
+        ):
             if isinstance(event, TextChunk):
+                streamed += event.text
                 yield _sse("delta", {"text": event.text})
             elif isinstance(event, ToolStarted):
                 yield _sse("tool_call", {"name": event.name, "label": event.label})
             elif isinstance(event, ToolFinished):
                 if event.card is not None:
+                    cards.append({"name": event.name, "result": event.card})
                     yield _sse("tool_result", {"name": event.name, "result": event.card})
+            elif isinstance(event, Usage):
+                usage = {
+                    "input_tokens": event.input_tokens,
+                    "output_tokens": event.output_tokens,
+                }
             elif isinstance(event, Answer):
                 final_text = event.text
                 if event.rounds_exhausted:
+                    streamed += event.text
                     yield _sse("delta", {"text": event.text})
     except Exception:
         # The model call itself failed (unreachable, rejected, timed out). Logged in full; the
         # client gets a fixed message, never the upstream error (which can echo request details).
         logger.exception("chat turn failed for conversation %s", conversation.id)
+        await _save_interrupted(session, conversation, message, streamed, cards)
         yield _sse("error", {"message": "The assistant is unavailable right now."})
         return
+    except (asyncio.CancelledError, GeneratorExit):
+        # The client went away (the user pressed Stop, closed the tab). Keep what was written.
+        await _save_interrupted(session, conversation, message, streamed, cards)
+        raise
 
     logger.debug("chat response: %r", final_text, extra={"final_text": final_text})
-    await history.append_message(session, conversation.id, "assistant", final_text, [])
+    await history.append_message(
+        session, conversation.id, "assistant", final_text, [], tool_results=cards
+    )
     await history.maybe_set_title(session, conversation, message)
     await maybe_extract(session, conversation, provider)
-    yield _sse("done", {})
+    yield _sse("done", {"usage": usage} if usage else {})

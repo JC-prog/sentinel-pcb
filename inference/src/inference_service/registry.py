@@ -46,6 +46,11 @@ class ModelRegistry:
             if not model_path.is_file():
                 missing.append(f"{spec.name} ({model_path})")
                 continue
+            # fetch_models.py records the commit SHA it resolved the manifest's revision to, so a
+            # baseline of "main" is still reported as the exact weights baked into the image.
+            sidecar = store / f"{spec.name}.revision"
+            if sidecar.is_file() and (pinned := sidecar.read_text().strip()):
+                spec = spec.model_copy(update={"revision": pinned})
             classifiers[spec.name] = OnnxClassifier.load(spec, model_path)
             logger.info(
                 "loaded model %r (%d classes) from %s",

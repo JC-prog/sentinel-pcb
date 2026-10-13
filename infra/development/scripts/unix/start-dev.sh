@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the whole local dev stack in one terminal: db/qdrant/litellm (Docker, idempotent), then
+# Start the whole local dev stack in one terminal: db/qdrant (Docker, idempotent), then
 # the backend, the ONNX inference service, and the UI dev server - all three natively with live
 # reload, their output interleaved and prefixed below so you can tell them apart.
 #
@@ -23,8 +23,8 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-echo "==> Docker: db + qdrant + litellm (idempotent)"
-docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm
+echo "==> Docker: db + qdrant (idempotent)"
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant
 
 # Point the backend at the inference service we're about to start below, if .env doesn't already
 # say otherwise (missing key, or present but left blank) - the same append-a-sane-default pattern
@@ -48,7 +48,7 @@ fi
 PIDS=()
 cleanup() {
   echo ""
-  echo "==> Stopping backend/inference/UI. Docker services (db/qdrant/litellm) keep running -"
+  echo "==> Stopping backend/inference/UI. Docker services (db/qdrant) keep running -"
   echo "    stop them with: docker compose -f infra/development/docker-compose.yml --env-file .env down"
   for pid in "${PIDS[@]}"; do
     kill "$pid" >/dev/null 2>&1 || true
@@ -77,7 +77,7 @@ PIDS+=("$!")
 
 echo ""
 echo "All three are starting - watch below for each one's own \"ready\"/\"compiled successfully\" line."
-echo "Ctrl+C stops backend/inference/UI; Docker services (db/qdrant/litellm) keep running."
+echo "Ctrl+C stops backend/inference/UI; Docker services (db/qdrant) keep running."
 echo ""
 
 wait

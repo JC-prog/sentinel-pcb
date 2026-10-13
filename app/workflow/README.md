@@ -4,7 +4,7 @@ An industrial-grade, multi-agent inspection system for Printed Circuit Boards (P
 
 The architecture decouples fast edge classification from deep multimodal explainability:
 * **Agent 1 (Orchestrator & Baseline ADC):** Parses AOI XML/CSV metadata, verifies image pairs, automatically populates the vector database, and runs fast ONNX classifiers (Feature classifier $\rightarrow$ Dynamic routing to Body, Lead, or Text models).
-* **Agent 2 (Multimodal Explainability & Review):** Escalation agent running as an independent HTTP microservice on port `8001`. Governed by **LangGraph**, **Ollama LLaVA VLM**, **3D Laser/ICT Telemetry**, and **OpenAI GPT-4o Grounding** to detect physical contradictions and cite IPC standard clauses.
+* **Agent 2 (Multimodal Explainability & Review):** Escalation agent running as an independent HTTP microservice on port `8001`. Governed by **LangGraph**, an **OpenAI vision model**, **3D Laser/ICT Telemetry**, and **OpenAI GPT-4o Grounding** to detect physical contradictions and cite IPC standard clauses.
 * **Inter-Agent Communication:** Standard **Agent2Agent (A2A)** Protocol (JSON-RPC 2.0 / HTTP with Agent Card discovery at `/.well-known/agent.json`).
 * **Persistent Vector Memory:** Local embedded **Qdrant** database (`qdrant_db/`) indexing physical telemetry, defect precedents, and IPC clauses.
 
@@ -41,8 +41,8 @@ The architecture decouples fast edge classification from deep multimodal explain
  │   Receives A2A Task ──► Executes LangGraph Pipeline with MCP Tools:         │
  │                                                                             │
  │   ┌───────────────────────┐   ┌───────────────────────┐   ┌─────────────┐   │
- │   │  1. Vector DB RAG     │   │  2. Local LLaVA VLM   │   │ 3. Telemetry│   │
- │   │  Qdrant IPC-A-610-C2  │   │  Ollama Visual Inspect│   │ 3D Laser/ICT│   │
+ │   │  1. Vector DB RAG     │   │  2. OpenAI vision     │   │ 3. Telemetry│   │
+ │   │  Qdrant IPC-A-610-C2  │   │  Visual Inspect       │   │ 3D Laser/ICT│   │
  │   └───────────┬───────────┘   └───────────┬───────────┘   └──────┬──────┘   │
  │               └─────────────────────┬─────┴──────────────────────┘          │
  │                                     ▼                                       │
@@ -82,7 +82,7 @@ pcb_agentic_inspection_system/
 ├── config/
 │   ├── models.yaml                      # ONNX model specs (224x224, 640x640, 480x480)
 │   ├── policy.yaml                      # Confidence thresholds & loop safety limits
-│   └── agent2_config.yaml               # Qdrant, Ollama, & IPC tolerance thresholds
+│   └── agent2_config.yaml               # Qdrant, OpenAI models, & IPC tolerance thresholds
 ├── data/
 │   ├── inputs/                          # 122+ board assembly folders (e.g., 06-200036-02/...)
 │   │   └── 06-200036-02/
@@ -144,13 +144,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2. Pull the Local Vision Model (Ollama)
-Ensure [Ollama](https://ollama.com/) is installed and running:
-```bash
-ollama pull llava
-```
-
-### 3. Configure `.env`
+### 2. Configure `.env`
 Create or edit `.env` in the project root:
 ```env
 OPENAI_API_KEY=sk-proj-yourActualKeyHere

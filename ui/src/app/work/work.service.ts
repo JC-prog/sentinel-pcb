@@ -1,14 +1,11 @@
 import { Injectable, Signal, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import {
   OrchestratorLogEntry,
   OrchestratorRunMode,
   OrchestratorRunResult,
   OrchestratorStatus,
   OrchestratorStatusEvent,
-  WorkflowDriftReportRequest,
-  WorkflowDriftReportOut,
-  WorkflowRetrainingTicketOut,
-  WorkflowRetrainingTicketsRequest,
   WorkflowQueueCorrectionsOut,
   WorkflowQueueCorrectionsRequest,
   WorkflowRetrainingPlanOut,
@@ -35,15 +32,21 @@ const INITIAL_STATUS: OrchestratorStatusEvent = {
   inference_attempted: 0,
   accepted: 0,
   review_required: 0,
+  preparation_failed: 0,
+  verification_failed: 0,
+  inference_aborted: 0,
 };
 
 @Injectable({ providedIn: 'root' })
 export class WorkService {
   private readonly _status = signal<OrchestratorStatusEvent>(INITIAL_STATUS);
-  private readonly _log = signal<OrchestratorLogEntry[]>([]);
+  // Appended to in place and always notifying: a bulk run logs thousands of lines, and copying the
+  // whole array for each one is wasted work. Consumers slice or filter it, never hold it.
+  private readonly _log = signal<OrchestratorLogEntry[]>([], { equal: () => false });
   private readonly _running = signal(false);
   private readonly _result = signal<OrchestratorRunResult | null>(null);
   private readonly _reviewTick = signal(0);
+  private runSubscription: Subscription | null = null;
 
   readonly status: Signal<OrchestratorStatusEvent> = this._status.asReadonly();
   readonly log: Signal<OrchestratorLogEntry[]> = this._log.asReadonly();
@@ -73,16 +76,6 @@ export class WorkService {
 
   // Thin passthroughs, like the uploads above - the component (work.ts) owns the busy/error UI
   // state for these, the same way it already does around the upload calls.
-  reportDrift(request: WorkflowDriftReportRequest): Promise<WorkflowDriftReportOut> {
-    return this.client.reportDrift(request);
-  }
-
-  flagForRetraining(
-    request: WorkflowRetrainingTicketsRequest,
-  ): Promise<WorkflowRetrainingTicketOut[]> {
-    return this.client.flagForRetraining(request);
-  }
-
   getRunDrift(runId: string): Promise<WorkflowRunDrift> {
     return this.client.getRunDrift(runId);
   }
@@ -113,6 +106,13 @@ export class WorkService {
     return this.client.saveReviewDecision(request);
   }
 
+  private append(entry: OrchestratorLogEntry): void {
+    this._log.update((entries) => {
+      entries.push({ ...entry, at: Date.now() });
+      return entries;
+    });
+  }
+
   clearLog(): void {
     this._log.set([]);
     this._result.set(null);
@@ -129,9 +129,13 @@ export class WorkService {
       return;
     }
     this._running.set(true);
+    // Every run starts from a clean slate: the previous run's lines and counters would otherwise
+    // sit in front of the new ones and read as one long run.
+    this._log.set([]);
+    this._status.set(INITIAL_STATUS);
     this._result.set(null);
 
-    this.client
+    this.runSubscription = this.client
       .run({
         mode,
         dataset_id: datasetId,
@@ -146,25 +150,41 @@ export class WorkService {
       .subscribe({
         next: (event) => {
           if (event.type === 'log') {
-            this._log.update((entries) => [...entries, { kind: 'log', text: event.text }]);
+            this.append({ kind: 'log', text: event.text });
           } else if (event.type === 'status') {
             this._status.set(event.status);
           } else if (event.type === 'planStep') {
-            this._log.update((entries) => [...entries, { kind: 'plan_step', step: event.step }]);
+            this.append({ kind: 'plan_step', step: event.step });
           } else if (event.type === 'result') {
             this._result.set(event.result);
           } else if (event.type === 'review') {
             this._reviewTick.update((tick) => tick + 1);
           } else if (event.type === 'error') {
-            this._log.update((entries) => [...entries, { kind: 'error', message: event.message }]);
+            this.append({ kind: 'error', message: event.message });
           }
         },
         error: (error: unknown) => {
           const message = error instanceof Error ? error.message : 'Run failed.';
-          this._log.update((entries) => [...entries, { kind: 'error', message }]);
-          this._running.set(false);
+          this.append({ kind: 'error', message });
+          this.finishRun();
         },
-        complete: () => this._running.set(false),
+        complete: () => this.finishRun(),
       });
+  }
+
+  /** Stops the run in progress: unsubscribing aborts the streaming request, so the server's run
+   * is told to stop and nothing more is appended. What was already logged stays. */
+  cancel(): void {
+    if (!this._running()) {
+      return;
+    }
+    this.runSubscription?.unsubscribe();
+    this.append({ kind: 'log', text: 'Run cancelled.' });
+    this.finishRun();
+  }
+
+  private finishRun(): void {
+    this.runSubscription = null;
+    this._running.set(false);
   }
 }

@@ -50,6 +50,8 @@ CANNED_RESULTS: dict[str, dict[str, Any]] = {
     "get_run_drift": {"run_id": "run-1", "totals": {"decided": 2, "corrected": 1}, "models": []},
     "relabel_case": {"status": "proposed", "case_id": "CASE-000012", "proposed_label": "short"},
     "confirm_relabel": {"status": "confirmed", "case_id": "CASE-000012"},
+    "review_case": {"status": "awaiting_confirmation", "case_number": "CASE-000012", "decision": "override"},
+    "confirm_review": {"status": "resolved", "case_number": "CASE-000012", "decision": "override"},
     "get_drift_summary": {"status": "ok", "review_rate": 0.12, "correction_rate": 0.03},
     "report_model_drift": {"status": "recorded", "report_id": "r1"},
     "draft_retraining_plan": {"status": "pending_approval", "job_id": "j1"},

@@ -44,7 +44,7 @@ async def test_nothing_is_logged_at_the_default_info_level(
 
 
 def test_every_model_the_factory_builds_carries_the_debug_logger() -> None:
-    model = build_chat_model("ollama")
+    model = build_chat_model("openai")
 
     callbacks = model.callbacks
     assert isinstance(callbacks, list)
@@ -54,25 +54,35 @@ def test_every_model_the_factory_builds_carries_the_debug_logger() -> None:
 def test_the_factory_builds_the_model_the_conversation_provider_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
-    monkeypatch.setattr(settings, "ollama_base_url", "http://ollama.test:11434")
     monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini")
-    monkeypatch.setattr(settings, "openai_base_url", "http://litellm.test:4000/v1")
+    monkeypatch.setattr(settings, "openai_base_url", "http://llm.test/v1")
     monkeypatch.setattr(settings, "openai_api_key", "sk-proxy")
 
-    local = build_chat_model("ollama")
     hosted = build_chat_model("openai")
 
-    assert (local.model, local.base_url) == ("gemma4:12b", "http://ollama.test:11434")  # type: ignore[attr-defined]
-    # OpenAI always goes through the gateway, never api.openai.com directly
     assert hosted.model_name == "gpt-4o-mini"  # type: ignore[attr-defined]
-    assert hosted.openai_api_base == "http://litellm.test:4000/v1"  # type: ignore[attr-defined]
+    assert hosted.openai_api_base == "http://llm.test/v1"  # type: ignore[attr-defined]
 
 
 def test_the_agents_own_model_follows_agent_llm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "agent_llm_provider", "ollama")
-    monkeypatch.setattr(settings, "agent_llm_model", "gemma4:26b")
+    monkeypatch.setattr(settings, "agent_llm_provider", "openai")
+    monkeypatch.setattr(settings, "agent_llm_model", "gpt-4o")
 
     model = build_chat_model()
 
-    assert model.model == "gemma4:26b"  # type: ignore[attr-defined]
+    assert model.model_name == "gpt-4o"  # type: ignore[attr-defined]
+
+
+def test_a_gpt_6_model_is_called_with_reasoning_off_so_tool_calls_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+
+    luna = build_chat_model("openai", model="gpt-6-luna")
+    sol = build_chat_model("openai", model="gpt-6.1-sol")
+    mini = build_chat_model("openai", model="gpt-4o-mini")
+
+    assert luna.reasoning_effort == "none"  # type: ignore[attr-defined]
+    assert sol.reasoning_effort == "none"  # type: ignore[attr-defined]
+    assert mini.reasoning_effort is None  # type: ignore[attr-defined]
+    assert luna.model_name == "gpt-6-luna"  # type: ignore[attr-defined]

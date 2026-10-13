@@ -22,14 +22,6 @@ missing, but install them first to save a round trip.
 
 uv fetches Python 3.12 itself, so you do **not** need a separate Python install.
 
-Optional, only for the "Local LLM" option or Ollama embeddings:
-
-- **[Ollama](https://ollama.com)**, then pull the models you intend to use:
-  ```bash
-  ollama pull llama3.2          # default local chat model
-  ollama pull nomic-embed-text  # default local long-term-memory embedding model
-  ```
-
 ---
 
 ## 2. Clone
@@ -53,11 +45,10 @@ It is idempotent (safe to re-run after every `git pull`). It:
 1. `uv sync` - backend Python deps
 2. copies `.env.example` to `.env` if you don't have one, and generates `JWT_SECRET_KEY` in it
 3. checks Docker is installed and running
-4. starts the `db`, `qdrant`, and `litellm` containers:
-   `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant litellm`
-5. checks for Ollama (optional - just prints whether it found one)
-6. `npm install` in `ui/`
-7. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
+4. starts the `db` and `qdrant` containers:
+   `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant`
+5. `npm install` in `ui/`
+6. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
 
 It finishes with `Setup complete.` and a reminder of the run commands. If it fails partway, see
 [Troubleshooting](#8-troubleshooting) and re-run it.
@@ -71,15 +62,17 @@ need to set by hand:
 
 | Key | Set it when | Value |
 |---|---|---|
-| `LITELLM_OPENAI_API_KEY` | your work touches the OpenAI provider, the chat agents' LLM pass, or OpenAI embeddings | your **own** OpenAI API key. Only your local `litellm` container reads it, and `.env` is git-ignored. Leave blank to work Ollama-only (OpenAI calls just 401). |
+| `OPENAI_API_KEY` | always - chat, the agents, memory embeddings and Agent 2 all use it | your **own** OpenAI API key (`sk-...`). `.env` is git-ignored. Chat and the agents refuse to run without it. |
 
 Leave these alone - they already point at the local containers:
-`OPENAI_BASE_URL`, `OPENAI_API_KEY` (the proxy's dev master key), `DATABASE_URL`, `QDRANT_URL`,
-`OLLAMA_BASE_URL`, `JWT_SECRET_KEY` (auto-generated in step 3).
+`DATABASE_URL`, `QDRANT_URL`, `JWT_SECRET_KEY` (auto-generated in step 3).
+Do not set `OPENAI_BASE_URL` unless you are deliberately pointing at another OpenAI-compatible
+endpoint; unset, calls go to OpenAI.
 
-Optional: to use a shared team LiteLLM proxy instead of your own container, point
-`OPENAI_BASE_URL` at it and set `OPENAI_API_KEY` to the key from the team vault. See
-[`infra/litellm/README.md`](infra/litellm/README.md).
+**Coming from the LiteLLM-era setup?** Delete the `OPENAI_BASE_URL=http://localhost:4000/v1` line,
+put your real key in `OPENAI_API_KEY` (it used to hold `sk-litellm-dev`), and remove
+`LITELLM_OPENAI_API_KEY` / `LITELLM_MASTER_KEY`. Then drop the old container:
+`docker compose -f infra/development/docker-compose.yml --env-file .env down --remove-orphans`.
 
 ---
 
@@ -124,11 +117,10 @@ docker compose -f infra/development/docker-compose.yml --env-file .env down
 
 1. Open http://localhost:4200, register an account (the **first** account ever created becomes
    Admin automatically), and send a chat message. If the reply streams back token by token, the
-   whole stack is healthy: backend, Postgres, Qdrant, and the LiteLLM proxy.
+   whole stack is healthy: backend, Postgres and Qdrant (and OpenAI, if you set a key).
 2. Spot checks:
    ```bash
    curl http://localhost:8000/health              # backend -> {"status":"ok"} style response
-   curl http://localhost:4000/health/liveliness   # LiteLLM proxy -> 200
    ```
 3. Qdrant ships its own web dashboard, no extra setup: open http://localhost:6333/dashboard to
    browse collections/points directly.
@@ -137,7 +129,7 @@ docker compose -f infra/development/docker-compose.yml --env-file .env down
 
 ## 7. Run only your section (optional)
 
-`db` + `qdrant` + `litellm` cover most backend work. Add a Compose profile only if your area
+`db` + `qdrant` cover most backend work. Add a Compose profile only if your area
 needs it:
 
 | Working on | Extra setup |
@@ -169,10 +161,10 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 |---|---|
 | Script: `Docker daemon is not running` | Start Docker Desktop (macOS: `open -a Docker`) or `sudo systemctl start docker` (Linux), wait for it to be ready, re-run the script. |
 | `port is already allocated` / `address already in use` | Something else holds one of the ports below. Stop it, or stop a stale stack: `docker compose -f infra/development/docker-compose.yml --env-file .env down`. |
-| Backend won't start, `litellm` unhealthy | `docker compose -f infra/development/docker-compose.yml --env-file .env logs litellm`. The container is healthy without a key; it only needs `LITELLM_OPENAI_API_KEY` to actually reach OpenAI. |
-| OpenAI chat returns a 401 / auth error | Set `LITELLM_OPENAI_API_KEY` in `.env` and `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --force-recreate litellm`. |
-| Ran a `docker compose` command by hand and litellm still 401s | You likely dropped `--env-file .env` from the command. Without it, Compose can't find the repo-root `.env` for this file's `${...}` substitutions and silently treats the key as blank - always include `--env-file .env` (run from the repo root) with any `docker compose -f infra/development/docker-compose.yml ...` command. |
-| Long-term memory silently does nothing | Using Ollama embeddings? Run `ollama pull nomic-embed-text`. Or disable it with `MEMORY_ENABLED=False` in `.env`. |
+| OpenAI chat returns a 401 / auth error | `OPENAI_API_KEY` in `.env` is blank or not a valid `sk-...` key. Fix it and restart the backend. |
+| OpenAI calls fail with `Connection refused` on `localhost:4000`, or `No connected db` | Your `.env` still has the LiteLLM-era `OPENAI_BASE_URL`. Delete that line (see "Coming from the LiteLLM-era setup" above) and restart the backend. |
+| Ran a `docker compose` command by hand and `${...}` values came out blank | You likely dropped `--env-file .env` from the command. Without it, Compose can't find the repo-root `.env` for this file's `${...}` substitutions and silently treats them as blank - always include `--env-file .env` (run from the repo root) with any `docker compose -f infra/development/docker-compose.yml ...` command. |
+| Long-term memory silently does nothing | Check `OPENAI_API_KEY` is set and `MEMORY_ENABLED=True` in `.env`. |
 | Anything half-installed | The script is idempotent - just run it again. |
 
 ---
@@ -183,7 +175,6 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 |---|---|---|
 | 8000 | backend (uvicorn) | you, terminal 1 |
 | 4200 | UI (`npm start`) | you, terminal 2 |
-| 4000 | LiteLLM proxy | Compose (`litellm`) |
 | 5433 | Postgres (`5433` -> container `5432`) | Compose (`db`) |
 | 6333 / 6334 | Qdrant REST / gRPC (dashboard at `6333/dashboard`) | Compose (`qdrant`) |
 | 8001 | inference service | you (`start-dev`, terminal 3, or Compose `inference` profile) |
@@ -198,5 +189,4 @@ Branch from `dev` (the trunk), open PRs against `dev`. `main` is production. See
 - [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) - what to type and click to trigger each behaviour
 - [`docs/DEMO.md`](docs/DEMO.md) - a rehearsed step-by-step demo script (with the sample data to use)
 - [`docs/REVIEW_DRIFT_RETRAINING.md`](docs/REVIEW_DRIFT_RETRAINING.md) - Qdrant schema, the review -> drift -> retraining chain, API and tool reference
-- [`infra/litellm/README.md`](infra/litellm/README.md) - why the app never calls `api.openai.com` directly; per-developer key vs one production key
 - [`infra/production/README.md`](infra/production/README.md) - what the AWS deployment looks like
