@@ -83,3 +83,12 @@ async def touch_conversation(
 async def delete_conversation(session: AsyncSession, conversation: Conversation) -> None:
     await session.delete(conversation)
     await session.commit()
+
+
+async def get_message(session: AsyncSession, message_id: str) -> Message | None:
+    return await session.get(Message, message_id)
+
+
+async def set_feedback(session: AsyncSession, message: Message, value: str | None) -> None:
+    message.feedback = value
+    await session.commit()

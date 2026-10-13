@@ -57,6 +57,17 @@ describe('HttpChatResponder', () => {
     ]);
   });
 
+  it('emits the saved reply\'s id from the done frame', async () => {
+    const body = 'event: delta\ndata: {"text":"hi"}\n\nevent: done\ndata: {"message_id":"srv-9"}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toContainEqual({ type: 'messageId', id: 'srv-9' });
+  });
+
   it('emits a usage event when the done frame reports the tokens a turn used', async () => {
     const body =
       'event: delta\ndata: {"text":"Hi"}\n\n' +

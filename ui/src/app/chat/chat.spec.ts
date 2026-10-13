@@ -653,6 +653,32 @@ describe('Chat', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('no label to correct');
   });
 
+  it('shows thumbs on a reply that has a server id, and rates it when one is clicked', async () => {
+    const { id, chatService } = await openConversation(() =>
+      of(
+        { type: 'delta', text: 'An answer.' } as never,
+        { type: 'messageId', id: 'srv-1' } as never,
+      ),
+    );
+    const rate = vi.spyOn(chatService, 'rate').mockResolvedValue();
+    fixture.detectChanges();
+
+    const up = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-label="Good answer"]',
+    ) as HTMLElement;
+    expect(up).toBeTruthy();
+    up.click();
+
+    const reply = chatService.get(id)()!.messages.find((m) => m.role === 'assistant')!;
+    expect(rate).toHaveBeenCalledWith(id, reply.id, 'up');
+  });
+
+  it('does not show thumbs on a reply that was never saved (no server id)', async () => {
+    await openConversation(() => of({ type: 'delta', text: 'An answer.' }));
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[aria-label="Good answer"]')).toBeNull();
+  });
+
   it('only offers a relabel for an accepted case', async () => {
     const created = {
       name: 'create_case',

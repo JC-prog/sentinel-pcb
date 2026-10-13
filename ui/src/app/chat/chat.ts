@@ -383,6 +383,14 @@ export class Chat {
     return ask.test(last) && (/[?]\s*$/.test(last) || /please confirm/i.test(last));
   }
 
+  /** Thumbs up/down on a reply; choosing the one already chosen takes it back. */
+  protected rate(message: ChatMessage, value: 'up' | 'down'): void {
+    const id = this.conversationId();
+    if (id) {
+      void this.chatService.rate(id, message.id, message.feedback === value ? null : value);
+    }
+  }
+
   protected sendFollowUp(text: string): void {
     this.draftText.set(text);
     this.send();

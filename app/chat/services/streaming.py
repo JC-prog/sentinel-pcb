@@ -246,9 +246,13 @@ async def chat_sse(
         raise
 
     logger.debug("chat response: %r", final_text, extra={"final_text": final_text})
-    await history.append_message(
+    saved = await history.append_message(
         session, conversation.id, "assistant", final_text, [], tool_results=cards
     )
     await history.maybe_set_title(session, conversation, message)
     await maybe_extract(session, conversation, provider)
-    yield _sse("done", {"usage": usage} if usage else {})
+    # The reply's id lets the UI rate it (PUT /api/messages/{id}/feedback) without a reload.
+    done: dict[str, Any] = {"message_id": saved.id}
+    if usage:
+        done["usage"] = usage
+    yield _sse("done", done)

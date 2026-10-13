@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **rate a reply.** Thumbs up and down under each assistant reply (click again to take it
+  back), saved with the reply (`messages.feedback`, new migration `a8d4f1c6e203`; `PUT
+  /api/messages/{id}/feedback`). The `done` frame now carries the saved reply's `message_id`, which
+  is what a rating is sent against, so a fresh reply can be rated without a reload.
 - Chat: **component history.** `get_component_history` answers "has U7 on BOARD-1 failed before?":
   how many times chat inspected it, what the model said each time, how often a person confirmed it
   was right, and the saved cases for it. Chat inspections only (Work-tab runs are not included).

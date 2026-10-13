@@ -480,4 +480,90 @@ describe('ChatService', () => {
 
     expect(otherUsersService.list()()).toEqual([]);
   });
+
+  describe('rating a reply', () => {
+    function withReply(authService: AuthService): { service: ChatService; id: string; messageId: string } {
+      const responder: ChatResponder = {
+        respond: vi.fn().mockReturnValue(
+          of(
+            { type: 'delta', text: 'an answer' } as ChatResponderEvent,
+            { type: 'messageId', id: 'srv-1' } as ChatResponderEvent,
+          ),
+        ),
+      };
+      const chat = createChatService(responder, authService);
+      const id = chat.send(null, 'a question', []);
+      const reply = chat.get(id)()!.messages.find((m) => m.role === 'assistant')!;
+      return { service: chat, id, messageId: reply.id };
+    }
+
+    function okAuth(): AuthService {
+      return {
+        currentUser: () => USER,
+        fetchWithAuth: vi.fn().mockResolvedValue({ ok: true } as Response),
+      } as unknown as AuthService;
+    }
+
+    it('remembers the server id the reply was saved under', () => {
+      const { service: chat, id } = withReply(okAuth());
+
+      const reply = chat.get(id)()!.messages.find((m) => m.role === 'assistant')!;
+
+      expect(reply.serverId).toBe('srv-1');
+    });
+
+    it('sends the rating against that id and shows it at once', async () => {
+      const auth = okAuth();
+      const { service: chat, id, messageId } = withReply(auth);
+
+      await chat.rate(id, messageId, 'up');
+
+      const reply = chat.get(id)()!.messages.find((m) => m.id === messageId)!;
+      expect(reply.feedback).toBe('up');
+      const call = (auth.fetchWithAuth as ReturnType<typeof vi.fn>).mock.calls.find(([url]) =>
+        String(url).endsWith('/api/messages/srv-1/feedback'),
+      )!;
+      expect(call[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ value: 'up' }) });
+    });
+
+    it('takes a rating back when null is sent', async () => {
+      const { service: chat, id, messageId } = withReply(okAuth());
+      await chat.rate(id, messageId, 'down');
+
+      await chat.rate(id, messageId, null);
+
+      expect(chat.get(id)()!.messages.find((m) => m.id === messageId)!.feedback).toBeUndefined();
+    });
+
+    it('puts the previous rating back when the server refuses', async () => {
+      const auth = {
+        currentUser: () => USER,
+        fetchWithAuth: vi
+          .fn()
+          .mockResolvedValueOnce({ ok: false } as Response) // hydrate the list
+          .mockResolvedValue({ ok: false } as Response),
+      } as unknown as AuthService;
+      const { service: chat, id, messageId } = withReply(auth);
+
+      await chat.rate(id, messageId, 'up');
+
+      expect(chat.get(id)()!.messages.find((m) => m.id === messageId)!.feedback).toBeUndefined();
+    });
+
+    it('ignores a reply the server has not given an id yet', async () => {
+      const responder: ChatResponder = {
+        respond: vi.fn().mockReturnValue(of({ type: 'delta', text: 'an answer' })),
+      };
+      const auth = okAuth();
+      const chat = createChatService(responder, auth);
+      const id = chat.send(null, 'q', []);
+      const reply = chat.get(id)()!.messages.find((m) => m.role === 'assistant')!;
+      const before = (auth.fetchWithAuth as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      await chat.rate(id, reply.id, 'up');
+
+      expect((auth.fetchWithAuth as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+      expect(chat.get(id)()!.messages.find((m) => m.id === reply.id)!.feedback).toBeUndefined();
+    });
+  });
 });

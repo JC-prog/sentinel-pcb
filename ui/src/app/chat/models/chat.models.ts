@@ -126,6 +126,10 @@ export interface ChatMessage {
   /** Tokens the model used for this reply, summed over every model call in the turn. Absent when
    * the provider did not report it. */
   usage?: { inputTokens: number; outputTokens: number };
+  /** The server's id for this reply, once it has one - what a thumbs up/down is sent against. */
+  serverId?: string;
+  /** The user's rating of this reply. */
+  feedback?: 'up' | 'down';
   createdAt: number;
 }
 

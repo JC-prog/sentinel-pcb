@@ -228,6 +228,28 @@
                     Regenerate
                   </button>
                 }
+                @if (!isUserMessage(message) && message.serverId) {
+                  <button
+                    type="button"
+                    class="flex items-center rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    [class]="message.feedback === 'up' ? 'text-emerald-600 dark:text-emerald-400' : ''"
+                    aria-label="Good answer"
+                    [attr.aria-pressed]="message.feedback === 'up'"
+                    (click)="rate(message, 'up')"
+                  >
+                    <app-icon name="thumb-up" [size]="14" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex items-center rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    [class]="message.feedback === 'down' ? 'text-red-600 dark:text-red-400' : ''"
+                    aria-label="Not helpful"
+                    [attr.aria-pressed]="message.feedback === 'down'"
+                    (click)="rate(message, 'down')"
+                  >
+                    <app-icon name="thumb-down" [size]="14" />
+                  </button>
+                }
                 @if (message.usage; as usage) {
                   <span
                     class="px-1.5"

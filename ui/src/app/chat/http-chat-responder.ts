@@ -161,6 +161,10 @@ export class HttpChatResponder implements ChatResponder {
                 String(frame.data['message'] ?? 'The assistant is unavailable right now.'),
               );
             } else if (frame.event === 'done') {
+              const messageId = frame.data['message_id'];
+              if (typeof messageId === 'string' && messageId) {
+                subscriber.next({ type: 'messageId', id: messageId });
+              }
               const usage = frame.data['usage'] as
                 | { input_tokens?: unknown; output_tokens?: unknown }
                 | undefined;

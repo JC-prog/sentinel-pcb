@@ -10,13 +10,15 @@ import { ToolResult } from './models/chat.models';
  * signal instead. A 'toolResult' carries a tool's structured result (an inspection, a relabel) to
  * be shown as a card on the assistant message. Mirrors the backend's `event: delta` /
  * `event: tool_call` / `event: tool_result` SSE frames (app/chat/services/streaming.py). A 'usage'
- * is the tokens the turn used, which the backend reports on the final `event: done` frame.
+ * is the tokens the turn used, which the backend reports on the final `event: done` frame, as is the
+ * saved reply's id ('messageId'), which a rating is sent against.
  */
 export type ChatResponderEvent =
   | { type: 'delta'; text: string }
   | { type: 'toolCall'; label: string }
   | { type: 'toolResult'; toolResult: ToolResult }
-  | { type: 'usage'; inputTokens: number; outputTokens: number };
+  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'messageId'; id: string };
 
 /**
  * Swap point for the real backend: provide CHAT_RESPONDER with an implementation that calls

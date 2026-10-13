@@ -112,7 +112,9 @@ def test_the_done_frame_reports_the_turns_token_usage(
 
     frames = _parse_sse(_stream(authenticated_client, "hi"))
 
-    assert frames[-1] == ("done", {"usage": {"input_tokens": 120, "output_tokens": 8}})
+    assert frames[-1][0] == "done"
+    assert frames[-1][1]["usage"] == {"input_tokens": 120, "output_tokens": 8}
+    assert frames[-1][1]["message_id"]
 
 
 def test_the_done_frame_has_no_usage_when_the_provider_reported_none(
@@ -122,7 +124,7 @@ def test_the_done_frame_has_no_usage_when_the_provider_reported_none(
 
     frames = _parse_sse(_stream(authenticated_client, "hi"))
 
-    assert frames[-1] == ("done", {})
+    assert frames[-1][0] == "done" and set(frames[-1][1]) == {"message_id"}
 
 
 def test_a_tool_call_round_trip_streams_progress_and_the_final_answer(
