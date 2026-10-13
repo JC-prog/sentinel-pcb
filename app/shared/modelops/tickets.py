@@ -5,10 +5,15 @@ draft_job() is what turns open tickets into a retraining request, and doesn't ca
 ticket came from.
 """
 
+import logging
+
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.db.models import RetrainingTicket, RetrainingTicketStatus
+from app.shared.modelops import drift as drift_repo
+
+logger = logging.getLogger(__name__)
 
 
 async def create_ticket(
@@ -47,7 +52,21 @@ async def create_ticket(
     session.add(ticket)
     await session.commit()
     await session.refresh(ticket)
+    await _notice_drift(session, ticket)
     return ticket
+
+
+async def _notice_drift(session: AsyncSession, ticket: RetrainingTicket) -> None:
+    """A correction may be the one that tips a model version into drift; raise the report for it.
+    Never fails the correction: the ticket is already saved, so anything wrong here is logged."""
+
+    try:
+        await drift_repo.maybe_raise_report(session, ticket)
+    except Exception:
+        logger.exception("could not check drift after ticket %s", ticket.id)
+        await session.rollback()
+        # The rollback expires the ticket; reload it so the caller can still read it (it is saved).
+        await session.refresh(ticket)
 
 
 async def sample_refs_for_run(session: AsyncSession, run_id: str) -> dict[str, str]:

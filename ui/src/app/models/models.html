@@ -271,9 +271,18 @@
                     "
                     >{{ report.status }}</span
                   >
+                  @if (report.stats.auto) {
+                    <span
+                      class="ml-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                      data-testid="auto-badge"
+                      title="Raised automatically after enough corrections"
+                      >auto</span
+                    >
+                  }
                 </p>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Reported by {{ report.reported_by }} · {{ formatDate(report.created_at) }}
+                  {{ report.stats.auto ? 'Raised after a correction by' : 'Reported by' }}
+                  {{ report.reported_by }} · {{ formatDate(report.created_at) }}
                 </p>
               </div>
               @if (isAdmin() && report.status === 'open') {

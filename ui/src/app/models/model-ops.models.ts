@@ -73,6 +73,9 @@ export interface DriftStats {
   previous?: DriftWindowStats;
   enough_data?: boolean;
   signals?: string[];
+  /** True for a report raised automatically after enough corrections (app/shared/modelops/drift.py). */
+  auto?: boolean;
+  corrections?: number;
 }
 
 export interface DriftOverview {

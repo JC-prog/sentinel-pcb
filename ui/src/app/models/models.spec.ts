@@ -340,6 +340,12 @@ describe('Models', () => {
       expect(navigate).toHaveBeenCalledWith(['/cases'], { queryParams: { case: 'CASE-000007' } });
     });
 
+    it('does not mark a report filed by hand as auto', () => {
+      const card = root().querySelector('[data-report="r-1"]') as HTMLElement;
+
+      expect(card.querySelector('[data-testid="auto-badge"]')).toBeNull();
+    });
+
     it('summarises reported and open counts per model', () => {
       const counts = root().querySelector('[data-testid="drift-counts"]')!.textContent!;
 

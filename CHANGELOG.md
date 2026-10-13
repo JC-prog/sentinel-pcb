@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Drift reports raise themselves.** When one model version collects 5 confirmed corrections
+  (chat relabels and Work-tab queued corrections) within 7 days, an open drift report is created
+  with the corrections as evidence; further corrections refresh it instead of adding another, and
+  resolving it lets the next burst raise a new one. Reports filed by hand are unchanged. The Models
+  tab marks them "auto", and `list_drift_reports` reports `auto_raised`. Tune with
+  `DRIFT_AUTO_REPORT_THRESHOLD` (0 turns it off) and `DRIFT_AUTO_REPORT_WINDOW_DAYS`.
 - **Cases tab** (Chat | Work | Cases | Models): every case chat has saved, with the model's call and
   version, the scores, any correction and its reason, the retraining ticket and a link back to the
   conversation (for its owner). Filter by status, model, corrected or free text. Read-only: a case

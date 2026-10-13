@@ -315,7 +315,7 @@ the open tickets (including chat relabels).
 
 - **Live models** - each model's live version, with **Roll back** (Admin) and, for other known
   versions, **Promote** (Admin).
-- **Drift reports** - reports filed from chat or from the Work tab (a report filed for a Work-tab run
+- **Drift reports** - reports filed from chat or from the Work tab, plus ones raised automatically when a model version gets 5 corrections in 7 days (marked "auto"; case numbers link to the Cases tab) (a report filed for a Work-tab run
   carries a snapshot of the run's numbers); an Admin can **Mark resolved**.
 - **Retraining queue** - jobs and their tickets. A job's *Show flagged cases* lists what it was
   drafted from (case numbers for chat tickets; sample id and run for Work-tab tickets). **Approve**

@@ -259,6 +259,7 @@ async def test_list_drift_reports_shows_what_was_filed_and_filters_by_status(
     assert [r["model"] for r in only_open["reports"]] == ["pcb_region"]
     (row,) = one_model["reports"]
     assert row["description"] == "false Golden calls" and row["status"] == "resolved"
+    assert row["auto_raised"] is False
     assert "error" in await _run(LIST_DRIFT_REPORTS, db_async_session, user, status="bogus")
 
 

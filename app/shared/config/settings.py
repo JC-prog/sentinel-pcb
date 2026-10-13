@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     # the Models tab's app/modelops/, and the chat monitoring agent). Kill switch, same pattern as
     # the others - off hides the Models tab's API and removes the drift/retraining chat tools.
     modelops_enabled: bool = True
+    # A drift report is raised on its own when a model version collects this many confirmed
+    # corrections (retraining tickets, from chat or the Work tab) inside the window below - one open
+    # report per model version (app/shared/modelops/drift.py). 0 turns it off.
+    drift_auto_report_threshold: int = 5
+    drift_auto_report_window_days: int = 7
 
     # Lets the chat LLM itself decide to call a registered Tool (app/chat/agents/registry.py) mid-
     # conversation - e.g. inspect_image, get_drift_summary. Kill switch, same

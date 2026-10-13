@@ -191,6 +191,8 @@ def _report_row(report: DriftReport) -> dict[str, Any]:
         "model": report.model_name,
         "model_version": report.model_version,
         "status": report.status,
+        # True when it was raised automatically after enough corrections, not filed by a person.
+        "auto_raised": bool((report.stats or {}).get("auto")),
         "description": report.description,
         "evidence_cases": report.case_numbers,
         "filed_at": report.created_at.isoformat(),
