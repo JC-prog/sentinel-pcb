@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat (Admin): the opening screen says what is waiting in the Models tab - retraining plans
+  awaiting approval, open drift reports (and how many raised themselves) and corrections not yet in
+  a plan - with a button to open it. Nothing is shown when nothing is waiting, and QA never sees
+  it. New `GET /api/chat/briefing` (Admin only); acting on any of it is still the Models tab's.
 - Chat: **your corrections, and taking one back.** `list_my_corrections` answers "what happened to
   my corrections?" (what the model said, what you corrected it to, and whether it is waiting for a
   plan, in a plan, or retrained). `withdraw_correction` takes one back - the case returns to the

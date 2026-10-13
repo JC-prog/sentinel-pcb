@@ -37,6 +37,22 @@
           Drop, paste or attach images and an inspection XML
         </p>
       </div>
+      @if (briefingItems().length > 0) {
+        <div
+          class="flex w-full max-w-2xl flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+          role="status"
+          data-testid="briefing"
+        >
+          <span>Waiting for you: {{ briefingItems().join(' · ') }}</span>
+          <button
+            type="button"
+            class="rounded-lg border border-amber-400 px-3 py-1 text-xs font-medium hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-amber-600 dark:border-amber-600 dark:hover:bg-amber-900/40"
+            (click)="openModels()"
+          >
+            Open Models
+          </button>
+        </div>
+      }
       <div class="flex w-full max-w-2xl flex-col gap-5">
         @for (group of suggestionGroups(); track group.title) {
           <section [attr.aria-label]="group.title">

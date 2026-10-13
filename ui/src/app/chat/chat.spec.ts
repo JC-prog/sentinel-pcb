@@ -23,10 +23,19 @@ const USER: AuthUser = {
 };
 
 /** Same reasoning as chat.service.spec.ts's fakeAuthService(). */
-function fakeAuthService(role: AuthUser['role'] = 'qa'): AuthService {
+function fakeAuthService(
+  role: AuthUser['role'] = 'qa',
+  briefing: Record<string, number> | null = null,
+): AuthService {
   return {
     currentUser: () => ({ ...USER, role }),
-    fetchWithAuth: vi.fn().mockResolvedValue({ ok: false } as Response),
+    fetchWithAuth: vi
+      .fn()
+      .mockResolvedValue(
+        briefing
+          ? ({ ok: true, json: async () => briefing } as Response)
+          : ({ ok: false } as Response),
+      ),
   } as unknown as AuthService;
 }
 
@@ -37,13 +46,17 @@ describe('Chat', () => {
     localStorage.clear();
   });
 
-  async function setup(route: FakeActivatedRoute, role: AuthUser['role'] = 'qa') {
+  async function setup(
+    route: FakeActivatedRoute,
+    role: AuthUser['role'] = 'qa',
+    briefing: Record<string, number> | null = null,
+  ) {
     await TestBed.configureTestingModule({
       imports: [Chat],
       providers: [
         provideRouter([]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
-        { provide: AuthService, useValue: fakeAuthService(role) },
+        { provide: AuthService, useValue: fakeAuthService(role, briefing) },
         { provide: ActivatedRoute, useValue: route },
       ],
     }).compileComponents();
@@ -71,6 +84,49 @@ describe('Chat', () => {
     TestBed.resetTestingModule();
     await setup(new FakeActivatedRoute(), 'admin');
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Model status and queue');
+  });
+
+  it('tells an Admin what is waiting for them, and links to the Models tab', async () => {
+    await setup(new FakeActivatedRoute(), 'admin', {
+      open_drift_reports: 2,
+      open_auto_reports: 1,
+      plans_awaiting_approval: 1,
+      corrections_waiting: 3,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    const banner = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]');
+    expect(banner?.textContent).toContain('1 retraining plan awaiting your approval');
+    expect(banner?.textContent).toContain('2 open drift reports (1 raised automatically)');
+    expect(banner?.textContent).toContain('3 corrections not yet in a plan');
+
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    (banner?.querySelector('button') as HTMLElement).click();
+    expect(navigate).toHaveBeenCalledWith('/models');
+  });
+
+  it('shows no banner when nothing is waiting, or to QA', async () => {
+    await setup(new FakeActivatedRoute(), 'admin', {
+      open_drift_reports: 0,
+      open_auto_reports: 0,
+      plans_awaiting_approval: 0,
+      corrections_waiting: 0,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]')).toBeNull();
+
+    TestBed.resetTestingModule();
+    await setup(new FakeActivatedRoute(), 'qa', {
+      open_drift_reports: 4,
+      open_auto_reports: 0,
+      plans_awaiting_approval: 2,
+      corrections_waiting: 1,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]')).toBeNull();
   });
 
   it('opens with a short line on what it does and how to attach, not a paragraph', async () => {

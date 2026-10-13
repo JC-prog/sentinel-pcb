@@ -16,6 +16,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
 import { AuthService } from '../auth.service';
+import { BriefingService } from './briefing.service';
 import { ChatService } from './chat.service';
 import { Icon, IconName } from './icons/icon';
 import { MarkdownView } from './markdown/markdown-view';
@@ -151,6 +152,10 @@ export class Chat {
     this.suggestions.filter((s) => !s.adminOnly || this.auth.currentUser()?.role === 'admin'),
   );
 
+  private readonly briefingService = inject(BriefingService);
+  /** What is waiting for an Admin in the Models tab, as lines for the opening screen. */
+  protected readonly briefingItems = signal<string[]>([]);
+
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);
   /** Inspection XML(s), for inspect_image (app/chat/agents/inspection_agent/) - optional, at most what the
@@ -183,6 +188,10 @@ export class Chat {
   /** Quick replies for the last assistant message's tool card - see followUpsFor(). */
   protected readonly followUps: Signal<string[]>;
 
+  protected openModels(): void {
+    void this.router.navigateByUrl('/models');
+  }
+
   constructor(
     private readonly route: ActivatedRoute,
     private readonly router: Router,
@@ -192,6 +201,13 @@ export class Chat {
       this.route.paramMap.pipe(map((params) => params.get('id'))),
       { initialValue: null },
     );
+
+    // An Admin's opening screen says what is waiting for them; QA has nothing to ask.
+    if (this.auth.currentUser()?.role === 'admin') {
+      void this.briefingService.load().then((briefing) => {
+        this.briefingItems.set(briefing ? BriefingService.items(briefing) : []);
+      });
+    }
 
     this.conversation = computed(() => {
       const id = this.conversationId();
