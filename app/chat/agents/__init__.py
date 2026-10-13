@@ -21,13 +21,15 @@ from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
     GET_DRIFT_SUMMARY,
+    GET_RETRAINING_JOB,
+    LIST_DRIFT_REPORTS,
     MONITORING_STATUS,
     REPORT_MODEL_DRIFT,
 )
 from app.chat.agents.registry import ToolNotFound, ToolRegistry
 from app.chat.agents.relabel_agent import CONFIRM_RELABEL, RELABEL_CASE
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
-from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES
+from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES, LIST_RUNS
 
 tool_registry = ToolRegistry(
     [
@@ -41,7 +43,10 @@ tool_registry = ToolRegistry(
         REPORT_MODEL_DRIFT,
         DRAFT_RETRAINING_PLAN,
         MONITORING_STATUS,
+        LIST_DRIFT_REPORTS,
+        GET_RETRAINING_JOB,
         GET_SAMPLE,
+        LIST_RUNS,
         LIST_REVIEW_CASES,
         GET_RUN_DRIFT,
     ]

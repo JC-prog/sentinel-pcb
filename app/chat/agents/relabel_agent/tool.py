@@ -13,8 +13,8 @@ from langchain_core.tools import tool
 
 from app.chat.agents.relabel_agent import service
 from app.chat.agents.relabel_agent.errors import RelabelRefused
+from app.chat.agents.relabel_agent.resolver import Target
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, required, returns_json, text
-from app.chat.db.models import Case
 from app.shared.config.settings import settings
 
 _CASE_NUMBER = 'The case number, e.g. "CASE-000123". Omit for the latest case in this conversation.'
@@ -32,7 +32,8 @@ async def relabel_case(
     tells you the right one. Nothing is saved: it validates the label against the model's real
     classes and returns a proposal. Then ask the user to confirm, and only after they say yes call
     confirm_relabel. Needs the correct label and the user's reason. Without a case number it uses
-    the latest case in this conversation."""
+    what the user is looking at: the image just inspected, or else the latest case in this
+    conversation. The inspection does not need to be a case first - confirming creates it."""
 
     ctx = runtime.context
     try:
@@ -47,16 +48,21 @@ async def relabel_case(
     except RelabelRefused as refusal:
         raise ToolRefused(refusal.message, **refusal.details) from refusal
 
-    case = proposal.case
+    target = proposal.target
+    saves = (
+        "Nothing is saved yet."
+        if target.case is not None
+        else "Nothing is saved yet. Confirming will also save this inspection as a new case."
+    )
     return {
         "status": "awaiting_confirmation",
-        **_describe(case),
+        **_describe(target),
         "proposed_label": proposal.label,
         "reason": proposal.reason,
         "instruction": (
-            f"Nothing is saved yet. Tell the user the model said {case.defect_label!r} and you "
-            f"would record {proposal.label!r} instead, queuing it for retraining, and ask them to "
-            "confirm. Only after they reply yes, call confirm_relabel."
+            f"{saves} Tell the user the model said {target.defect_label!r} and you would record "
+            f"{proposal.label!r} instead, queuing it for retraining, and ask them to confirm. Only "
+            "after they reply yes, call confirm_relabel."
         ),
     }
 
@@ -70,7 +76,8 @@ async def confirm_relabel(
     """CREATES A RECORD: commits the relabel proposed earlier with relabel_case - corrects the
     Case's label and queues a retraining ticket for it. Call it ONLY after the user has replied yes
     to your confirmation question; it is refused otherwise. It takes no label - it commits exactly
-    what was proposed. Without a case number it uses the latest case in this conversation."""
+    what was proposed. If the proposal was on an inspection that is not a case yet, this also
+    creates the case. Without a case number it uses the same thing relabel_case used."""
 
     ctx = runtime.context
     try:
@@ -86,7 +93,8 @@ async def confirm_relabel(
 
     return {
         "status": "relabelled",
-        **_describe(correction.case),
+        **_describe(Target(case=correction.case)),
+        "case_created": correction.created_case,
         "corrected_label": correction.label,
         "ticket_id": correction.ticket.id,
         "ticket_status": correction.ticket.status,
@@ -104,11 +112,11 @@ RELABEL_CASE = ChatTool(relabel_case, label="Relabel proposal", enabled=_enabled
 CONFIRM_RELABEL = ChatTool(confirm_relabel, label="Relabel", enabled=_enabled, shows_card=True)
 
 
-def _describe(case: Case) -> dict[str, Any]:
+def _describe(target: Target) -> dict[str, Any]:
     return {
-        "case_number": case.case_number,
-        "model": case.defect_model,
-        "model_version": case.defect_model_version,
-        "model_label": case.defect_label,
-        "model_confidence": case.defect_confidence,
+        "case_number": target.case_number,
+        "model": target.defect_model,
+        "model_version": target.defect_model_version,
+        "model_label": target.defect_label,
+        "model_confidence": target.defect_confidence,
     }

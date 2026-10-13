@@ -60,15 +60,16 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
     assert set(model.offered) == {
         "relabel_case",
         "confirm_relabel",
-        "review_case",
-        "confirm_review",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
         "monitoring_status",
+        "list_drift_reports",
+        "get_retraining_job",
         "create_case",
         "get_sample",
         "list_review_cases",
+        "list_runs",
         "get_run_drift",
     }
 
@@ -158,7 +159,7 @@ def test_a_failed_tool_is_explained_to_the_model_not_shown_as_a_card(
 
     assert [event for event, _ in frames] == ["tool_call", "delta", "done"]  # no tool_result
     [result] = _tool_results(model)
-    assert "no case in this conversation" in json.loads(str(result.content))["error"]
+    assert "nothing to relabel in this conversation" in json.loads(str(result.content))["error"]
 
 
 def _card_registry() -> ToolRegistry:

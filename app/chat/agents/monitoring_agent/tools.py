@@ -10,6 +10,7 @@ from langchain_core.tools import tool
 from app.chat.agents.monitoring_agent import service
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, required, returns_json, text
 from app.shared.config.settings import settings
+from app.shared.db.models import DriftReportStatus
 
 _MAX_WINDOW_DAYS = 90
 
@@ -137,6 +138,46 @@ async def monitoring_status(runtime: Runtime) -> dict[str, Any]:
     return await service.status_overview(runtime.context.session)
 
 
+@tool("list_drift_reports")
+@returns_json
+async def list_drift_reports(
+    runtime: Runtime,
+    model: Annotated[str | None, _MODEL] = None,
+    status: Annotated[str | None, 'Only "open" or "resolved" reports. Omit for both.'] = None,
+) -> dict[str, Any]:
+    """Admin only. Lists the drift reports that have been filed, newest first: which model and
+    version, what was reported, which cases were given as evidence, and whether it is still open.
+    Read-only. Use it for 'what drift reports are open?' - get_drift_summary measures a model, this
+    lists what people have reported."""
+
+    wanted = text(status).lower()
+    if wanted and wanted not in {s.value for s in DriftReportStatus}:
+        raise ToolRefused('status must be "open" or "resolved"')
+    return await service.list_reports(
+        runtime.context.session,
+        model=text(model) or None,
+        status=DriftReportStatus(wanted) if wanted else None,
+        limit=service.MAX_REPORTS,
+    )
+
+
+@tool("get_retraining_job")
+@returns_json
+async def get_retraining_job(
+    runtime: Runtime,
+    job_id: Annotated[str | None, "The retraining job id. Omit for the newest job in progress."] = None,
+) -> dict[str, Any]:
+    """Admin only. Shows one retraining job: its status and progress, what it was drafted from
+    (the corrections), whether it is waiting for approval, and - once finished - whether the run was
+    simulated and which version it produced. Read-only. Approving, cancelling or promoting is done
+    by an Admin in the Models tab, never from chat; say so if asked."""
+
+    try:
+        return await service.job_detail(runtime.context.session, text(job_id) or None)
+    except service.PlanRefused as refusal:
+        raise ToolRefused(str(refusal)) from refusal
+
+
 def _enabled() -> bool:
     # Drift reports, plans and the overview belong to the model-operations feature too.
     return settings.monitoring_agent_enabled and settings.modelops_enabled
@@ -146,3 +187,5 @@ GET_DRIFT_SUMMARY = ChatTool(get_drift_summary, label="Drift summary", enabled=_
 REPORT_MODEL_DRIFT = ChatTool(report_model_drift, label="Drift report", enabled=_enabled)
 DRAFT_RETRAINING_PLAN = ChatTool(draft_retraining_plan, label="Retraining plan", enabled=_enabled)
 MONITORING_STATUS = ChatTool(monitoring_status, label="Model status", enabled=_enabled)
+LIST_DRIFT_REPORTS = ChatTool(list_drift_reports, label="Drift reports", enabled=_enabled)
+GET_RETRAINING_JOB = ChatTool(get_retraining_job, label="Retraining job", enabled=_enabled)

@@ -18,6 +18,7 @@ from app.shared.modelops import run_drift
 from app.shared.modelops import tickets as ticket_repo
 
 MAX_CASES = 50
+MAX_RUNS = 10
 
 _SAMPLE_FIELDS = (
     "board",
@@ -176,6 +177,30 @@ async def _not_found(sample_id: str, run_id: str | None) -> str:
         f"no stored sample {sample_id!r}{where}. Sample ids look like S000001 (the dataset's "
         f"SampleID); the latest stored run is {latest.run_id}."
     )
+
+
+@traced("sample-list-runs")
+async def list_runs(limit: int) -> dict[str, Any]:
+    """The stored Work-tab runs, newest first, so the user can name one. Only what the run record
+    itself holds (id, saved time, status): counting a run's samples would read every run."""
+
+    limit = max(1, min(limit, MAX_RUNS))
+    try:
+        runs = await run_samples.ready_runs()
+    except RunStoreUnavailable as exc:
+        raise SampleRefused(exc.message) from exc
+
+    if not runs:
+        raise SampleRefused("no Work-tab runs are stored yet - run a dataset in the Work tab first.")
+    return {
+        "total": len(runs),
+        "shown": min(len(runs), limit),
+        "latest_run_id": runs[0].run_id,
+        "runs": [
+            {"run_id": r.run_id, "saved_at_utc": r.saved_at_utc, "status": r.status}
+            for r in runs[:limit]
+        ],
+    }
 
 
 @traced("sample-review-cases")

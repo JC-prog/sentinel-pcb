@@ -6,6 +6,7 @@ import {
   ViewChild,
   computed,
   effect,
+  inject,
   signal,
   untracked,
   viewChild,
@@ -14,6 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
+import { AuthService } from '../auth.service';
 import { ChatService } from './chat.service';
 import { Icon } from './icons/icon';
 import { MarkdownView } from './markdown/markdown-view';
@@ -46,6 +48,8 @@ interface Suggestion {
   needsAttachment?: boolean;
   /** Complete as written: sent on click. Otherwise the prompt is only put in the box to edit. */
   send?: boolean;
+  /** Needs a tool only an Admin is offered; hidden from QA so a suggestion never ends in a refusal. */
+  adminOnly?: boolean;
 }
 
 function isXml(file: File): boolean {
@@ -77,6 +81,12 @@ export class Chat {
       send: true,
     },
     {
+      label: 'What runs do I have?',
+      hint: 'The stored Work-tab runs, to pick a run id',
+      prompt: 'Which Work-tab runs are stored?',
+      send: true,
+    },
+    {
       label: 'Look up a sample',
       hint: "Verdict, Agent 2's review and the decision",
       prompt: 'Show me sample S000001.',
@@ -85,11 +95,6 @@ export class Chat {
       label: 'Correct a wrong label',
       hint: "Record the right label; it's queued for retraining",
       prompt: 'The model got this wrong - the correct label is Golden.',
-    },
-    {
-      label: 'Approve or override a case',
-      hint: 'Resolve a case flagged for review',
-      prompt: "Approve the model's label on the case I just inspected.",
     },
     {
       label: 'Check model health',
@@ -104,12 +109,25 @@ export class Chat {
       send: true,
     },
     {
+      label: 'Model status and queue',
+      hint: 'Live versions, open drift reports and the retraining queue',
+      prompt: 'What is the model status, and what is in the retraining queue?',
+      send: true,
+      adminOnly: true,
+    },
+    {
       label: 'Draft a retraining plan',
       hint: 'Group the open tickets into a job for approval',
       prompt: 'Draft a retraining plan from the open tickets.',
       send: true,
     },
   ];
+
+  private readonly auth = inject(AuthService);
+  /** The suggestions this user can use: Admin-only ones are not shown to QA. */
+  protected readonly visibleSuggestions = computed(() =>
+    this.suggestions.filter((s) => !s.adminOnly || this.auth.currentUser()?.role === 'admin'),
+  );
 
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);
@@ -275,7 +293,7 @@ export class Chat {
   /**
    * One-click replies for what the assistant just showed. A relabel or review is only committed in
    * a *later* turn, so the proposal card is followed by an explicit yes/no; an inspection by
-   * the usual next step.
+   * the usual next step (saying the label is wrong, which also saves it as a case).
    */
   private followUpsFor(message: ChatMessage): string[] {
     if (message.interrupted) {
@@ -285,18 +303,11 @@ export class Chat {
     for (const { name, result } of [...results].reverse()) {
       switch (name) {
         case 'create_case': {
-          const n = result.case_number;
-          const relabel = `The label on case ${n} is wrong - relabel it.`;
-          return result.verdict === 'review_required'
-            ? [
-                `Approve case ${n}: the model's label is right.`,
-                `Override case ${n}: it's a false positive.`,
-                relabel,
-              ]
-            : [relabel];
+          return [`The label on case ${result.case_number} is wrong - relabel it.`];
         }
         case 'inspect_image':
           return [
+            "The model's defect label is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
             result.review_required
               ? 'Why was this flagged for review?'
@@ -304,8 +315,6 @@ export class Chat {
           ];
         case 'relabel_case':
           return ['Yes, confirm the relabel.', "No, cancel it - keep the model's label."];
-        case 'review_case':
-          return ['Yes, confirm the review.', "No, don't save the review."];
         case 'confirm_relabel':
           return ['Is the defect model drifting?'];
         default:

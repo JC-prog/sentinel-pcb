@@ -40,14 +40,13 @@ def test_qa_sees_inspect_image_and_model_health_tools_when_an_image_is_attached(
         "inspect_image",
         "relabel_case",
         "confirm_relabel",
-        "review_case",
-        "confirm_review",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
         "create_case",
         "get_sample",
         "list_review_cases",
+        "list_runs",
         "get_run_drift",
     }
 
@@ -62,14 +61,13 @@ def test_qa_sees_only_model_health_tools_without_an_image_attached(
     assert offered == {
         "relabel_case",
         "confirm_relabel",
-        "review_case",
-        "confirm_review",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
         "create_case",
         "get_sample",
         "list_review_cases",
+        "list_runs",
         "get_run_drift",
     }
 
@@ -82,15 +80,16 @@ def test_admin_sees_every_tool(
         "inspect_image",
         "relabel_case",
         "confirm_relabel",
-        "review_case",
-        "confirm_review",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",
         "monitoring_status",
+        "list_drift_reports",
+        "get_retraining_job",
         "create_case",
         "get_sample",
         "list_review_cases",
+        "list_runs",
         "get_run_drift",
     }
 

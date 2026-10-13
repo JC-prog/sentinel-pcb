@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents import tool_registry
 from app.chat.agents.monitoring_agent import DRAFT_RETRAINING_PLAN
-from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES
+from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES, LIST_RUNS
 from app.chat.services import run_samples
 from app.shared.config.settings import settings
 from app.shared.db.models import RetrainingJob, UserRole
@@ -232,6 +232,35 @@ async def test_a_sample_in_several_runs_answers_from_the_latest_and_names_the_ot
     assert "instruction" not in older
 
 
+async def test_list_runs_names_the_stored_runs_newest_first(client: AsyncQdrantClient) -> None:
+    repo = _repo()
+    repo.save_run("run-old", _state([_completed("S1", "ACCEPTED")], status="ACCEPTED"))
+    repo.save_run("run-new", _state([_completed("S1", "REVIEW_REQUIRED")]))
+    await _publish(repo, client)
+
+    result = await call(LIST_RUNS, _ctx())
+
+    assert result["total"] == 2 and result["shown"] == 2
+    assert [r["run_id"] for r in result["runs"]] == ["run-new", "run-old"]
+    assert result["latest_run_id"] == "run-new"
+    assert set(result["runs"][0]) == {"run_id", "saved_at_utc", "status"}
+
+
+async def test_list_runs_is_capped_and_says_how_many_were_not_shown(
+    client: AsyncQdrantClient,
+) -> None:
+    repo = _repo()
+    for n in range(12):
+        repo.save_run(f"run-{n:02d}", _state([_completed("S1", "ACCEPTED")], status="ACCEPTED"))
+    await _publish(repo, client)
+
+    capped = await call(LIST_RUNS, _ctx())
+    two = await call(LIST_RUNS, _ctx(), limit=2)
+
+    assert (capped["total"], capped["shown"], len(capped["runs"])) == (12, 10, 10)
+    assert (two["total"], two["shown"], len(two["runs"])) == (12, 2, 2)
+
+
 async def test_a_run_that_is_still_being_written_is_not_read(client: AsyncQdrantClient) -> None:
     repo = _repo()
     repo.save_run("run-a", _state([_completed("S1", "REVIEW_REQUIRED")]))
@@ -279,6 +308,7 @@ async def test_with_nothing_stored_yet_the_error_says_to_run_a_dataset(
 
     assert "run a dataset in the Work tab" in result["error"]
     assert "run a dataset" in (await call(LIST_REVIEW_CASES, _ctx()))["error"]
+    assert "run a dataset" in (await call(LIST_RUNS, _ctx()))["error"]
 
 
 async def test_an_unreachable_store_is_a_refusal_not_a_crash(
@@ -292,11 +322,13 @@ async def test_an_unreachable_store_is_a_refusal_not_a_crash(
     try:
         result = await call(GET_SAMPLE, _ctx(), sample_id="S1")
         listed = await call(LIST_REVIEW_CASES, _ctx())
+        runs = await call(LIST_RUNS, _ctx())
     finally:
         run_samples.set_client(None)
 
     assert "could not be reached" in result["error"]
     assert "could not be reached" in listed["error"]
+    assert "could not be reached" in runs["error"]
 
 
 async def test_list_review_cases_defaults_to_the_latest_run_and_reports_each_state(

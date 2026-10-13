@@ -56,6 +56,9 @@ CANNED_RESULTS: dict[str, dict[str, Any]] = {
     "report_model_drift": {"status": "recorded", "report_id": "r1"},
     "draft_retraining_plan": {"status": "pending_approval", "job_id": "j1"},
     "monitoring_status": {"status": "ok", "agents": "enabled"},
+    "list_runs": {"total": 1, "shown": 1, "latest_run_id": "run-1", "runs": [{"run_id": "run-1"}]},
+    "list_drift_reports": {"shown": 0, "more_not_shown": False, "reports": []},
+    "get_retraining_job": {"job_id": "j1", "status": "pending_approval", "approval_needed": True},
 }
 
 

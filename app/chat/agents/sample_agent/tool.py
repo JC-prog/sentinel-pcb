@@ -1,6 +1,6 @@
 """The sample agent's chat tools: read-only lookups of what the Work tab stored about a dataset
 sample (`S000001`) - the boundary only: read the model's arguments, call service.py, and phrase the
-result as the JSON the model reads. Neither tool writes anything, and neither creates a Case: a Case
+result as the JSON the model reads. None of them writes anything, and neither creates a Case: a Case
 comes from an image the user attached in chat (the inspection agent), a sample from a Work-tab run.
 """
 
@@ -37,6 +37,22 @@ async def get_sample(
         return await service.describe_sample(
             required(sample_id, "sample_id", 'e.g. "S000001"'), text(run_id) or None
         )
+    except SampleRefused as refusal:
+        raise ToolRefused(refusal.message) from refusal
+
+
+@tool("list_runs")
+@returns_json
+async def list_runs(
+    runtime: Runtime,
+    limit: Annotated[int | None, f"How many runs to list, at most {service.MAX_RUNS}."] = None,
+) -> dict[str, Any]:
+    """Lists the Work-tab bulk runs that are stored, newest first, with each run's id, when it was
+    saved and its status. Read-only. Use it when the user asks which runs exist, or needs a run id
+    to look something up in - sample ids restart every run, so a run id is how to pick one."""
+
+    try:
+        return await service.list_runs(limit or service.MAX_RUNS)
     except SampleRefused as refusal:
         raise ToolRefused(refusal.message) from refusal
 
@@ -83,5 +99,6 @@ def _enabled() -> bool:
 
 
 GET_SAMPLE = ChatTool(get_sample, label="Sample lookup", enabled=_enabled)
+LIST_RUNS = ChatTool(list_runs, label="Run list", enabled=_enabled)
 LIST_REVIEW_CASES = ChatTool(list_review_cases, label="Review queue", enabled=_enabled)
 GET_RUN_DRIFT = ChatTool(get_run_drift, label="Run drift", enabled=_enabled)

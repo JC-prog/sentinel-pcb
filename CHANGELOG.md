@@ -9,6 +9,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **correcting a label no longer needs a case first.** Say the model's label on the image you
+  just inspected is wrong and confirm in your next message: that confirmation creates the case with
+  your correction on it and queues the retraining ticket, in one commit. The assistant no longer asks
+  "create a case?" after every inspection; `create_case` remains for keeping an inspection without
+  correcting it (a relabel already proposed is kept when you do). A new inspection discards a
+  proposal made about the previous image. New migration `e5a9c3b7d216` (`inspection_drafts`
+  `pending_label` / `pending_reason` / `pending_at`).
+- Chat (Admin): `list_drift_reports` and `get_retraining_job` read what has been reported and how a
+  retraining job is going (status, progress, what it was drafted from, whether the finished run was
+  simulated). With `monitoring_status` these are **Admin-only**; a QA user who asks is told they do
+  not have the privilege and to contact an administrator. Chat still never approves, cancels or
+  promotes anything - that stays in the Models tab. The empty state shows an Admin-only suggestion
+  to Admins only.
+- Chat: a **`list_runs`** tool answers "which Work-tab runs do I have?" with the stored runs (id,
+  when saved, status; newest first, at most 10), so a run id can be found without leaving chat. The
+  empty state has a matching suggestion. Read-only, QA and Admin, behind
+  `SAMPLE_LOOKUP_AGENT_ENABLED`.
 - Work tab: the Review Console's **Model feedback** tab is now charts first. A one-line read-out
   (how the defect model did, with the next step as a button) sits above headline rings, then:
   the outcome donut; **Stage 1 - Region model** (accuracy, kept vs corrected per part area) and
@@ -221,6 +238,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Chat: approve/override of a case (`review_case` / `confirm_review`) is **off by default**
+  (`REVIEW_AGENT_ENABLED=false`); the code is kept and the setting brings it back. Existing Approved
+  and Overridden cases are unchanged, but `override_rate` in drift summaries no longer moves, so use
+  the correction rate.
+- Chat: `monitoring_status` and the new job read first sync with the inference service (best
+  effort; unreachable means last-known data, flagged `data_is_current: false`), as opening the
+  Models tab already does, so job progress is no longer stale until someone visits that tab. The
+  sync moved from `app/modelops/services/reconcile.py` to `app/shared/modelops/reconcile.py` so
+  chat can use it without importing the Models module.
 - Models tab: the Approve confirmation now says retraining is currently simulated (the inference
   service's only trainer is a stub), so an Admin isn't led to expect a new model.
 - Chat: `get_sample` looking a sample id up in several runs without a run id now tells the model to

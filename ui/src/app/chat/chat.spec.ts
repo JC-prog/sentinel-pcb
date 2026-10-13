@@ -23,9 +23,9 @@ const USER: AuthUser = {
 };
 
 /** Same reasoning as chat.service.spec.ts's fakeAuthService(). */
-function fakeAuthService(): AuthService {
+function fakeAuthService(role: AuthUser['role'] = 'qa'): AuthService {
   return {
-    currentUser: () => USER,
+    currentUser: () => ({ ...USER, role }),
     fetchWithAuth: vi.fn().mockResolvedValue({ ok: false } as Response),
   } as unknown as AuthService;
 }
@@ -37,13 +37,13 @@ describe('Chat', () => {
     localStorage.clear();
   });
 
-  async function setup(route: FakeActivatedRoute) {
+  async function setup(route: FakeActivatedRoute, role: AuthUser['role'] = 'qa') {
     await TestBed.configureTestingModule({
       imports: [Chat],
       providers: [
         provideRouter([]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
-        { provide: AuthService, useValue: fakeAuthService() },
+        { provide: AuthService, useValue: fakeAuthService(role) },
         { provide: ActivatedRoute, useValue: route },
       ],
     }).compileComponents();
@@ -61,6 +61,16 @@ describe('Chat', () => {
     await setup(new FakeActivatedRoute());
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain("Hi, I'm the Sentinel PCB assistant");
+  });
+
+  it('hides the Admin-only suggestions from QA and shows them to an Admin', async () => {
+    await setup(new FakeActivatedRoute(), 'qa');
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Model status and queue');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('What runs do I have?');
+
+    TestBed.resetTestingModule();
+    await setup(new FakeActivatedRoute(), 'admin');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Model status and queue');
   });
 
   it('creates a conversation and navigates to it when sending the first message', async () => {
@@ -440,8 +450,8 @@ describe('Chat', () => {
     };
     await openConversation(() => of({ type: 'toolResult', toolResult: created }));
 
-    expect(buttonWithText('Approve case CASE-12')).toBeTruthy();
-    expect(buttonWithText('Override case CASE-12')).toBeTruthy();
+    expect(buttonWithText('Approve case')).toBeUndefined();
+    expect(buttonWithText('Override case')).toBeUndefined();
     expect(buttonWithText('The label on case CASE-12 is wrong')).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('CASE-12');
   });

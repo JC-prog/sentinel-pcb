@@ -1,7 +1,8 @@
 """The Models tab's routes. Route declarations only - reading is in app/modelops/services/views.py,
 the Admin actions in services/operations.py, syncing with the inference service in
-services/reconcile.py. Reads are open to QA and Admin; every action that spends compute or changes
-which model is live is Admin-only. None of this is a chat Tool.
+app/shared/modelops/reconcile.py (shared, because chat reads job progress through it too). Reads are open to QA and Admin; every action that spends compute or changes
+which model is live is Admin-only. Chat can read the same state (Admin-only tools) but never
+acts on it.
 """
 
 from typing import Annotated

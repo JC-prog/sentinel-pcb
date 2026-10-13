@@ -139,6 +139,26 @@ describe('ToolResultCard', () => {
     });
   });
 
+  describe('a relabel on an inspection that is not a case yet', () => {
+    it('says confirming also saves it as a new case', () => {
+      const { el } = render({
+        name: 'relabel_case',
+        result: {
+          status: 'awaiting_confirmation',
+          case_number: null,
+          model: 'pcb_body_defect',
+          model_label: 'MissingPart',
+          proposed_label: 'Golden',
+          reason: 'the pads are fine',
+        },
+      });
+
+      const card = text(el, 'relabel-proposal');
+      expect(card).toContain('this inspection');
+      expect(card).toContain('new case');
+    });
+  });
+
   describe('a case review', () => {
     it('shows a proposal as waiting for confirmation, with its meaning and nothing saved yet', () => {
       const { el } = render({

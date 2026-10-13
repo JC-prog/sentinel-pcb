@@ -5,14 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-
-class InferenceStatus(BaseModel):
-    """Whether the numbers on the page reflect the inference service right now. When it can't be
-    reached the tab still renders what the database knows, and says so."""
-
-    configured: bool
-    reachable: bool
-    error: str | None = None
+from app.shared.modelops.reconcile import InferenceStatus
 
 
 class ModelVersionOut(BaseModel):
