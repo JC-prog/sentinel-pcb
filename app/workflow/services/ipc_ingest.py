@@ -7,15 +7,18 @@ licensed documents, so what goes in is up to whoever runs it.
 
     uv run python -m app.workflow.services.ipc_ingest path/to/file_or_dir [--replace]
 
-Reads .txt, .md and .pdf (a PDF is read page by page, so a hit can cite its page). Chunks are about
-1000 characters with some overlap. Ids are derived from file, page and chunk number, so running it
-again on the same files changes nothing; `--replace` first drops what a file contributed before,
-which is what you want after editing it.
+Reads .txt, .md, .pdf and .json (a PDF is read page by page, so a hit can cite its page; a JSON file
+is a list of standards, one chunk each - see `_json_entries`). Chunks are about 1000 characters with
+some overlap. Ids are derived from file, page and chunk number, so running it again on the same
+files changes nothing; `--replace` first drops what a file contributed before, which is what you
+want after editing it.
 """
 
 import argparse
 import importlib
+import json
 import logging
+import re
 import sys
 import uuid
 from collections.abc import Iterator
@@ -29,7 +32,7 @@ logger = logging.getLogger("ipc-ingest")
 CHUNK_CHARS = 1000
 OVERLAP_CHARS = 150
 EMBED_BATCH = 64
-SUFFIXES = {".txt", ".md", ".pdf"}
+SUFFIXES = {".txt", ".md", ".pdf", ".json"}
 
 
 def chunk_text(text: str, *, size: int = CHUNK_CHARS, overlap: int = OVERLAP_CHARS) -> list[str]:
@@ -59,10 +62,52 @@ def chunk_text(text: str, *, size: int = CHUNK_CHARS, overlap: int = OVERLAP_CHA
     return [c for c in chunks if c.strip()]
 
 
-def _pages(path: Path) -> Iterator[tuple[int | None, str]]:
-    """(page, text) pairs of a file; page is None for a format that has none."""
+def _json_entries(path: Path) -> list[dict[str, Any]]:
+    """The standards listed in a JSON file. Accepts what actually gets sent around: the document
+    wrapped in a markdown code fence (```json ... ```), CRLF line endings, a BOM, and the list either
+    at the top, under `standards`, or under `ipc_standards_framework.standards`."""
 
-    if path.suffix.lower() == ".pdf":
+    raw = path.read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n").strip()
+    raw = re.sub(r"^```[a-zA-Z]*\s*\n", "", raw)
+    raw = re.sub(r"\n```\s*$", "", raw).strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path.name} is not valid JSON ({exc.msg} at line {exc.lineno})") from exc
+
+    if isinstance(data, dict) and isinstance(data.get("ipc_standards_framework"), dict):
+        data = data["ipc_standards_framework"]
+    if isinstance(data, dict):
+        data = data.get("standards")
+    if not isinstance(data, list) or not all(isinstance(e, dict) for e in data) or not data:
+        raise ValueError(f"{path.name} has no list of standards to index")
+    return data
+
+
+def _json_entry_text(entry: dict[str, Any]) -> str:
+    head = " - ".join(str(entry[k]) for k in ("standard_id", "title") if entry.get(k))
+    parts = [head] if head else []
+    for label, key in (("Category", "category"), ("Role", "role")):
+        if entry.get(key):
+            parts.append(f"{label}: {entry[key]}")
+    if entry.get("relevance"):
+        parts.append(str(entry["relevance"]))
+    refs = entry.get("key_references")
+    if isinstance(refs, list) and refs:
+        parts.append("Key references: " + "; ".join(str(r) for r in refs))
+    return ". ".join(p.rstrip(".") for p in parts if p)
+
+
+def _pages(path: Path) -> Iterator[tuple[int | None, str]]:
+    """(page, text) pairs of a file; page is None for a format that has none (one pair per
+    standard for a JSON file, so each stays its own chunk)."""
+
+    if path.suffix.lower() == ".json":
+        for entry in _json_entries(path):
+            text = _json_entry_text(entry)
+            if text:
+                yield None, text
+    elif path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
 
         for number, page in enumerate(PdfReader(str(path)).pages, start=1):
@@ -81,8 +126,9 @@ def build_records(path: Path) -> list[dict[str, Any]]:
     """Every chunk of one file with the payload the reader returns (text, source_file, page)."""
 
     records: list[dict[str, Any]] = []
+    index = 0  # the file's own running chunk number, so entries without a page stay distinct
     for page, text in _pages(path):
-        for index, chunk in enumerate(chunk_text(text)):
+        for chunk in chunk_text(text):
             key = f"{path.name}:{page}:{index}"
             records.append(
                 {
@@ -95,6 +141,7 @@ def build_records(path: Path) -> list[dict[str, Any]]:
                     },
                 }
             )
+            index += 1
     return records
 
 
@@ -110,7 +157,7 @@ def ingest(
 
     files = discover(target)
     if not files:
-        raise ValueError(f"no .txt, .md or .pdf files at {target}")
+        raise ValueError(f"no .txt, .md, .pdf or .json files at {target}")
 
     if not qdrant.collection_exists(store.COLLECTION_NAME):
         qdrant.create_collection(
@@ -151,7 +198,9 @@ def ingest(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Index IPC standard text for Agent 2's precedents.")
-    parser.add_argument("path", type=Path, help="a .txt/.md/.pdf file, or a directory of them")
+    parser.add_argument(
+        "path", type=Path, help="a .txt/.md/.pdf/.json file, or a directory of them"
+    )
     parser.add_argument(
         "--replace", action="store_true", help="drop what each file contributed before re-adding it"
     )

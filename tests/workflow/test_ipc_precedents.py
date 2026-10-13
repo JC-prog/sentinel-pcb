@@ -175,7 +175,7 @@ def test_a_pdf_is_read_page_by_page_so_a_hit_can_cite_its_page(
 def test_a_directory_with_nothing_readable_is_refused(qdrant: QdrantClient, tmp_path: Path) -> None:
     (tmp_path / "notes.docx").write_bytes(b"x")
 
-    with pytest.raises(ValueError, match="no .txt, .md or .pdf"):
+    with pytest.raises(ValueError, match="no .txt, .md, .pdf or .json"):
         ipc_ingest.ingest(tmp_path, client=qdrant, embed=fake_embed)
 
 
@@ -209,3 +209,101 @@ def test_the_explain_service_gets_precedents_through_the_ported_tool(
 
     assert result["similar_cases"] and result["similar_cases"][0]["source"] == "ipc.txt"
     assert "[ipc.txt]" in result["ipc_standard"] and "detached at one end" in result["ipc_standard"]
+
+
+# --- JSON: a list of standards -----------------------------------------------------------------
+
+STANDARDS = {
+    "ipc_standards_framework": {
+        "context": "Surface Mount Assembly",
+        "standards": [
+            {
+                "standard_id": "IPC-A-610",
+                "title": "Acceptability of Electronic Assemblies",
+                "category": "Inspection & Quality Assurance",
+                "role": "Primary Visual Acceptance Standard",
+                "relevance": "Visual acceptance and defect thresholds, including side overhang.",
+                "key_references": ["Section 9.3 (Chip Components)", "Section 9.3.1"],
+            },
+            {
+                "standard_id": "IPC-7351",
+                "title": "Land Pattern Standard",
+                "category": "PCB Design",
+                "role": "Land patterns",
+                "relevance": "Footprints for surface mount components.",
+                "key_references": [],
+            },
+        ],
+    }
+}
+
+
+def test_a_json_file_gives_one_chunk_per_standard(tmp_path: Path) -> None:
+    import json
+
+    path = tmp_path / "standards.json"
+    path.write_text(json.dumps(STANDARDS))
+
+    records = ipc_ingest.build_records(path)
+
+    assert len(records) == 2
+    first = records[0]["payload"]
+    assert first["source_file"] == "standards.json" and first["page"] is None
+    assert "IPC-A-610 - Acceptability of Electronic Assemblies" in first["text"]
+    assert "side overhang" in first["text"] and "Section 9.3 (Chip Components)" in first["text"]
+    assert records[0]["id"] != records[1]["id"]
+
+
+def test_a_json_file_wrapped_in_a_markdown_fence_with_crlf_still_loads(tmp_path: Path) -> None:
+    import json
+
+    body = json.dumps(STANDARDS, indent=2).replace("\n", "\r\n")
+    path = tmp_path / "sent-as-chat.json"
+    path.write_bytes(("```json\r\n" + body + "\r\n```\r\n").encode("utf-8"))
+
+    assert len(ipc_ingest.build_records(path)) == 2
+
+
+def test_a_bare_list_and_a_top_level_standards_key_are_accepted(tmp_path: Path) -> None:
+    import json
+
+    entries = STANDARDS["ipc_standards_framework"]["standards"]
+    (tmp_path / "a.json").write_text(json.dumps(entries))
+    (tmp_path / "b.json").write_text(json.dumps({"standards": entries}))
+
+    assert len(ipc_ingest.build_records(tmp_path / "a.json")) == 2
+    assert len(ipc_ingest.build_records(tmp_path / "b.json")) == 2
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("{not json", "is not valid JSON"),
+        ('{"hello": "world"}', "no list of standards"),
+        ("[]", "no list of standards"),
+        ('["a", "b"]', "no list of standards"),
+    ],
+)
+def test_a_json_file_that_is_not_a_list_of_standards_is_refused_by_name(
+    tmp_path: Path, content: str, message: str
+) -> None:
+    path = tmp_path / "broken.json"
+    path.write_text(content)
+
+    with pytest.raises(ValueError, match=message) as raised:
+        ipc_ingest.build_records(path)
+
+    assert "broken.json" in str(raised.value)
+
+
+def test_json_standards_are_searchable_next_to_documents(qdrant: QdrantClient, tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / "standards.json").write_text(json.dumps(STANDARDS))
+    _write(tmp_path, "ipc.txt", "Tombstone: a component detached at one end.")
+
+    stored = ipc_ingest.ingest(tmp_path, client=qdrant, embed=fake_embed)
+    hits = store.query_defect_precedents("what is the side overhang limit", top_k=1)
+
+    assert stored == {"ipc.txt": 1, "standards.json": 2}
+    assert hits and hits[0]["source"] == "standards.json"
