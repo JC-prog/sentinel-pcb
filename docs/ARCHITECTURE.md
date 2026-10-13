@@ -110,11 +110,17 @@ When `CHAT_TOOL_CALLING_ENABLED` is on, the supervisor is given the tools this r
   and the operator's corrections. Those corrections are queued as retraining tickets in the Review
   Console's Retraining queue tab; `draft_retraining_plan` drafts the tickets into a job.
 - `relabel_case`, `confirm_relabel` - the Relabel Agent below; they work from a case number (or the
-  latest case in the conversation), so no image is needed.
+  latest case or inspection draft in the conversation), so no image is needed.
+- `get_case`, `list_cases`, `get_component_history`, `get_activity_summary` - the Case Agent:
+  read-only lookups of the Cases chat saved and of the inspection log (`inspection_log`: every chat
+  inspection's verdict and model versions, never the image), the same data as the Cases tab.
 - `get_drift_summary`, `report_model_drift`, `draft_retraining_plan` - the Monitoring Agent's
-  model-health tools; `monitoring_status` (its overview) is Admin-only.
+  model-health tools; `monitoring_status`, `list_drift_reports` and `get_retraining_job` are
+  Admin-only. Chat never approves a job or promotes a model; those are Admin actions in the Models tab.
+- `explain_inspection` - the Explain Agent: Agent 2's advisory explanation of the inspection the user
+  is looking at, asked over MCP (see "Explainability Review Agent"). Off until `AGENT2_MCP_URL` is set.
 
-The Work tab's agents are deliberately **not** among these - see "Work tab" below.
+The Work tab's orchestrator is deliberately **not** among these - see "Work tab" below.
 
 Disabling the kill switch gives the model no tools at all.
 
@@ -142,26 +148,38 @@ Two tiers, both server-side and per account:
 
 ### Explainability Review Agent
 
-A different LangGraph pipeline (`app/workflow/src/agent2_explainability/`), dropped in as-is from a
-separate standalone prototype (`pcb_agentic_inspector`'s "Agent 2") and unrelated to the
-chat agents despite the similar names. Never a chat tool, and **currently unwired**: the
-Work tab's orchestrator agent (`src/agent1_orchestrator/`) is constructed with `enable_a2a=False`
-(`app/workflow/services/streaming.py`), so nothing calls into this pipeline yet - a REVIEW_REQUIRED
-sample stays REVIEW_REQUIRED. `explainability_review_agent_enabled` (`settings.py`) is a leftover
-kill switch nothing currently reads; wiring this agent back in is the natural next step and should
-consult it. When it does run:
+A different LangGraph pipeline (`app/workflow/src/agent2_explainability/`), ported from a separate
+standalone prototype (`pcb_agentic_inspector`'s "Agent 2") and unrelated to the chat agents despite
+the similar names (deviations are listed in `app/workflow/INTEGRATION_NOTES.md`). It is
+**advisory**: it never sets a verdict. Two routes reach it:
+
+- **The Work tab, in-process.** The Review Console runs it on a flagged sample
+  (`app/workflow/services/reviews.py`, also auto-dispatched after a run), and the operator then
+  chooses between Machine (the label from the uploaded folder), AI (Agent 1's defect model) and
+  Manual. Its precedents here come from fixed IPC rules.
+- **Chat, over MCP.** `explain_inspection` asks `app/workflow/services/agent2_mcp_service.py` (its
+  own process; compose profile `explain`) through `app/chat/services/explain_client.py`. The service
+  serves one guarded tool that takes an uploaded file's *name*; the ported MCP server is left
+  untouched and not exposed. Off until `AGENT2_MCP_URL` is set, and it fails open.
 
 ```
 retrieve_precedents  ->  extract_telemetry  ->  inspect_visuals  ->  grounding_self_check
-  (hardcoded mock         (AOI measurement       (OpenAI vision         (GPT-4o reasoning,
-   IPC precedents)         flattening, flagged     model)                heuristic fallback)
-                           when not recorded)
+  (IPC standards in        (AOI measurement       (OpenAI vision         (OpenAI reasoning,
+   Qdrant, ignoring        flattening, flagged     model)                heuristic fallback)
+   hits under              `not_recorded` when
+   IPC_PRECEDENT_MIN_SCORE) not recorded)
 ```
 
+The precedent collection (`pcb_standards_precedents`) is filled from documents you supply, none are
+shipped: `python -m app.workflow.services.ipc_ingest <path> [--replace]` reads `.txt`, `.md`, `.pdf`
+and `.json`, embeds with OpenAI and skips unchanged files. `export FILE` / `import FILE` move the
+corpus, vectors included, between Qdrants without re-embedding (production uses this: see
+`infra/production/ipc_corpus.tf`). With the collection empty the agent answers without precedents.
+
 Configured by its own `config/agent2_config.yaml` (kept as-is, not routed through
-`app/shared/config/settings.py`) and a direct `OPENAI_API_KEY` env var read, rather than this app's usual
-`settings.openai_api_key` convention - a deliberate exception, since it was dropped
-in unchanged rather than adapted.
+`app/shared/config/settings.py`); its tools read `OPENAI_API_KEY` from the environment, which the app
+mirrors from `settings.orchestrator_api_key`. The A2A/MCP servers of the original stay unwired
+(`enable_a2a=False`). Its ported tests run in CI one file per process (`app/workflow/tests/`).
 
 ### Inspect Agent
 
@@ -271,9 +289,8 @@ loop: `app/workflow/` never imports `app/chat/`, and nothing in chat imports it.
   `/api/orchestrator/uploads/*` endpoints, QA/Admin only; `ORCHESTRATOR_AGENT_ENABLED` is its kill
   switch. Model serving goes through the `inference/` microservice, not local ONNX files - see
   `app/workflow/INTEGRATION_NOTES.md`.
-- **Explainability Review Agent** (`src/agent2_explainability/`): described above; present in the
-  drop-in but currently unwired (`enable_a2a=False`) - a REVIEW_REQUIRED sample stays
-  REVIEW_REQUIRED rather than escalating further, for now.
+- **Explainability Review Agent** (`src/agent2_explainability/`): described above; run in-process
+  from the Review Console and, separately, over MCP for chat's `explain_inspection`.
 - `api/` and `services/` hold this repo's own app-side glue (SSE run streaming, upload storage,
   request schemas, drift/retraining-ticket routes) around the drop-in. The drop-in itself
   (`src/`, plus sibling top-level `planner/`, `state/`, `verification/`, `adc_shared/`) is kept

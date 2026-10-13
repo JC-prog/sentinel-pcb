@@ -149,8 +149,13 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   if that cadence becomes painful.
 - **Inference service has no autoscaling and `desired_count = 1`.** Add target-tracking on CPU,
   or a queue in front, once classification traffic justifies it.
-- **RDS is provisioned but unused.** No schema, no migrations, no app code touches it yet -
-  that's the future multi-user/auth feature's job.
+- **The database schema comes from `create_all`, not Alembic.** The backend creates its tables at
+  start-up (`app/shared/db/session.py`), which is right for a fresh, short-lived RDS instance but
+  does not alter an existing one. Keeping a database across versions means running
+  `alembic upgrade head` against it first.
+- **"Explain this result" is not deployed.** The MCP service that serves it (`agent2-mcp`) has no
+  task here, so `AGENT2_MCP_URL` is unset and the tool stays off. The IPC corpus loader above fills
+  a collection that nothing reads until that service is added.
 
 ## Tearing down
 
