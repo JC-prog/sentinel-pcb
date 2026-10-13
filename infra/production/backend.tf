@@ -4,7 +4,7 @@
 # (Terraform >= 1.10) instead of a separate DynamoDB lock table.
 terraform {
   backend "s3" {
-    bucket       = "sentinelchat-terraform-state-REPLACE_WITH_ACCOUNT_ID" # from bootstrap's output
+    bucket       = "sentinelchat-terraform-state-850252650062" # from bootstrap's output
     key          = "sentinelchat/terraform.tfstate"
     region       = "ap-southeast-1"
     encrypt      = true

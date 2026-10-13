@@ -90,16 +90,17 @@ aws ecr get-login-password --region "$AWS_REGION" \
 **Build for `linux/amd64`.** Fargate here runs x86-64. On an Apple Silicon laptop the default build
 is arm64 and the task will crash on start with `exec format error`.
 
-From the repository root:
+From the repository root (not `infra/production`). The braces matter: in zsh `$VAR:latest` is read
+as the `:l` (lowercase) modifier and silently produces a wrong image name.
 
 ```bash
 # Backend
 docker buildx build --platform linux/amd64 \
-  -f infra/Dockerfile -t "$BACKEND_REPO:latest" --push .
+  -f infra/Dockerfile -t "${BACKEND_REPO}:latest" --push .
 
 # Inference service (downloads the ONNX models into the image, so this takes a few minutes)
 docker buildx build --platform linux/amd64 \
-  -t "$INFERENCE_REPO:latest" --push inference/
+  -t "${INFERENCE_REPO}:latest" --push inference/
 ```
 
 If the inference build fails fetching a model, check `inference/models.toml`: every `repo_id` must
