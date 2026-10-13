@@ -37,8 +37,12 @@ cd ui && npx ng test --watch=false && npx ng build
   auto-generated release notes depend on this being consistent.
 - Opening a PR against `dev` picks up `.github/PULL_REQUEST_TEMPLATE.md` automatically. Fill in
   the test plan for real - don't leave checkboxes unchecked as a TODO.
-- CI (`.github/workflows/ci.yml`) runs backend (ruff, mypy, pytest) and frontend (ng test, ng
-  build) checks on every PR. Both must pass before merging.
+- CI (`.github/workflows/ci.yml`) runs backend (ruff, mypy, pytest), the inference service's checks,
+  the ported Agent 2 tests and frontend (ng test, ng build) on every PR. All must pass before merging.
+- The ported Agent 2 tests (`app/workflow/tests/`) use the drop-in's bare `src....` imports, so the main
+  `pytest` does not collect them. Run one file at a time from `app/workflow/`:
+  `cd app/workflow && PYTHONPATH=$(git rev-parse --show-toplevel):. uv run pytest tests/test_mcp_tools.py`
+  (see `app/workflow/INTEGRATION_NOTES.md` for why not together, and for the two known failures).
 
 ## 3. Architecture at a glance
 

@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Agent 2's ported unit tests are run again, and CI runs them: a new job runs `app/workflow/tests/`
+  (graph, MCP tools, the Qdrant reader, filename metadata, security) one file per process. Adding
+  `fastmcp` had made two of them fail at collection unnoticed; `app/workflow/tests/conftest.py` fixes
+  that. New ports from the teammate: `test_qdrant_rag` (adapted), `test_metadata_and_telemetry`
+  (with `src/data/filename_metadata.py`), and his four evals as manual scripts in
+  `app/workflow/evals/` (they spend tokens; see its README for what each does and does not measure).
+- `ipc_ingest` reads `.json` (a list of standards, one chunk each; tolerates a markdown fence, CRLF and
+  a BOM). `/data/ipc_corpus/` is gitignored for documents ingested locally.
 - Agent 2's **precedent search is ported and can be filled.** Upstream's reader searched a
   collection nothing ever created, so it always came back empty (and its writer filled a different
   one). `src/data/qdrant_store.py` is ported, reads this app's Qdrant and embeds with OpenAI (no new
