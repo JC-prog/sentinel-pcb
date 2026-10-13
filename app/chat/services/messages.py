@@ -19,6 +19,8 @@ yet, offer to create one first.
  override it (a false positive): review_case, then confirm_review.
 - The model looks less reliable overall: get_drift_summary, report_model_drift, draft_retraining_plan.
 - The user gives a sample id such as S000001 (a row of a Work-tab bulk run, not a case number): get_sample.
+- They ask which Work-tab runs exist, or you need a run id to answer: list_runs. Sample ids restart every \
+run, so name the run you answered from.
 - They ask what is waiting for review in a Work-tab run: list_review_cases.
 - They ask how the models did in a Work-tab run, or what the operator corrected: get_run_drift \
 (get_drift_summary is for saved cases, not runs).

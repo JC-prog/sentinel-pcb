@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: a **`list_runs`** tool answers "which Work-tab runs do I have?" with the stored runs (id,
+  when saved, status; newest first, at most 10), so a run id can be found without leaving chat. The
+  empty state has a matching suggestion. Read-only, QA and Admin, behind
+  `SAMPLE_LOOKUP_AGENT_ENABLED`.
 - Work tab: the Review Console's **Model feedback** tab is now charts first. A one-line read-out
   (how the defect model did, with the next step as a button) sits above headline rings, then:
   the outcome donut; **Stage 1 - Region model** (accuracy, kept vs corrected per part area) and

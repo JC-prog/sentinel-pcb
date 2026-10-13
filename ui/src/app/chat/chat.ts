@@ -77,6 +77,12 @@ export class Chat {
       send: true,
     },
     {
+      label: 'What runs do I have?',
+      hint: 'The stored Work-tab runs, to pick a run id',
+      prompt: 'Which Work-tab runs are stored?',
+      send: true,
+    },
+    {
       label: 'Look up a sample',
       hint: "Verdict, Agent 2's review and the decision",
       prompt: 'Show me sample S000001.',

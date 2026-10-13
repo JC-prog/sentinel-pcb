@@ -27,7 +27,7 @@ from app.chat.agents.monitoring_agent import (
 from app.chat.agents.registry import ToolNotFound, ToolRegistry
 from app.chat.agents.relabel_agent import CONFIRM_RELABEL, RELABEL_CASE
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
-from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES
+from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES, LIST_RUNS
 
 tool_registry = ToolRegistry(
     [
@@ -42,6 +42,7 @@ tool_registry = ToolRegistry(
         DRAFT_RETRAINING_PLAN,
         MONITORING_STATUS,
         GET_SAMPLE,
+        LIST_RUNS,
         LIST_REVIEW_CASES,
         GET_RUN_DRIFT,
     ]

@@ -57,6 +57,7 @@ reference; sections 3-8 explain each row.
 | Turn that inspection into a case | nothing | "Yes, please create a case for it." *(after the assistant asks)* | `create_case` | Yes - a case |
 | Correct a wrong defect label | nothing | "That label is wrong - it's actually a wrong part, because the markings don't match." then "Yes, confirm it." | `relabel_case`, then `confirm_relabel` | Yes, after "yes" |
 | Approve or override a flagged case | nothing | "I've reviewed this and the defect is real - approve it." then "Yes." | `review_case`, then `confirm_review` | Yes, after "yes" |
+| See which Work-tab runs exist | nothing | "Which runs do I have?" | `list_runs` | No |
 | Look up a Work-tab sample | nothing | "What do you know about sample S000001?" | `get_sample` | No |
 | See what is waiting for review | nothing | "Which samples are still waiting for review?" | `list_review_cases` | No |
 | See how the models did in a Work-tab run | nothing | "How did the models do in the last run, and what did the operator correct?" | `get_run_drift` | No |
