@@ -33,7 +33,8 @@ export interface InspectionResult {
 /** relabel_case: a correction waiting for the user's confirmation - nothing is saved yet. */
 export interface RelabelProposal {
   status: 'awaiting_confirmation';
-  case_number: string;
+  /** Null when the inspection is not a case yet: confirming creates it. */
+  case_number: string | null;
   model: string;
   model_label: string;
   proposed_label: string;
@@ -44,6 +45,8 @@ export interface RelabelProposal {
 export interface RelabelDone {
   status: 'relabelled';
   case_number: string;
+  /** True when confirming the relabel is what saved the inspection as a new case. */
+  case_created?: boolean;
   model: string;
   model_label: string;
   corrected_label: string;

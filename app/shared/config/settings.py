@@ -169,8 +169,10 @@ class Settings(BaseSettings):
 
     # Review agent (app/chat/agents/review_agent/) - a QA/Admin approves or overrides a case flagged
     # REVIEW_REQUIRED; after an explicit confirmation the case becomes APPROVED or OVERRIDDEN (the
-    # override rate is a drift signal). Kill switch, same pattern as the others.
-    review_agent_enabled: bool = True
+    # override rate is a drift signal). OFF by default: the chat is for looking things up, inspecting
+    # an image and correcting a label, and a Work-tab sample has no approve/override to match. The
+    # code and its tests stay, so setting REVIEW_AGENT_ENABLED=true brings it back.
+    review_agent_enabled: bool = False
 
     # Monitoring agent (app/chat/agents/monitoring_agent/) - drift summaries and reports, drafting a
     # retraining plan from open tickets (QA/Admin) and an Admin-only status overview. Retraining

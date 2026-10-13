@@ -168,7 +168,7 @@ async def test_inspect_image_accepted_end_to_end(
     assert result["measurement_validation"] is None
     # nothing is saved as a case - the model is told to ask the user first
     assert result["case_created"] is False and "case_number" not in result
-    assert "ask the user whether they want a case" in result["instruction"]
+    assert "relabel_case" in result["instruction"] and "create_case" in result["instruction"]
     assert await _all_cases(db_async_session) == []
 
     payload = await _only_draft(db_async_session)

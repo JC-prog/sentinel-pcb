@@ -43,8 +43,8 @@ async def inspect_image(
     what defect it has (two-stage classification through the inference service), optionally
     validates an attached inspection XML's measurements. It saves NOTHING - it reports what it found.
     Use it whenever the user attaches an image and asks what is wrong with it. Report the region,
-    the defect, the confidence and the verdict it returns, then ask whether they want a case created
-    (a case is what they relabel or review) and only call create_case after they say yes."""
+    the defect, the confidence and the verdict it returns. If they say the label is wrong use
+    relabel_case; offer create_case only if they want to keep the inspection as a case."""
 
     ctx = runtime.context
     request = _request(
@@ -139,9 +139,10 @@ def _result(outcome: InspectionOutcome) -> dict[str, Any]:
     return {
         "case_created": False,
         "instruction": (
-            "Nothing is saved as a case yet. Report the result, then ask the user whether they want "
-            "a case created for it (they need one to relabel or review it). Only after they reply "
-            "yes, call create_case."
+            "Nothing is saved yet. Report the result. If the user says the defect label is wrong, "
+            "call relabel_case - the inspection does not need to be a case first; confirming the "
+            "relabel saves it as one. Only call create_case if they ask to save the inspection as "
+            "a case without correcting it, and only after they say yes."
         ),
         "verdict": outcome.verdict.status.value,
         "review_required": outcome.verdict.review_required,

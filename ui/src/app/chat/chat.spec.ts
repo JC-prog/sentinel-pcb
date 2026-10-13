@@ -450,8 +450,8 @@ describe('Chat', () => {
     };
     await openConversation(() => of({ type: 'toolResult', toolResult: created }));
 
-    expect(buttonWithText('Approve case CASE-12')).toBeTruthy();
-    expect(buttonWithText('Override case CASE-12')).toBeTruthy();
+    expect(buttonWithText('Approve case')).toBeUndefined();
+    expect(buttonWithText('Override case')).toBeUndefined();
     expect(buttonWithText('The label on case CASE-12 is wrong')).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('CASE-12');
   });

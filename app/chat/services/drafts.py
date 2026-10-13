@@ -1,6 +1,7 @@
-"""The inspection waiting for the user's yes: parked by the pipeline, turned into a Case by
-`create_case` (see app/chat/db/models/case_draft.py). Only writes - the rules for when a draft may
-be committed are in case_creation.py."""
+"""The inspection waiting for a human judgment: parked by the inspection pipeline, turned into a Case
+by `create_case` or by a confirmed relabel (see app/chat/db/models/case_draft.py). Only reads and
+writes - the rules for when a draft may be committed are in each agent. Lives in services/ because
+two agents use it and agents do not import each other."""
 
 from datetime import UTC, datetime
 from typing import Any
@@ -34,6 +35,8 @@ async def save_draft(
     else:
         draft.payload = payload
         draft.created_at = datetime.now(UTC)
+        # A proposal was about the previous image; it must not carry over to this one.
+        draft.pending_label = draft.pending_reason = draft.pending_at = None
     await session.commit()
     await session.refresh(draft)
     return draft

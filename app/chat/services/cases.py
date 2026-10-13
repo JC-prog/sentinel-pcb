@@ -42,7 +42,12 @@ async def create_case(
     status: str,
     region_model_version: str | None = None,
     defect_model_version: str | None = None,
+    commit: bool = True,
 ) -> Case:
+    """Creates the Case. With `commit=False` it is only flushed (so its id and case number exist),
+    for a caller that must write something else atomically with it - a relabel confirmed on a
+    draft sets the correction and queues the ticket in the same commit."""
+
     case = Case(
         created_by_user_id=created_by_user_id,
         conversation_id=conversation_id,
@@ -66,8 +71,11 @@ async def create_case(
         status=status,
     )
     session.add(case)
-    await session.commit()
-    await session.refresh(case)
+    await session.flush()
+    await session.refresh(case)  # loads the identity-generated sequence_number (the case number)
+    if commit:
+        await session.commit()
+        await session.refresh(case)
     return case
 
 

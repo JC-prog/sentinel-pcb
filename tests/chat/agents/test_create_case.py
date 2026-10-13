@@ -13,13 +13,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents import supervisor
-from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE, drafts
+from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.inspection_agent import tool as inspection_tool
 from app.chat.agents.inspection_agent.pipeline import InspectionOutcome
 from app.chat.agents.inspection_agent.state import InspectionRequest, InspectionRun, Stage
 from app.chat.agents.inspection_agent.verdict import Verdict
 from app.chat.agents.supervisor import ToolFinished
 from app.chat.db.models import Case, CaseDraft, CaseStatus, Conversation
+from app.chat.services import drafts
 from app.chat.services import repository as chat_repository
 from app.chat.services.cases import resolve_case_ref
 from app.shared.db.models import User

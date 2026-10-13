@@ -97,11 +97,6 @@ export class Chat {
       prompt: 'The model got this wrong - the correct label is Golden.',
     },
     {
-      label: 'Approve or override a case',
-      hint: 'Resolve a case flagged for review',
-      prompt: "Approve the model's label on the case I just inspected.",
-    },
-    {
       label: 'Check model health',
       hint: 'Review, override and correction rates',
       prompt: 'Is the defect model drifting?',
@@ -298,7 +293,7 @@ export class Chat {
   /**
    * One-click replies for what the assistant just showed. A relabel or review is only committed in
    * a *later* turn, so the proposal card is followed by an explicit yes/no; an inspection by
-   * the usual next step.
+   * the usual next step (saying the label is wrong, which also saves it as a case).
    */
   private followUpsFor(message: ChatMessage): string[] {
     if (message.interrupted) {
@@ -308,18 +303,11 @@ export class Chat {
     for (const { name, result } of [...results].reverse()) {
       switch (name) {
         case 'create_case': {
-          const n = result.case_number;
-          const relabel = `The label on case ${n} is wrong - relabel it.`;
-          return result.verdict === 'review_required'
-            ? [
-                `Approve case ${n}: the model's label is right.`,
-                `Override case ${n}: it's a false positive.`,
-                relabel,
-              ]
-            : [relabel];
+          return [`The label on case ${result.case_number} is wrong - relabel it.`];
         }
         case 'inspect_image':
           return [
+            "The model's defect label is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
             result.review_required
               ? 'Why was this flagged for review?'
@@ -327,8 +315,6 @@ export class Chat {
           ];
         case 'relabel_case':
           return ['Yes, confirm the relabel.', "No, cancel it - keep the model's label."];
-        case 'review_case':
-          return ['Yes, confirm the review.', "No, don't save the review."];
         case 'confirm_relabel':
           return ['Is the defect model drifting?'];
         default:

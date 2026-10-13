@@ -10,10 +10,11 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.inspection_agent import drafts, policy, react, steps
+from app.chat.agents.inspection_agent import policy, react, steps
 from app.chat.agents.inspection_agent.state import InspectionRequest, InspectionRun
 from app.chat.agents.inspection_agent.verdict import Verdict, decide
 from app.chat.db.models import CaseDraft
+from app.chat.services import drafts
 from app.shared.config.langfuse import traced
 from app.shared.config.settings import settings
 

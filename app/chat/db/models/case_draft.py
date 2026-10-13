@@ -39,3 +39,10 @@ class CaseDraft(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+    # A relabel proposed on this inspection before it is a Case (the same two-step shape as the
+    # Case's own `pending_*`; a draft is per user, so there is no pending-by column). Confirming it
+    # in a later turn creates the Case with the correction and its ticket in one commit. A new
+    # inspection replaces the draft and clears this.
+    pending_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,20 +1,19 @@
 """Turning an inspection into a Case - only after the user has said they want one.
 
-`inspect_image` reports an inspection and parks it (drafts.py); this commits it. The confirmation is
+`inspect_image` reports an inspection and parks it (services/drafts.py); this commits it. The confirmation is
 enforced here, not left to the model's good manners - see app/chat/services/confirmation.py: a draft
 can only be committed in a LATER chat turn than the one that parked it, so the user always has had a
 turn to answer. Committing is also what makes it a one-shot: the draft is deleted in the same commit
 that creates the Case, so a second call finds nothing to create.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.inspection_agent import drafts
 from app.chat.agents.inspection_agent.errors import CaseRefused
 from app.chat.db.models import Case
-from app.chat.services import cases
+from app.chat.services import cases, drafts
 from app.chat.services.confirmation import ConfirmationProblem, confirmation_problem
 from app.shared.config.langfuse import traced
 
@@ -47,7 +46,16 @@ async def create_from_draft(
         raise CaseRefused(_REFUSALS[problem or ConfirmationProblem.NOTHING_PENDING])
 
     payload = dict(draft.payload)
+    pending = (draft.pending_label, draft.pending_reason)
     await session.delete(draft)  # create_case commits, so the draft goes in the same transaction
-    return await cases.create_case(
+    case = await cases.create_case(
         session, created_by_user_id=user_id, conversation_id=conversation_id, **payload
     )
+    if pending[0]:
+        # A relabel was already proposed on this inspection: keep it, now on the Case, so the user
+        # confirms it in a later turn rather than being asked to propose it again.
+        case.pending_label, case.pending_reason = pending[0], pending[1]
+        case.pending_by_user_id, case.pending_at = user_id, datetime.now(UTC)
+        await session.commit()
+        await session.refresh(case)
+    return case

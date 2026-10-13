@@ -4,9 +4,10 @@ numbers are handed to it as a snapshot when a report is filed.
 
 These are indicators, not a verdict: they compare the recent window with the window before it
 (same length) and flag the metrics that moved. The signals a reviewer can act on are the human
-ones - how often QA overrode the model's REVIEW_REQUIRED calls as false positives, how often they
-corrected the defect label itself (the relabel agent), and how many cases had to go to review at
-all - alongside the classifier's own confidence.
+ones - how often QA corrected the defect label itself (the relabel agent), and how many cases had to
+go to review at all - alongside the classifier's own confidence. Overrides (the review agent, off by
+default) are still counted for cases that have them, but nothing new produces them unless
+REVIEW_AGENT_ENABLED is turned on.
 """
 
 from dataclasses import dataclass

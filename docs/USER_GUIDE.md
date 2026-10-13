@@ -54,9 +54,8 @@ reference; sections 3-8 explain each row.
 | You want to... | Attach | Say something like | Tool(s) it calls | Saves anything? |
 | --- | --- | --- | --- | --- |
 | Inspect a component image | image (+ optional inspection XML) | "What defect does this component have? It is C754 on Board1." | `inspect_image` | **No** |
-| Turn that inspection into a case | nothing | "Yes, please create a case for it." *(after the assistant asks)* | `create_case` | Yes - a case |
+| Keep that inspection as a case | nothing | "Save this as a case." | `create_case` | Yes - a case, after "yes" |
 | Correct a wrong defect label | nothing | "That label is wrong - it's actually a wrong part, because the markings don't match." then "Yes, confirm it." | `relabel_case`, then `confirm_relabel` | Yes, after "yes" |
-| Approve or override a flagged case | nothing | "I've reviewed this and the defect is real - approve it." then "Yes." | `review_case`, then `confirm_review` | Yes, after "yes" |
 | See which Work-tab runs exist | nothing | "Which runs do I have?" | `list_runs` | No |
 | Look up a Work-tab sample | nothing | "What do you know about sample S000001?" | `get_sample` | No |
 | See what is waiting for review | nothing | "Which samples are still waiting for review?" | `list_review_cases` | No |
@@ -106,47 +105,44 @@ defect confidence is below the defect threshold it is *Review required* too.
 
 > **With the bundled sample images** the region model is only 40-58% confident, so at the default
 > thresholds you will see *Review required - region confidence 0.50 is below the 0.70 threshold, so
-> no defect model was run*. That is a good way to show the review flow (section 5). To see a defect
+> no defect model was run*. That is a good way to show the review flow. To see a defect
 > label (needed for relabelling), lower the thresholds - see [`DEMO.md`](DEMO.md#before-you-start).
 
-**Then the assistant asks:** *"Would you like me to create a case for this result?"* A case is what
-you relabel or review. Answer in your **next message**:
-
-> *"Yes, please create a case for it."*  ->  *"Case CASE-008117 has been created."*
-
-If you don't want a case, just carry on or say no - nothing was saved. If the inference service is
-down or the file isn't a readable image you get an error and nothing is stored.
+**What happens next is up to you.** The inspection is a result, not a record. Say the label is wrong
+and confirm (section 4) and it becomes a case with your correction on it. Or ask to keep it as it is
+(*"Save this as a case."*, then *"Yes"* in your next message). Otherwise nothing is stored. If the
+inference service is down or the file isn't a readable image you get an error and nothing is stored.
 
 ---
 
 ## 4. Correcting a wrong label (relabel)
 
-Needs a case with a defect label (create one first, section 3). Tell the assistant what the label
-should have been **and why**:
+Works on the image you just inspected, or on an existing case. You do **not** need to create a case
+first: confirming the relabel is what saves the inspection as a case. Tell the assistant what the
+label should have been **and why**:
 
 > *"That defect label is wrong - it's actually a wrong part, because the markings don't match."*
 
 1. The assistant checks your label against the model's real classes and shows a **proposal card**
    (model label -> your label). **Nothing is saved yet.**
-2. Reply **"Yes, confirm it."** Only then is the correction recorded on the case (the model's own
-   label is kept alongside) and a **retraining ticket** queued.
+2. Reply **"Yes, confirm it."** Only then is the case created (if there was none yet) with the
+   correction on it (the model's own label is kept alongside) and a **retraining ticket** queued.
+   If you do nothing, nothing is stored.
 
 Rules: the label must be one the model can output (the assistant lists valid ones if not;
-spelling/spacing don't matter); a **reason is required**; with no case number it uses the latest case
-in the conversation; a case whose region was too uncertain for a defect model has no defect label to
-correct. A ticket does not retrain anything by itself - an Admin approves retraining in the Models tab.
+spelling/spacing don't matter); a **reason is required**; with no case number it uses what you are
+looking at, the image just inspected or else the latest case in the conversation (name a case number
+to pick another); an inspection whose region was too uncertain for a defect model has no defect label
+to correct. A ticket does not retrain anything by itself - an Admin approves retraining in the Models tab.
 
 ---
 
-## 5. Reviewing a flagged case (approve / override)
+## 5. Approve / override (off by default)
 
-For a case marked *Review required*:
-
-> *"I've reviewed this case and the defect is real - approve it."*  (or *"...it's a false positive - override it"*)
-
-Again two steps: a **proposal card**, then **"Yes, confirm."** The case becomes **Approved** (the
-flagged defect stands) or **Overridden** (a false positive - the signal drift watches). Only cases
-awaiting review can be reviewed; an accepted or already-resolved case is refused with an explanation.
+Approving or overriding a flagged case from chat is switched off (`REVIEW_AGENT_ENABLED=false`): the
+chat is for looking things up, inspecting an image and correcting a label, and a Work-tab sample
+has no approve/override to match. Set `REVIEW_AGENT_ENABLED=true` to bring it back. Cases
+already marked Approved or Overridden keep that status.
 
 ---
 
