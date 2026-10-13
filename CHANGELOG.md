@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **component history.** `get_component_history` answers "has U7 on BOARD-1 failed before?":
+  how many times chat inspected it, what the model said each time, how often a person confirmed it
+  was right, and the saved cases for it. Chat inspections only (Work-tab runs are not included).
 - Chat: **chat now records what it inspected, and whether the model was right.** Every image
   inspection is logged (verdict, model versions, board and component; never the image), and saying
   "the label is right" records that confirmation (`confirm_label_correct`; a button appears under

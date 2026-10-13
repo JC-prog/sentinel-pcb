@@ -186,3 +186,51 @@ async def chat_activity(
             "correct or confirm a result for it to count either way, so the share is a floor."
         ),
     }
+
+
+async def component_history(
+    session: AsyncSession, *, board_id: str, component_ref: str, limit: int = 10
+) -> dict[str, Any]:
+    """What chat has inspected for one board and component: how many times, what the model said and
+    how often a person confirmed or corrected it. Case-insensitive on both names."""
+
+    where = [
+        func.lower(InspectionLog.board_id) == board_id.strip().lower(),
+        func.lower(InspectionLog.component_ref) == component_ref.strip().lower(),
+    ]
+    total = await session.scalar(select(func.count()).where(*where)) or 0
+    confirmed = (
+        await session.scalar(
+            select(func.count()).where(*where, InspectionLog.verified.is_(True))
+        )
+        or 0
+    )
+    rows = list(
+        await session.scalars(
+            select(InspectionLog).where(*where).order_by(InspectionLog.created_at.desc()).limit(limit)
+        )
+    )
+    labels = await session.execute(
+        select(InspectionLog.defect_label, func.count())
+        .where(*where)
+        .group_by(InspectionLog.defect_label)
+        .order_by(func.count().desc())
+    )
+    return {
+        "inspected": total,
+        "confirmed_right": confirmed,
+        "model_labels": {(label or "not classified"): n for label, n in labels.tuples()},
+        "recent": [
+            {
+                "when": r.created_at.isoformat(),
+                "verdict": r.verdict,
+                "region": r.region,
+                "model": r.defect_model,
+                "model_version": r.defect_model_version,
+                "model_label": r.defect_label,
+                "confidence": r.defect_confidence,
+                "confirmed_right": r.verified,
+            }
+            for r in rows
+        ],
+    }

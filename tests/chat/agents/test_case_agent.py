@@ -6,8 +6,9 @@ from typing import Any
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.agents.case_agent import GET_CASE, LIST_CASES
+from app.chat.agents.case_agent import GET_CASE, GET_COMPONENT_HISTORY, LIST_CASES
 from app.chat.db.models import Case
+from app.chat.services import inspection_log
 from app.shared.db.models import User
 from tests.chat.agents._helpers import call, tool_context
 from tests.shared._modelops_helpers import make_case, make_user
@@ -129,3 +130,61 @@ async def test_an_unknown_status_is_refused(db_async_session: AsyncSession) -> N
     result = await call(LIST_CASES, _ctx(db_async_session, user), status="done")
 
     assert "status must be one of" in result["error"]
+
+
+async def test_component_history_combines_what_was_inspected_with_the_cases(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+    fields: dict[str, Any] = {
+        "board_id": "BOARD-1",
+        "component_ref": "U7",
+        "image_id": "a.png",
+        "region": "Body",
+        "defect_model": "pcb_body_defect",
+        "defect_model_version": "JcProg/body@v1",
+        "defect_label": "MissingPart",
+        "defect_confidence": 0.8,
+        "status": "review_required",
+    }
+    first = await inspection_log.record(
+        db_async_session, user_id=user.id, conversation_id="c1", case_fields=fields
+    )
+    await inspection_log.record(
+        db_async_session,
+        user_id=user.id,
+        conversation_id="c1",
+        case_fields={**fields, "defect_label": "Golden", "status": "accepted"},
+    )
+    await inspection_log.record(  # a different part is not part of U7's history
+        db_async_session,
+        user_id=user.id,
+        conversation_id="c1",
+        case_fields={**fields, "component_ref": "U9"},
+    )
+    assert first is not None
+    first.verified = True
+    await db_async_session.commit()
+    case = await _case(db_async_session, user, board_id="BOARD-1", component_ref="U7")
+
+    result = await call(
+        GET_COMPONENT_HISTORY, _ctx(db_async_session, user), board_id="board-1", component_ref="u7"
+    )
+
+    assert result["inspected"] == 2 and result["confirmed_right"] == 1
+    assert result["model_labels"] == {"MissingPart": 1, "Golden": 1}
+    assert len(result["recent"]) == 2
+    assert result["cases_total"] == 1 and result["cases"][0]["case_number"] == case.case_number
+
+
+async def test_a_component_never_seen_has_an_empty_history(db_async_session: AsyncSession) -> None:
+    user = await make_user(db_async_session)
+
+    result = await call(
+        GET_COMPONENT_HISTORY, _ctx(db_async_session, user), board_id="BOARD-X", component_ref="U1"
+    )
+
+    assert result["inspected"] == 0 and result["recent"] == [] and result["cases_total"] == 0
+    assert "required" in (
+        await call(GET_COMPONENT_HISTORY, _ctx(db_async_session, user), board_id=" ", component_ref="U1")
+    )["error"]

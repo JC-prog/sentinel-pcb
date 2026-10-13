@@ -73,6 +73,7 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
         "get_sample",
         "get_case",
         "list_cases",
+        "get_component_history",
         "list_review_cases",
         "list_runs",
         "get_run_drift",

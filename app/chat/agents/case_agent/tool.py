@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from langchain_core.tools import tool
 
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, required, returns_json, text
-from app.chat.services import case_views
+from app.chat.services import case_views, inspection_log
 from app.shared.config.settings import settings
 
 MAX_CASES = 10
@@ -93,9 +93,51 @@ async def list_cases(
     }
 
 
+@tool("get_component_history")
+@returns_json
+async def get_component_history(
+    runtime: Runtime,
+    board_id: Annotated[str, "The board identifier, e.g. BOARD-1."],
+    component_ref: Annotated[str, "The component reference designator, e.g. U7."],
+) -> dict[str, Any]:
+    """What chat has seen of one component on one board: how many times it was inspected, what the
+    model said each time and how often a person confirmed it was right, plus the saved cases for it
+    and whether any were corrected. Read-only. Use it for 'has U7 on BOARD-1 failed before?' or
+    'what did we find on this part last time?'. Only inspections made in chat are covered - the
+    Work tab's runs are not - and an inspection without a board and component given has no history."""
+
+    board = required(board_id, "board_id", "e.g. BOARD-1")
+    component = required(component_ref, "component_ref", "e.g. U7")
+    history = await inspection_log.component_history(
+        runtime.context.session, board_id=board, component_ref=component
+    )
+    cases = await case_views.list_cases(
+        runtime.context.session, board=board, component=component, limit=MAX_CASES
+    )
+    return {
+        "board_id": board,
+        "component_ref": component,
+        **history,
+        "cases_total": cases.total,
+        "cases": [
+            {
+                "case_number": c.case_number,
+                "status": c.status,
+                "model_label": c.defect_label,
+                "corrected_label": c.corrected_label,
+                "created_at": c.created_at.isoformat(),
+            }
+            for c in cases.cases
+        ],
+    }
+
+
 def _enabled() -> bool:
     return settings.case_lookup_agent_enabled
 
 
 GET_CASE = ChatTool(get_case, label="Case lookup", enabled=_enabled)
 LIST_CASES = ChatTool(list_cases, label="Case list", enabled=_enabled)
+GET_COMPONENT_HISTORY = ChatTool(
+    get_component_history, label="Component history", enabled=_enabled
+)
