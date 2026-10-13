@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents.inspection_agent import INSPECT_IMAGE
-from app.chat.db.models import Case, CaseDraft, Conversation
+from app.chat.db.models import Case, CaseDraft, Conversation, InspectionLog
 from app.shared.config.settings import settings
 from app.shared.db.models import User, UserRole
 from tests.chat.agents._helpers import VALID_IMAGE, call, tool_context, upload
@@ -316,3 +316,94 @@ def test_the_model_cannot_name_an_image_or_a_user() -> None:
     assert not {"image_bytes", "image_name", "image_id", "user_id", "session", "runtime"} & set(
         properties
     )
+
+
+async def test_with_several_images_attached_each_is_inspected_by_number(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+    user, conversation = await _user_and_conversation(db_async_session)
+    ids = (uploads(VALID_IMAGE, "first.png"), uploads(VALID_IMAGE, "second.png"))
+    ctx = tool_context(
+        db_async_session, user, conversation_id=conversation.id, image_ids=ids
+    )
+
+    first = await call(INSPECT_IMAGE, ctx)
+    second = await call(INSPECT_IMAGE, ctx, image_number=2)
+
+    assert (first["image_number"], first["images_attached"]) == (1, 2)
+    assert "image_number 2" in first["instruction"]
+    assert second["image_number"] == 2 and "image_number 1" in second["instruction"]
+    # only the most recent inspection waits to be corrected or saved
+    assert (await _only_draft(db_async_session))["image_id"] == "second.png"
+
+
+async def test_a_single_image_carries_no_numbering(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert "image_number" not in result and "images_attached" not in result
+
+
+async def test_an_image_number_that_is_not_attached_is_refused(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    result = await _inspect(db_async_session, uploads, image_number=3)
+
+    assert "out of range" in result["error"]
+    assert await _drafts(db_async_session) == []
+
+
+async def test_every_inspection_is_logged_even_when_nobody_acts_on_it(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    await _inspect(db_async_session, uploads)
+
+    (row,) = (await db_async_session.scalars(select(InspectionLog))).all()
+    assert (row.defect_model, row.defect_label, row.verdict) == (
+        "pcb_body_defect",
+        "MissingPart",
+        "accepted",
+    )
+    assert (row.board_id, row.component_ref) == ("BOARD-1", "U7")
+    assert row.verified is False
+    assert await _all_cases(db_async_session) == []  # logging made no case
+
+
+async def test_a_failure_to_log_never_costs_the_user_their_result(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    def broken_row(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("log table gone")
+
+    monkeypatch.setattr("app.chat.services.inspection_log.InspectionLog", broken_row)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert result["verdict"] == "accepted"
+    assert len(await _drafts(db_async_session)) == 1
+
+
+@pytest.mark.parametrize(("url", "expected"), [("", False), ("http://agent2-mcp:8002/mcp", True)])
+async def test_the_result_says_whether_an_explanation_can_be_asked_for(
+    db_async_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    uploads: Any,
+    url: str,
+    expected: bool,
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+    monkeypatch.setattr(settings, "agent2_mcp_url", url)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert result["explain_available"] is expected

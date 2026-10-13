@@ -21,6 +21,7 @@ interface ServerMessage {
   created_at: string;
   tool_results?: { name: string; result: unknown }[];
   interrupted?: boolean;
+  feedback?: 'up' | 'down' | null;
 }
 
 interface ServerConversationSummary {
@@ -86,6 +87,8 @@ function fromServerMessage(message: ServerMessage): ChatMessage {
     content: message.content,
     ...(toolResults.length ? { toolResults } : {}),
     ...(message.interrupted ? { interrupted: true } : {}),
+    ...(message.role === 'assistant' ? { serverId: message.id } : {}),
+    ...(message.feedback ? { feedback: message.feedback } : {}),
     createdAt: Date.parse(message.created_at),
   };
 }
@@ -149,6 +152,58 @@ export class ChatService {
   /** Adds conversations the server knows about but this browser doesn't yet (e.g. started on
    * another device) - never overwrites a locally-known conversation, so an optimistic send that
    * hasn't round-tripped yet can't be clobbered by a list call that raced ahead of it. */
+  /**
+   * Rates an assistant reply (null clears it). Shown at once and put back if the server refuses, so
+   * a failed save is not mistaken for a saved one. Clicking the rating you already gave clears it.
+   */
+  async rate(conversationId: string, messageId: string, value: 'up' | 'down' | null): Promise<void> {
+    const find = (): ChatMessage | undefined =>
+      this.conversations()
+        .find((c) => c.id === conversationId)
+        ?.messages.find((m) => m.id === messageId);
+    const message = find();
+    if (!message?.serverId) {
+      return;
+    }
+    const previous = message.feedback;
+    const apply = (feedback: 'up' | 'down' | undefined): void => {
+      this.conversations.update((all) =>
+        all.map((c) =>
+          c.id !== conversationId
+            ? c
+            : {
+                ...c,
+                messages: c.messages.map((m) => {
+                  if (m.id !== messageId) {
+                    return m;
+                  }
+                  const { feedback: _old, ...rest } = m;
+                  return feedback ? { ...rest, feedback } : rest;
+                }),
+              },
+        ),
+      );
+    };
+    apply(value ?? undefined);
+    try {
+      const response = await this.authService.fetchWithAuth(
+        `${environment.apiBaseUrl}/api/messages/${message.serverId}/feedback`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        },
+      );
+      if (!response.ok) {
+        apply(previous);
+      } else {
+        this.persist();
+      }
+    } catch {
+      apply(previous);
+    }
+  }
+
   private async hydrateList(): Promise<void> {
     try {
       const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}/api/conversations`);
@@ -423,6 +478,8 @@ export class ChatService {
         } else if (event.type === 'toolResult') {
           setToolCallLabel(null);
           appendToolResult(event.toolResult);
+        } else if (event.type === 'messageId') {
+          updateAssistant((m) => ({ ...m, serverId: event.id }));
         } else if (event.type === 'usage') {
           updateAssistant((m) => ({
             ...m,

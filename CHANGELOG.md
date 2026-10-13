@@ -9,6 +9,109 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Production runs "Explain this result": Agent 2's MCP service is a sidecar container in the backend
+  task (`explain_enabled`, default on), on loopback, sharing the uploads volume; backend memory
+  default 2048 -> 3072 MiB. A failure leaves the backend up and the chat button reporting
+  "unavailable".
+- Production can restore Agent 2's IPC corpus after a Qdrant restart (`infra/production/ipc_corpus.tf`):
+  a private S3 bucket for an `ipc_ingest export` file and a one-shot ECS task (`aws-cli` copies it,
+  the backend image imports it) that loads it without any embedding call. Run on demand with the
+  `ipc_corpus_load_command` output; nothing is automatic and Qdrant itself still has no volume.
+- `ipc_ingest` can move a corpus without embedding it again: **`export FILE`** writes the collection
+  with its vectors (a header records the embedding model and dimension) and **`import FILE`** loads
+  it into another Qdrant with no OpenAI key; a file from a different model or dimension is refused.
+  Re-ingesting a folder now skips files whose content is unchanged (a stored SHA-256), so the whole
+  corpus is a 2 s no-op; `--force` embeds anyway. Exports hold the documents' text, so they stay out
+  of git.
+- Agent 2's ported unit tests are run again, and CI runs them: a new job runs `app/workflow/tests/`
+  (graph, MCP tools, the Qdrant reader, filename metadata, security) one file per process. Adding
+  `fastmcp` had made two of them fail at collection unnoticed; `app/workflow/tests/conftest.py` fixes
+  that. New ports from the teammate: `test_qdrant_rag` (adapted), `test_metadata_and_telemetry`
+  (with `src/data/filename_metadata.py`), and his four evals as manual scripts in
+  `app/workflow/evals/` (they spend tokens; see its README for what each does and does not measure).
+- `ipc_ingest` reads `.json` (a list of standards, one chunk each; tolerates a markdown fence, CRLF and
+  a BOM). `/data/ipc_corpus/` is gitignored for documents ingested locally.
+- Agent 2's **precedent search is ported and can be filled.** Upstream's reader searched a
+  collection nothing ever created, so it always came back empty (and its writer filled a different
+  one). `src/data/qdrant_store.py` is ported, reads this app's Qdrant and embeds with OpenAI (no new
+  model download), returns nothing rather than inventing a vector, and ignores hits under
+  `IPC_PRECEDENT_MIN_SCORE`. New `python -m app.workflow.services.ipc_ingest <path> [--replace]`
+  fills it from `.txt`, `.md` and `.pdf` files you supply (page-aware for PDFs, idempotent). No
+  standards text is shipped. Chat's "Explain this result" uses it; the Work tab's in-process review
+  still uses its fixed IPC rules. New dependency `pypdf`.
+- Chat: **"Explain this result."** Agent 2's advisory explanation of the image just inspected - what
+  is visible, the IPC criteria, and whether that supports the model's label (it can disagree) -
+  shown as a card, with its own guardrail flags and whether measurements were read from the
+  inspection XML. It decides nothing and saves nothing. It is asked of a new service,
+  `python -m app.workflow.services.agent2_mcp_service` (compose profile `explain`), over MCP; set
+  `AGENT2_MCP_URL` to turn it on, and the button appears only then. The service serves one guarded
+  tool that takes an uploaded file's *name*; the teammate's MCP server is untouched and not exposed
+  (it cannot load under a real FastMCP, reads arbitrary paths, and invents telemetry). New
+  dependency `fastmcp`. Uploads are now a shared compose volume so both containers see them.
+- Chat: **"what happened this week?"** `get_activity_summary` gives counts over the last N days (up
+  to 90): images inspected by verdict and model, how many were confirmed right, cases created and
+  corrected, drift reports opened (and raised automatically), Work-tab runs saved, and how replies
+  were rated. Read-only; the assistant summarises it in a few lines.
+- Chat: **rate a reply.** Thumbs up and down under each assistant reply (click again to take it
+  back), saved with the reply (`messages.feedback`, new migration `a8d4f1c6e203`; `PUT
+  /api/messages/{id}/feedback`). The `done` frame now carries the saved reply's `message_id`, which
+  is what a rating is sent against, so a fresh reply can be rated without a reload.
+- Chat: **component history.** `get_component_history` answers "has U7 on BOARD-1 failed before?":
+  how many times chat inspected it, what the model said each time, how often a person confirmed it
+  was right, and the saved cases for it. Chat inspections only (Work-tab runs are not included).
+- Chat: **chat now records what it inspected, and whether the model was right.** Every image
+  inspection is logged (verdict, model versions, board and component; never the image), and saying
+  "the label is right" records that confirmation (`confirm_label_correct`; a button appears under
+  the result). "Are corrections piling up?" then also reports, for chat's own inspections, how many
+  there were, how many were corrected, how many were confirmed right and the share corrected - the
+  denominator corrections alone never had. Switch off with `INSPECTION_LOG_ENABLED=false`. New
+  migration `f6b2d8a4c931` (`inspection_log`). Work-tab runs are not in these counts.
+- Chat: **see and forget what is remembered.** `/memories` lists what the assistant remembers about
+  you (newest first); `/forget 2` forgets one by its number and `/forget all` forgets everything.
+  Like `/remember`, they never reach the model, and a forget is scoped to your own memories inside
+  the vector-store call, so another user's cannot be touched. The memory store gained `list_for_user`
+  and `delete`.
+- Chat (Admin): the opening screen says what is waiting in the Models tab - retraining plans
+  awaiting approval, open drift reports (and how many raised themselves) and corrections not yet in
+  a plan - with a button to open it. Nothing is shown when nothing is waiting, and QA never sees
+  it. New `GET /api/chat/briefing` (Admin only); acting on any of it is still the Models tab's.
+- Chat: **your corrections, and taking one back.** `list_my_corrections` answers "what happened to
+  my corrections?" (what the model said, what you corrected it to, and whether it is waiting for a
+  plan, in a plan, or retrained). `withdraw_correction` takes one back - the case returns to the
+  model's own label and its ticket is removed in one commit - while it is your own and not yet in a
+  retraining plan; once it is in a plan it says so and points to cancelling the plan in the Models
+  tab. Work-tab corrections are not touched.
+- Chat: **look up cases.** `get_case` answers "what happened to CASE-000123?" (what the model
+  said, any correction and why, a relabel waiting to be confirmed, the retraining ticket) and
+  `list_cases` answers "which cases are there for U7 on BOARD-1?" or "what did I correct?" (board,
+  component, model, status, corrected, mine; newest 10 with the total). Read-only, QA and Admin,
+  behind `CASE_LOOKUP_AGENT_ENABLED`.
+- Chat: **several attached images are all inspected.** Before, only the first was, silently.
+  `inspect_image` takes an `image_number`; the assistant inspects each in turn, the card says "image
+  2 of 3", and it tells the user that only the most recent inspection can be corrected or saved.
+- Chat: when the assistant asks you to confirm or choose in plain text ("Please confirm...",
+  "Shall I save it as a case?"), **Yes** and **No** buttons appear under it. A case with no defect
+  label (the region was too uncertain) no longer offers "relabel it", and its card and the
+  assistant say there is nothing to correct instead of mentioning approve/override, which is off.
+  The assistant is told to propose a relabel as soon as it has the label, not to ask in text first.
+- **Drift reports raise themselves.** When one model version collects 5 confirmed corrections
+  (chat relabels and Work-tab queued corrections) within 7 days, an open drift report is created
+  with the corrections as evidence; further corrections refresh it instead of adding another, and
+  resolving it lets the next burst raise a new one. Reports filed by hand are unchanged. The Models
+  tab marks them "auto", and `list_drift_reports` reports `auto_raised`. Tune with
+  `DRIFT_AUTO_REPORT_THRESHOLD` (0 turns it off) and `DRIFT_AUTO_REPORT_WINDOW_DAYS`.
+- **Cases tab** (Chat | Work | Cases | Models): every case chat has saved, with the model's call and
+  version, the scores, any correction and its reason, the retraining ticket and a link back to the
+  conversation (for its owner). Filter by status, model, corrected or free text. Read-only: a case
+  is made and corrected in chat. Visible to all QA and Admin. New `GET /api/cases` and
+  `GET /api/cases/{case_number}`; case numbers in the Models tab (drift reports, retraining plans)
+  now open the case here.
+- Work: **run history.** The sidebar on the Work tab lists the stored runs (when, samples, flagged,
+  decided); clicking one reopens it as if it had just finished, with its summary, Review Console,
+  Model feedback and Retraining queue. New `GET /api/orchestrator/runs` (newest first, each run's
+  final counters and how many flagged samples have a decision; `available: false` when the run store
+  cannot be read) and `GET /api/orchestrator/runs/{run_id}`. Runs are shared by QA and Admin, and
+  images uploaded before a redeploy are not kept, as before.
 - Chat: **correcting a label no longer needs a case first.** Say the model's label on the image you
   just inspected is wrong and confirm in your next message: that confirmation creates the case with
   your correction on it and queues the retraining ticket, in one commit. The assistant no longer asks
@@ -238,6 +341,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- UI: the chat's empty state groups its suggestions under Inspect, Look up and Model health, each
+  with an icon, and drops the ones that only make sense later ("Correct a wrong label" is offered
+  after an inspection; "Draft a retraining plan" is a deliberate action, not an opening move).
+  "Check model health" became "Are corrections piling up?". The intro now describes what the
+  assistant does today.
+- Chat: **"is the model drifting?" now counts corrections.** `get_drift_summary` used to report
+  review, override and low-confidence rates over saved Cases, which no longer mean anything now that
+  a Case is only made when someone corrects a label (and approve/override is off): the sample was
+  only the mistakes. It now counts confirmed corrections (retraining tickets, from chat and the
+  Work tab) for the model in the recent window against the one before, split by model version, and
+  says where the automatic drift-report threshold is. It states that this is a count and not an
+  error rate; a run's rate is `get_run_drift`. A drift report's stored snapshot, and the Models
+  tab's figures, use the same numbers (older reports keep their old figures). Removed
+  `app/chat/services/drift.py`.
+- UI: the inspection card in chat shows a confidence meter and the model version for the region and
+  defect stages, the assistant's one-line summary when there is one, and what to do next (correct
+  the label, or inspect a clearer image when no defect model ran). The Cases tab shows dates
+  readably instead of as ISO strings, keeps the detail pane in view beside a long list (and
+  scrolls to it on a narrow screen), and can copy a case number.
+- UI: the Chat | Work | Cases | Models switch and the theme toggle are in a top bar centred over the
+  page beside the sidebar, and the page starts below it. Before, they floated over the window, so a
+  message scrolled underneath and the switch was centred on the whole window instead of the page.
 - Chat: approve/override of a case (`review_case` / `confirm_review`) is **off by default**
   (`REVIEW_AGENT_ENABLED=false`); the code is kept and the setting brings it back. Existing Approved
   and Overridden cases are unchanged, but `override_rate` in drift summaries no longer moves, so use

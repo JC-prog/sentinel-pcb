@@ -96,3 +96,19 @@ async def apply_draft_proposal(
         await session.rollback()
         raise
     return case, ticket
+
+
+async def withdraw_correction(session: AsyncSession, case: Case, ticket: RetrainingTicket) -> None:
+    """Takes a confirmed correction back: the Case keeps what the model said (as it always did) and
+    loses the correction, and its ticket goes - in one commit, so neither is left behind."""
+
+    case.corrected_label = None
+    case.corrected_by_user_id = None
+    case.corrected_at = None
+    case.correction_reason = None
+    await session.delete(ticket)
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise

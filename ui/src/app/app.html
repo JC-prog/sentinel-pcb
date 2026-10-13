@@ -1,8 +1,4 @@
 <div class="flex h-screen w-screen flex-col overflow-hidden">
-  <app-theme-toggle />
-  @if (showModeToggle()) {
-    <app-mode-toggle />
-  }
   <app-backend-status-banner />
   <div
     class="flex min-h-0 flex-1"
@@ -34,7 +30,27 @@
         <app-sidebar />
       </div>
     }
-    <router-outlet />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      @if (showModeToggle()) {
+        <!-- A real top bar, centred over the page beside the sidebar: the page starts below it, so
+             nothing scrolls underneath. On a phone the menu button sits at the left. -->
+        <header
+          class="relative flex h-14 shrink-0 items-center justify-center border-b border-slate-200 bg-white pl-14 md:pl-0 dark:border-slate-800 dark:bg-slate-900"
+        >
+          <app-mode-toggle />
+          <div class="absolute top-1/2 right-3 -translate-y-1/2">
+            <app-theme-toggle />
+          </div>
+        </header>
+      } @else {
+        <div class="fixed top-3 right-3 z-30">
+          <app-theme-toggle />
+        </div>
+      }
+      <div class="min-h-0 flex-1 overflow-hidden">
+        <router-outlet />
+      </div>
+    </div>
   </div>
 </div>
 

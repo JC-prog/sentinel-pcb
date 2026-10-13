@@ -3,7 +3,9 @@
 # no ALB, no CloudFront behavior. Single node, no replication, and deliberately no persistent volume:
 # this stack is for short-lived deployments that are torn down afterwards, so Qdrant keeps its data on
 # the task's own ephemeral disk and loses it when the task stops. Add an EFS/EBS volume here before
-# using this for anything that must outlive a task.
+# using this for anything that must outlive a task (Qdrant does not support network filesystems such
+# as EFS; prefer block storage or Qdrant Cloud). The one thing that is restored is Agent 2's IPC
+# corpus, from S3 by a one-shot task: see ipc_corpus.tf.
 
 resource "aws_cloudwatch_log_group" "qdrant" {
   name              = "/ecs/${var.project_name}-qdrant"

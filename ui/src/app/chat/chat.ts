@@ -16,8 +16,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
 import { AuthService } from '../auth.service';
+import { BriefingService } from './briefing.service';
 import { ChatService } from './chat.service';
-import { Icon } from './icons/icon';
+import { Icon, IconName } from './icons/icon';
 import { MarkdownView } from './markdown/markdown-view';
 import { ChatMessage, Conversation } from './models/chat.models';
 import { ToolResultCard } from './tool-result-card/tool-result-card';
@@ -40,7 +41,12 @@ interface PendingXml {
   file: File;
 }
 
+type SuggestionGroup = 'Inspect' | 'Look up' | 'Model health';
+
 interface Suggestion {
+  /** The heading it sits under on the empty state. */
+  group: SuggestionGroup;
+  icon: IconName;
   label: string;
   hint: string;
   prompt: string;
@@ -69,65 +75,86 @@ export class Chat {
 
   protected readonly suggestions: Suggestion[] = [
     {
+      group: 'Inspect',
+      icon: 'paperclip',
       label: 'Classify an inspection image',
       hint: 'Attach an AOI image (and its XML, if you have one)',
       prompt: 'Classify this AOI inspection image for defects.',
       needsAttachment: true,
     },
     {
+      group: 'Look up',
+      icon: 'search',
+      label: 'Look up a sample',
+      hint: "Verdict, Agent 2's review and the decision",
+      prompt: 'Show me sample S000001.',
+    },
+    {
+      group: 'Look up',
+      icon: 'file',
       label: "What's waiting for review?",
-      hint: 'Samples flagged in the Work tab',
+      hint: 'Samples flagged in the latest run',
       prompt: 'Which samples are waiting for review?',
       send: true,
     },
     {
+      group: 'Look up',
+      icon: 'menu',
       label: 'What runs do I have?',
       hint: 'The stored Work-tab runs, to pick a run id',
       prompt: 'Which Work-tab runs are stored?',
       send: true,
     },
     {
-      label: 'Look up a sample',
-      hint: "Verdict, Agent 2's review and the decision",
-      prompt: 'Show me sample S000001.',
-    },
-    {
-      label: 'Correct a wrong label',
-      hint: "Record the right label; it's queued for retraining",
-      prompt: 'The model got this wrong - the correct label is Golden.',
-    },
-    {
-      label: 'Check model health',
-      hint: 'Review, override and correction rates',
-      prompt: 'Is the defect model drifting?',
-      send: true,
-    },
-    {
+      group: 'Model health',
+      icon: 'check',
       label: "Review a run's corrections",
-      hint: 'Drift for the latest run, and what is already queued',
+      hint: 'What the operator corrected, and what is queued',
       prompt: "Show the drift for the latest run and which of the operator's corrections are already queued for retraining.",
       send: true,
     },
     {
+      group: 'Model health',
+      icon: 'arrow-up',
+      label: 'Are corrections piling up?',
+      hint: 'Corrections to a model this week against last',
+      prompt: 'Are corrections to the defect models piling up?',
+      send: true,
+    },
+    {
+      group: 'Model health',
+      icon: 'settings',
       label: 'Model status and queue',
-      hint: 'Live versions, open drift reports and the retraining queue',
+      hint: 'Live versions, open drift reports, retraining queue',
       prompt: 'What is the model status, and what is in the retraining queue?',
       send: true,
       adminOnly: true,
     },
-    {
-      label: 'Draft a retraining plan',
-      hint: 'Group the open tickets into a job for approval',
-      prompt: 'Draft a retraining plan from the open tickets.',
-      send: true,
-    },
   ];
+
+  /** The tiles this user can use, grouped by what they are for, in the order they are declared. */
+  protected readonly suggestionGroups = computed(() => {
+    const groups: { title: SuggestionGroup; items: Suggestion[] }[] = [];
+    for (const suggestion of this.visibleSuggestions()) {
+      const group = groups.find((g) => g.title === suggestion.group);
+      if (group) {
+        group.items.push(suggestion);
+      } else {
+        groups.push({ title: suggestion.group, items: [suggestion] });
+      }
+    }
+    return groups;
+  });
 
   private readonly auth = inject(AuthService);
   /** The suggestions this user can use: Admin-only ones are not shown to QA. */
   protected readonly visibleSuggestions = computed(() =>
     this.suggestions.filter((s) => !s.adminOnly || this.auth.currentUser()?.role === 'admin'),
   );
+
+  private readonly briefingService = inject(BriefingService);
+  /** What is waiting for an Admin in the Models tab, as lines for the opening screen. */
+  protected readonly briefingItems = signal<string[]>([]);
 
   protected readonly draftText = signal('');
   protected readonly pendingImages = signal<PendingImage[]>([]);
@@ -161,6 +188,10 @@ export class Chat {
   /** Quick replies for the last assistant message's tool card - see followUpsFor(). */
   protected readonly followUps: Signal<string[]>;
 
+  protected openModels(): void {
+    void this.router.navigateByUrl('/models');
+  }
+
   constructor(
     private readonly route: ActivatedRoute,
     private readonly router: Router,
@@ -170,6 +201,13 @@ export class Chat {
       this.route.paramMap.pipe(map((params) => params.get('id'))),
       { initialValue: null },
     );
+
+    // An Admin's opening screen says what is waiting for them; QA has nothing to ask.
+    if (this.auth.currentUser()?.role === 'admin') {
+      void this.briefingService.load().then((briefing) => {
+        this.briefingItems.set(briefing ? BriefingService.items(briefing) : []);
+      });
+    }
 
     this.conversation = computed(() => {
       const id = this.conversationId();
@@ -300,19 +338,29 @@ export class Chat {
       return ['Please continue from where you stopped.'];
     }
     const results = message.toolResults ?? [];
+    if (results.length === 0 && this.asksForConfirmation(message.content)) {
+      return ['Yes', 'No'];
+    }
     for (const { name, result } of [...results].reverse()) {
       switch (name) {
         case 'create_case': {
-          return [`The label on case ${result.case_number} is wrong - relabel it.`];
+          // A case with no defect label has nothing to correct, so a relabel would only be refused.
+          return result.defect ? [`The label on case ${result.case_number} is wrong - relabel it.`] : [];
         }
         case 'inspect_image':
           return [
+            ...(result.explain_available ? ['Explain this result.'] : []),
+            ...(result.defect ? ['The label is right.'] : []),
             "The model's defect label is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
             result.review_required
               ? 'Why was this flagged for review?'
               : 'What else did the model consider?',
           ];
+        case 'explain_inspection':
+          return result.agrees_with_model === false
+            ? ["The model's defect label is wrong - I'll tell you the right one.", 'The label is right.']
+            : [];
         case 'relabel_case':
           return ['Yes, confirm the relabel.', "No, cancel it - keep the model's label."];
         case 'confirm_relabel':
@@ -322,6 +370,30 @@ export class Chat {
       }
     }
     return [];
+  }
+
+  /**
+   * True when the reply ends by asking the user to confirm or choose yes/no, so a Yes / No chip is
+   * worth offering. Looks only at the last paragraph: an answer that merely contains "confirm"
+   * earlier on is not a question. Cards that ask for confirmation (a relabel proposal) have their
+   * own chips, so this is only for a plain-text ask.
+   */
+  private asksForConfirmation(content: string): boolean {
+    const last = content.trim().split(/\n\s*\n/).pop() ?? '';
+    if (last.length === 0 || last.length > 400) {
+      return false;
+    }
+    const ask =
+      /\b(please confirm|confirm (that|if|whether|this|the)|would you like|do you want|shall i|should i|want me to|ok to proceed|proceed\b.*\?)/i;
+    return ask.test(last) && (/[?]\s*$/.test(last) || /please confirm/i.test(last));
+  }
+
+  /** Thumbs up/down on a reply; choosing the one already chosen takes it back. */
+  protected rate(message: ChatMessage, value: 'up' | 'down'): void {
+    const id = this.conversationId();
+    if (id) {
+      void this.chatService.rate(id, message.id, message.feedback === value ? null : value);
+    }
   }
 
   protected sendFollowUp(text: string): void {

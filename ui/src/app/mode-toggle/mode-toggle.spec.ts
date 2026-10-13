@@ -12,6 +12,7 @@ describe('ModeToggle', () => {
       providers: [
         provideRouter([
           { path: 'work', children: [] },
+          { path: 'cases', children: [] },
           { path: 'models', children: [] },
         ]),
       ],
@@ -35,27 +36,34 @@ describe('ModeToggle', () => {
     fixture.detectChanges();
   }
 
-  it('renders the Chat, Work and Models tabs, each linking to its page', () => {
+  it('renders the Chat, Work, Cases and Models tabs, each linking to its page', () => {
     expect(tabs().map((t) => [t.label, t.href])).toEqual([
       ['Chat', '/chat'],
       ['Work', '/work'],
+      ['Cases', '/cases'],
       ['Models', '/models'],
     ]);
   });
 
   it('marks Chat as selected on the chat route', () => {
-    expect(tabs().map((t) => t.selected)).toEqual(['page', null, null]);
+    expect(tabs().map((t) => t.selected)).toEqual(['page', null, null, null]);
   });
 
   it('marks Work as selected after navigating to /work', async () => {
     await goTo('/work');
 
-    expect(tabs().map((t) => t.selected)).toEqual([null, 'page', null]);
+    expect(tabs().map((t) => t.selected)).toEqual([null, 'page', null, null]);
+  });
+
+  it('marks Cases as selected after navigating to /cases, also with a case open', async () => {
+    await goTo('/cases?case=CASE-000012');
+
+    expect(tabs().map((t) => t.selected)).toEqual([null, null, 'page', null]);
   });
 
   it('marks Models as selected after navigating to /models', async () => {
     await goTo('/models');
 
-    expect(tabs().map((t) => t.selected)).toEqual([null, null, 'page']);
+    expect(tabs().map((t) => t.selected)).toEqual([null, null, null, 'page']);
   });
 });

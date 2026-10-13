@@ -4,6 +4,7 @@ The model is scripted (tests/chat/_llm.py); `run_turn` is swapped for a stand-in
 a reply that streams some text and then fails.
 """
 
+import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -132,3 +133,93 @@ def test_rename_is_404_for_another_users_conversation(
     response = other_authenticated_client.patch("/api/conversations/c1", json={"title": "mine now"})
 
     assert response.status_code == 404
+
+
+# --- rating a reply -------------------------------------------------------------------------------
+
+
+def _reply_ids(client: TestClient, conversation_id: str) -> tuple[str, str]:
+    messages = client.get(f"/api/conversations/{conversation_id}").json()["messages"]
+    user = next(m["id"] for m in messages if m["role"] == "user")
+    assistant = next(m["id"] for m in messages if m["role"] == "assistant")
+    return user, assistant
+
+
+def test_the_done_frame_carries_the_id_of_the_saved_reply(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install(monkeypatch, says("hello"))
+
+    with authenticated_client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"conversation_id": "rate-1", "message": "hi", "image_ids": []},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    done = next(f for f in body.split("\n\n") if f.startswith("event: done"))
+    message_id = json.loads(done.split("data:", 1)[1])["message_id"]
+    _, assistant = _reply_ids(authenticated_client, "rate-1")
+    assert message_id == assistant
+
+
+def test_a_reply_can_be_rated_changed_and_cleared(
+    authenticated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install(monkeypatch, says("hello"))
+    with authenticated_client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"conversation_id": "rate-2", "message": "hi", "image_ids": []},
+    ) as response:
+        response.read()
+    _, assistant = _reply_ids(authenticated_client, "rate-2")
+    url = f"/api/messages/{assistant}/feedback"
+
+    def rated() -> str | None:
+        messages = authenticated_client.get("/api/conversations/rate-2").json()["messages"]
+        feedback: str | None = next(m["feedback"] for m in messages if m["role"] == "assistant")
+        return feedback
+
+    assert rated() is None
+    assert authenticated_client.put(url, json={"value": "up"}).status_code == 204
+    assert rated() == "up"
+    assert authenticated_client.put(url, json={"value": "down"}).status_code == 204
+    assert rated() == "down"
+    assert authenticated_client.put(url, json={"value": None}).status_code == 204
+    assert rated() is None
+    assert authenticated_client.put(url, json={"value": "meh"}).status_code == 422
+
+
+def test_only_a_reply_in_your_own_conversation_can_be_rated(
+    authenticated_client: TestClient,
+    other_authenticated_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, says("hello"))
+    with authenticated_client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"conversation_id": "rate-3", "message": "hi", "image_ids": []},
+    ) as response:
+        response.read()
+    user_message, assistant = _reply_ids(authenticated_client, "rate-3")
+
+    # someone else's reply looks like it does not exist
+    assert (
+        other_authenticated_client.put(
+            f"/api/messages/{assistant}/feedback", json={"value": "up"}
+        ).status_code
+        == 404
+    )
+    # your own message is not a reply
+    assert (
+        authenticated_client.put(
+            f"/api/messages/{user_message}/feedback", json={"value": "up"}
+        ).status_code
+        == 422
+    )
+    assert (
+        authenticated_client.put("/api/messages/no-such/feedback", json={"value": "up"}).status_code
+        == 404
+    )

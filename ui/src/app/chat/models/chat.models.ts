@@ -28,6 +28,11 @@ export interface InspectionResult {
   /** Null when the region was too uncertain for a defect model to run. */
   defect: StageResult | null;
   measurement_validation: { valid: boolean; issues: string[] } | null;
+  /** Whether "explain this" can be asked for - the server has an explanation service to ask. */
+  explain_available?: boolean;
+  /** Which of several attached images this is (1-based), and how many were attached. */
+  image_number?: number;
+  images_attached?: number;
 }
 
 /** relabel_case: a correction waiting for the user's confirmation - nothing is saved yet. */
@@ -85,8 +90,26 @@ export interface CaseCreated {
 
 /** A tool's structured result, shown as a card on the assistant message that follows it. Mirrors
  * the backend's `event: tool_result` SSE frame (app/chat/services/streaming.py). */
+/** explain_inspection: Agent 2's advisory explanation of the inspection (it decides nothing). */
+export interface Explanation {
+  status: 'ok' | 'flagged';
+  advisory: true;
+  /** The class Agent 2 judged it to be, in the app's own names; null when it declined to decide. */
+  label: string | null;
+  confidence: number | null;
+  summary: string | null;
+  visual_evidence_cited: string | null;
+  ipc_precedent_cited: string | null;
+  /** The model's own call, in the same names, for the comparison. */
+  model_label: string | null;
+  agrees_with_model: boolean | null;
+  guardrail: { status: string; hallucination_flagged: boolean; note: string | null };
+  evidence: { visual: string; telemetry_recorded: boolean; precedents_found: boolean };
+}
+
 export type ToolResult =
   | { name: 'inspect_image'; result: InspectionResult }
+  | { name: 'explain_inspection'; result: Explanation }
   | { name: 'create_case'; result: CaseCreated }
   | { name: 'relabel_case'; result: RelabelProposal }
   | { name: 'confirm_relabel'; result: RelabelDone }
@@ -95,6 +118,7 @@ export type ToolResult =
 
 export const TOOL_RESULT_NAMES: readonly ToolResult['name'][] = [
   'inspect_image',
+  'explain_inspection',
   'create_case',
   'relabel_case',
   'confirm_relabel',
@@ -123,6 +147,10 @@ export interface ChatMessage {
   /** Tokens the model used for this reply, summed over every model call in the turn. Absent when
    * the provider did not report it. */
   usage?: { inputTokens: number; outputTokens: number };
+  /** The server's id for this reply, once it has one - what a thumbs up/down is sent against. */
+  serverId?: string;
+  /** The user's rating of this reply. */
+  feedback?: 'up' | 'down';
   createdAt: number;
 }
 

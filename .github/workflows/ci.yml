@@ -42,6 +42,45 @@ jobs:
       - run: uv run mypy .
       - run: uv run pytest -q
 
+  # The ported Agent 2 unit tests (app/workflow/tests/) use the drop-in's bare `src....` imports, so
+  # they are run from app/workflow/ with the repo on PYTHONPATH rather than by the main `pytest`
+  # (testpaths = tests). Nothing ran them for a while, which is how a dependency change broke their
+  # collection unnoticed - see app/workflow/tests/conftest.py.
+  agent2-ported-tests:
+    name: Ported Agent 2 tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/workflow
+    env:
+      PYTHONPATH: ${{ github.workspace }}:.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync
+        working-directory: .
+
+      # One process per file: test_mcp_tools replaces `src.data` with a stub module and
+      # test_agent_graph sets a dummy OPENAI_API_KEY while importing, so these files are not safe to
+      # run together (the second would fail at collection, or un-skip live-LLM tests below).
+      - name: Agent 2 graph, MCP tools, Qdrant reader, filename metadata
+        run: |
+          for f in test_agent_graph test_mcp_tools test_qdrant_rag test_metadata_and_telemetry; do
+            uv run pytest -q "tests/$f.py"
+          done
+
+      # Without the key it skips the live-LLM cases. Not selected: the `/etc/passwd` and
+      # `/etc/shadow` path-traversal cases, which fail the same way upstream (INTEGRATION_NOTES.md) -
+      # the ported visual tool does not reject a path that exists, it just fails to use it. (They
+      # pass on a Mac only because those files are not there.)
+      - name: Agent 2 security (live-LLM cases skip without a key)
+        run: uv run pytest -q tests/test_agent2_security.py -k "not passwd and not shadow"
+
   inference:
     name: Inference (ruff, mypy, pytest)
     runs-on: ubuntu-latest

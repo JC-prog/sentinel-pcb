@@ -23,10 +23,19 @@ const USER: AuthUser = {
 };
 
 /** Same reasoning as chat.service.spec.ts's fakeAuthService(). */
-function fakeAuthService(role: AuthUser['role'] = 'qa'): AuthService {
+function fakeAuthService(
+  role: AuthUser['role'] = 'qa',
+  briefing: Record<string, number> | null = null,
+): AuthService {
   return {
     currentUser: () => ({ ...USER, role }),
-    fetchWithAuth: vi.fn().mockResolvedValue({ ok: false } as Response),
+    fetchWithAuth: vi
+      .fn()
+      .mockResolvedValue(
+        briefing
+          ? ({ ok: true, json: async () => briefing } as Response)
+          : ({ ok: false } as Response),
+      ),
   } as unknown as AuthService;
 }
 
@@ -37,13 +46,17 @@ describe('Chat', () => {
     localStorage.clear();
   });
 
-  async function setup(route: FakeActivatedRoute, role: AuthUser['role'] = 'qa') {
+  async function setup(
+    route: FakeActivatedRoute,
+    role: AuthUser['role'] = 'qa',
+    briefing: Record<string, number> | null = null,
+  ) {
     await TestBed.configureTestingModule({
       imports: [Chat],
       providers: [
         provideRouter([]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
-        { provide: AuthService, useValue: fakeAuthService(role) },
+        { provide: AuthService, useValue: fakeAuthService(role, briefing) },
         { provide: ActivatedRoute, useValue: route },
       ],
     }).compileComponents();
@@ -71,6 +84,98 @@ describe('Chat', () => {
     TestBed.resetTestingModule();
     await setup(new FakeActivatedRoute(), 'admin');
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Model status and queue');
+  });
+
+  it('tells an Admin what is waiting for them, and links to the Models tab', async () => {
+    await setup(new FakeActivatedRoute(), 'admin', {
+      open_drift_reports: 2,
+      open_auto_reports: 1,
+      plans_awaiting_approval: 1,
+      corrections_waiting: 3,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    const banner = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]');
+    expect(banner?.textContent).toContain('1 retraining plan awaiting your approval');
+    expect(banner?.textContent).toContain('2 open drift reports (1 raised automatically)');
+    expect(banner?.textContent).toContain('3 corrections not yet in a plan');
+
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    (banner?.querySelector('button') as HTMLElement).click();
+    expect(navigate).toHaveBeenCalledWith('/models');
+  });
+
+  it('shows no banner when nothing is waiting, or to QA', async () => {
+    await setup(new FakeActivatedRoute(), 'admin', {
+      open_drift_reports: 0,
+      open_auto_reports: 0,
+      plans_awaiting_approval: 0,
+      corrections_waiting: 0,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]')).toBeNull();
+
+    TestBed.resetTestingModule();
+    await setup(new FakeActivatedRoute(), 'qa', {
+      open_drift_reports: 4,
+      open_auto_reports: 0,
+      plans_awaiting_approval: 2,
+      corrections_waiting: 1,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="briefing"]')).toBeNull();
+  });
+
+  it('opens with a short line on what it does and how to attach, not a paragraph', async () => {
+    await setup(new FakeActivatedRoute());
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('h1')?.textContent).toContain("Hi, I'm the Sentinel PCB assistant");
+    expect(el.textContent).toContain('Classify an AOI image, correct a label, or look up');
+    expect(el.querySelector('[data-testid="attach-hint"]')?.textContent).toContain('attach images');
+    expect(el.textContent).not.toContain('flag an ambiguous result');
+  });
+
+  it('groups the empty-state tiles by what they are for', async () => {
+    await setup(new FakeActivatedRoute(), 'admin');
+
+    const sections = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('section[aria-label]'),
+    ).map((section) => ({
+      title: section.getAttribute('aria-label'),
+      tiles: Array.from(section.querySelectorAll('button')).map((b) =>
+        b.querySelector('span.block')?.textContent?.trim(),
+      ),
+    }));
+
+    expect(sections).toEqual([
+      { title: 'Inspect', tiles: ['Classify an inspection image'] },
+      {
+        title: 'Look up',
+        tiles: ['Look up a sample', "What's waiting for review?", 'What runs do I have?'],
+      },
+      {
+        title: 'Model health',
+        tiles: ["Review a run's corrections", 'Are corrections piling up?', 'Model status and queue'],
+      },
+    ]);
+  });
+
+  it('shows QA the same tiles without the Admin-only one', async () => {
+    await setup(new FakeActivatedRoute(), 'qa');
+
+    const tiles = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('section[aria-label] button'),
+    ).map((b) => b.querySelector('span.block')?.textContent?.trim());
+
+    expect(tiles).toHaveLength(6);
+    expect(tiles).not.toContain('Model status and queue');
+    // a label can only be corrected after an inspection, so it is not an opening move
+    expect(tiles).not.toContain('Correct a wrong label');
+    expect(tiles).not.toContain('Draft a retraining plan');
   });
 
   it('creates a conversation and navigates to it when sending the first message', async () => {
@@ -279,6 +384,66 @@ describe('Chat', () => {
     expect(sent?.map((m) => m.content)).toContain('Open a case for this inspection.');
   });
 
+  it('offers "The label is right." after an inspection that found a label, not otherwise', async () => {
+    const inspection = (defect: unknown) => ({
+      name: 'inspect_image',
+      result: {
+        case_created: false,
+        verdict: 'accepted',
+        review_required: false,
+        review_reasons: [],
+        inspection_summary: null,
+        region: null,
+        defect,
+        measurement_validation: null,
+      },
+    });
+    await openConversation(() =>
+      of({
+        type: 'toolResult',
+        toolResult: inspection({
+          model: 'pcb_body_defect',
+          model_version: null,
+          label: 'Golden',
+          confidence: 0.9,
+          top_scores: [],
+        }),
+      }),
+    );
+    expect(buttonWithText('The label is right.')).toBeTruthy();
+
+    TestBed.resetTestingModule();
+    await openConversation(() => of({ type: 'toolResult', toolResult: inspection(null) }));
+    expect(buttonWithText('The label is right.')).toBeUndefined();
+  });
+
+  it('offers "Explain this result." only when the server has an explanation service', async () => {
+    const inspection = (explainAvailable: boolean) => ({
+      name: 'inspect_image',
+      result: {
+        case_created: false,
+        verdict: 'accepted',
+        review_required: false,
+        review_reasons: [],
+        inspection_summary: null,
+        region: null,
+        defect: null,
+        measurement_validation: null,
+        explain_available: explainAvailable,
+      },
+    });
+    await openConversation(() =>
+      of({ type: 'toolResult', toolResult: inspection(true) } as never),
+    );
+    expect(buttonWithText('Explain this result.')).toBeTruthy();
+
+    TestBed.resetTestingModule();
+    await openConversation(() =>
+      of({ type: 'toolResult', toolResult: inspection(false) } as never),
+    );
+    expect(buttonWithText('Explain this result.')).toBeUndefined();
+  });
+
   it('sends a self-contained suggestion immediately', async () => {
     await setup(new FakeActivatedRoute());
     const chatService = TestBed.inject(ChatService);
@@ -454,6 +619,91 @@ describe('Chat', () => {
     expect(buttonWithText('Override case')).toBeUndefined();
     expect(buttonWithText('The label on case CASE-12 is wrong')).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('CASE-12');
+  });
+
+  it('offers Yes and No when the assistant asks the user to confirm in plain text', async () => {
+    await openConversation(() =>
+      of({
+        type: 'delta',
+        text: 'I will propose relabeling case CASE-1 to "Wrong part". Please confirm if you would like to proceed.',
+      }),
+    );
+
+    expect(buttonWithText('Yes')).toBeTruthy();
+    expect(buttonWithText('No')).toBeTruthy();
+  });
+
+  it('offers Yes and No for a question that asks whether to proceed', async () => {
+    await openConversation(() =>
+      of({ type: 'delta', text: 'The model said Tombstone at 71%.\n\nShall I save it as a case?' }),
+    );
+
+    expect(buttonWithText('Yes')).toBeTruthy();
+    expect(buttonWithText('No')).toBeTruthy();
+  });
+
+  it('does not offer Yes and No for a reply that is not asking anything', async () => {
+    await openConversation(() =>
+      of({ type: 'delta', text: 'You can confirm the retraining plan later in the Models tab.' }),
+    );
+
+    expect(buttonWithText('Yes')).toBeUndefined();
+    expect(buttonWithText('No')).toBeUndefined();
+  });
+
+  it('sends Yes when its chip is clicked', async () => {
+    const { id, chatService } = await openConversation(() =>
+      of({ type: 'delta', text: 'Do you want me to save this as a case?' }),
+    );
+
+    buttonWithText('Yes')!.click();
+
+    const sent = chatService.get(id)()?.messages.filter((m) => m.role === 'user');
+    expect(sent?.map((m) => m.content)).toContain('Yes');
+  });
+
+  it('does not offer a relabel for a case that has no defect label', async () => {
+    const created = {
+      name: 'create_case',
+      result: {
+        status: 'created',
+        case_number: 'CASE-14',
+        verdict: 'review_required',
+        region: 'Body',
+        defect: null,
+        defect_confidence: null,
+      },
+    };
+    await openConversation(() => of({ type: 'toolResult', toolResult: created }));
+
+    expect(buttonWithText('The label on case CASE-14')).toBeUndefined();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('no label to correct');
+  });
+
+  it('shows thumbs on a reply that has a server id, and rates it when one is clicked', async () => {
+    const { id, chatService } = await openConversation(() =>
+      of(
+        { type: 'delta', text: 'An answer.' } as never,
+        { type: 'messageId', id: 'srv-1' } as never,
+      ),
+    );
+    const rate = vi.spyOn(chatService, 'rate').mockResolvedValue();
+    fixture.detectChanges();
+
+    const up = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-label="Good answer"]',
+    ) as HTMLElement;
+    expect(up).toBeTruthy();
+    up.click();
+
+    const reply = chatService.get(id)()!.messages.find((m) => m.role === 'assistant')!;
+    expect(rate).toHaveBeenCalledWith(id, reply.id, 'up');
+  });
+
+  it('does not show thumbs on a reply that was never saved (no server id)', async () => {
+    await openConversation(() => of({ type: 'delta', text: 'An answer.' }));
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[aria-label="Good answer"]')).toBeNull();
   });
 
   it('only offers a relabel for an accepted case', async () => {

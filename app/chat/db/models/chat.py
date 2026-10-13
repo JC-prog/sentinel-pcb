@@ -61,6 +61,8 @@ class Message(Base):
     interrupted: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+    # The user's verdict on an assistant reply: "up", "down" or None. Meaningless on user messages.
+    feedback: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

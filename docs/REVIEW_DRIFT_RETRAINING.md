@@ -122,8 +122,9 @@ Pure functions over the stored payload dicts - no I/O - so the Work tab (`run_st
   `agent2_disagreed`, `low_confidence_rate` (defect confidence < `ADC_DEFECT_CONFIDENCE_THRESHOLD`),
   `mean_confidence`, `model_version`.
 
-Chat's existing `get_drift_summary` (`app/chat/services/drift.py`) is unchanged and measures **saved
-Cases**; the run-based numbers are a separate view.
+Chat's `get_drift_summary` (`app/shared/modelops/corrections.py`) is a different view: it counts
+**confirmed corrections** (retraining tickets, from chat and every run) per model version, this
+window against the one before. It is a count, not a rate; the per-run rate is the one above.
 
 ## 4. HTTP API (`app/workflow/api/orchestrator.py`)
 

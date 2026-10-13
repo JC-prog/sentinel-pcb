@@ -15,6 +15,7 @@ import {
   WorkflowRetrainingPlanOut,
   WorkflowReviewCaseOut,
   WorkflowRunDrift,
+  WorkflowRunList,
   WorkflowReviewDecisionRequest,
   WorkflowReviewOut,
 } from './models/orchestrator.models';
@@ -191,6 +192,27 @@ export class WorkOrchestratorClient {
 
       return () => controller.abort();
     });
+  }
+
+  async listRuns(): Promise<WorkflowRunList> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/runs`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowRunList;
+  }
+
+  /** A stored run in the shape of a live run's final result. */
+  async getRun(runId: string): Promise<OrchestratorRunResult> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/runs/${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as OrchestratorRunResult;
   }
 
   async getRunDrift(runId: string): Promise<WorkflowRunDrift> {

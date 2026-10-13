@@ -32,11 +32,12 @@ async def get_drift_summary(
     model: Annotated[str, _MODEL],
     window_days: Annotated[int | None, _WINDOW] = None,
 ) -> dict[str, Any]:
-    """Shows whether a model looks like it is drifting: its recent review rate, the share of its
-    calls reviewers overrode or corrected, and its classifier confidence, compared with the period
-    before and broken down by model version - with plain-language signals for whatever moved.
-    Read-only, and the first thing to call for any 'is the model getting worse?' question - use it
-    before reporting drift or planning a retrain."""
+    """Shows whether corrections to a model are piling up: how many confirmed corrections it got in
+    the recent window against the window before, split by model version, and where the automatic
+    drift-report threshold is. It counts corrections people made, NOT the model's error rate - say
+    so, and for how a run did use get_run_drift. The result's `chat` block gives how many images chat
+    inspected, how many were corrected and how many a person confirmed right, for the same window. Read-only, and the first thing to call for any
+    'is the model getting worse?' question - use it before reporting drift or planning a retrain."""
 
     return await service.drift_overview(
         runtime.context.session, required(model, "model"), days=_window_days(window_days)

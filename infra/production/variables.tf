@@ -26,9 +26,20 @@ variable "task_cpu" {
 }
 
 variable "task_memory" {
-  description = "Fargate task memory for the backend, in MiB. 1024 vCPU units allows 2048-8192."
+  description = "Fargate task memory for the backend, in MiB. 1024 vCPU units allows 2048-8192. 3072 leaves room for the Agent 2 sidecar (explain_enabled)."
   type        = number
-  default     = 2048
+  default     = 3072
+}
+
+variable "explain_enabled" {
+  description = "Run Agent 2's MCP service beside the backend and point chat at it, which switches on \"Explain this result\". Needs the IPC corpus in Qdrant for precedents (ipc_corpus.tf); without it the explanation simply cites none."
+  type        = bool
+  default     = true
+}
+
+variable "agent2_mcp_port" {
+  type    = number
+  default = 8002
 }
 
 variable "desired_count" {
@@ -113,6 +124,18 @@ variable "qdrant_task_memory" {
   description = "Fargate task memory for Qdrant, in MiB. 512 vCPU units allows 1024-4096."
   type        = number
   default     = 1024
+}
+
+variable "ipc_corpus_key" {
+  description = "Object key of the IPC corpus export in the corpus bucket (ipc_corpus.tf), made with `python -m app.workflow.services.ipc_ingest export FILE`."
+  type        = string
+  default     = "ipc-corpus.jsonl"
+}
+
+variable "aws_cli_image_tag" {
+  description = "Tag of the public amazon/aws-cli image the corpus loader uses to copy the export from S3."
+  type        = string
+  default     = "2.17.0"
 }
 
 variable "budget_alert_email" {

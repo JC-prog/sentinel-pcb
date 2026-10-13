@@ -42,7 +42,15 @@ class MessageOut(BaseModel):
     tool_results: list[dict[str, Any]] = []
     # Stopped or failed part-way: `content` is only what had streamed.
     interrupted: bool = False
+    # "up" or "down" if the user rated the reply.
+    feedback: Literal["up", "down"] | None = None
     created_at: datetime
+
+
+class MessageFeedback(BaseModel):
+    """`value` null clears a rating."""
+
+    value: Literal["up", "down"] | None
 
 
 class ConversationRename(BaseModel):

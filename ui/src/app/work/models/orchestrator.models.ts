@@ -340,3 +340,28 @@ export interface WorkflowReviewCaseOut {
   review: WorkflowReviewOut | null;
   decision: WorkflowReviewDecisionOut | null;
 }
+
+/** One stored run in the Work tab's run history (GET /api/orchestrator/runs). `decided` is how
+ * many of its flagged samples the operator has already made a final call on. */
+export interface WorkflowRunSummary {
+  run_id: string;
+  saved_at_utc: string;
+  status: string;
+  input_samples: number;
+  preparation_ready: number;
+  preparation_failed: number;
+  verification_passed: number;
+  verification_failed: number;
+  inference_attempted: number;
+  inference_completed: number;
+  accepted: number;
+  review_required: number;
+  inference_aborted: number;
+  decided: number;
+}
+
+export interface WorkflowRunList {
+  runs: WorkflowRunSummary[];
+  /** False when the server could not read its run store - an empty list is then not "no runs". */
+  available: boolean;
+}

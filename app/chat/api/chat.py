@@ -15,6 +15,7 @@ from app.chat.services.schemas import (
     ConversationDetail,
     ConversationRename,
     ConversationSummary,
+    MessageFeedback,
     MessageOut,
 )
 from app.chat.services.streaming import chat_sse
@@ -129,6 +130,27 @@ async def rename_conversation(
         raise HTTPException(status_code=404, detail="conversation not found")
     await chat_repository.touch_conversation(session, conversation, title=title[:80])
     return ConversationSummary.model_validate(conversation)
+
+
+@router.put("/api/messages/{message_id}/feedback", status_code=204)
+async def rate_message(
+    message_id: str,
+    body: MessageFeedback,
+    user: Annotated[User, Depends(get_current_user)],
+    session: SessionDep,
+) -> None:
+    """Thumbs up or down on an assistant reply (null clears it). Only the owner of the conversation
+    can rate, and only the assistant's replies."""
+
+    message = await chat_repository.get_message(session, message_id)
+    conversation = (
+        await chat_repository.get_conversation(session, message.conversation_id) if message else None
+    )
+    if message is None or conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="message not found")
+    if message.role != "assistant":
+        raise HTTPException(status_code=422, detail="only a reply can be rated")
+    await chat_repository.set_feedback(session, message, body.value)
 
 
 @router.delete("/api/conversations/{conversation_id}", status_code=204)

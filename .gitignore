@@ -76,3 +76,7 @@ override.tf.json
 # Editors
 .vscode/
 .idea/
+
+# IPC standards / reference documents Agent 2 retrieves from (app/workflow/services/ipc_ingest.py) -
+# licensed or third-party documents, ingested locally and never committed.
+/data/ipc_corpus/

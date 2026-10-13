@@ -9,6 +9,9 @@ its logic and its rules:
 - relabel_agent    - `relabel_case` / `confirm_relabel`: record a QA's correction of a wrong label.
 - review_agent     - `review_case` / `confirm_review`: approve or override a case flagged for review.
 - monitoring_agent - drift summaries and reports, retraining plans, the Admin status overview.
+- explain_agent   - `explain_inspection`: an advisory explanation of the image just inspected,
+  from Agent 2 over MCP (off until AGENT2_MCP_URL is set).
+- case_agent       - `get_case` / `list_cases`: read the cases chat has saved (the Cases tab's data).
 - sample_agent     - `get_sample` / `list_review_cases` / `get_run_drift`: read what the Work tab
   stored about a sample or a run (including how often the operator corrected the model).
 
@@ -17,7 +20,14 @@ app/chat/services/. This module, supervisor.py, registry.py, access.py and toolk
 plumbing beside them.
 """
 
-from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
+from app.chat.agents.case_agent import (
+    GET_ACTIVITY_SUMMARY,
+    GET_CASE,
+    GET_COMPONENT_HISTORY,
+    LIST_CASES,
+)
+from app.chat.agents.explain_agent import EXPLAIN_INSPECTION
+from app.chat.agents.inspection_agent import CONFIRM_LABEL_CORRECT, CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
     GET_DRIFT_SUMMARY,
@@ -27,16 +37,25 @@ from app.chat.agents.monitoring_agent import (
     REPORT_MODEL_DRIFT,
 )
 from app.chat.agents.registry import ToolNotFound, ToolRegistry
-from app.chat.agents.relabel_agent import CONFIRM_RELABEL, RELABEL_CASE
+from app.chat.agents.relabel_agent import (
+    CONFIRM_RELABEL,
+    LIST_MY_CORRECTIONS,
+    RELABEL_CASE,
+    WITHDRAW_CORRECTION,
+)
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
 from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES, LIST_RUNS
 
 tool_registry = ToolRegistry(
     [
         INSPECT_IMAGE,
+        CONFIRM_LABEL_CORRECT,
+        EXPLAIN_INSPECTION,
         CREATE_CASE,
         RELABEL_CASE,
         CONFIRM_RELABEL,
+        LIST_MY_CORRECTIONS,
+        WITHDRAW_CORRECTION,
         REVIEW_CASE,
         CONFIRM_REVIEW,
         GET_DRIFT_SUMMARY,
@@ -45,6 +64,10 @@ tool_registry = ToolRegistry(
         MONITORING_STATUS,
         LIST_DRIFT_REPORTS,
         GET_RETRAINING_JOB,
+        GET_CASE,
+        LIST_CASES,
+        GET_COMPONENT_HISTORY,
+        GET_ACTIVITY_SUMMARY,
         GET_SAMPLE,
         LIST_RUNS,
         LIST_REVIEW_CASES,

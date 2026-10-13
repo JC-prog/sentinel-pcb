@@ -15,12 +15,13 @@ interface ModeTab {
 const TABS: readonly ModeTab[] = [
   { label: 'Chat', link: '/chat', prefix: null },
   { label: 'Work', link: '/work', prefix: '/work' },
+  { label: 'Cases', link: '/cases', prefix: '/cases' },
   { label: 'Models', link: '/models', prefix: '/models' },
 ];
 
-/** The ChatGPT-style "Chat" / "Work" / "Models" pill switch mounted in app.html, above the
- * router-outlet - routes to the Chat page ('/', '/c/:id'), the Work page ('/work') or the Models
- * page ('/models'). Chat never calls orchestrator_agent, Work never goes through
+/** The ChatGPT-style "Chat" / "Work" / "Cases" / "Models" pill switch mounted in app.html, above the
+ * router-outlet - routes to the Chat page ('/', '/c/:id'), the Work page ('/work'), the Cases page
+ * ('/cases') or the Models page ('/models'). Chat never calls orchestrator_agent, Work never goes through
  * /api/chat/stream, and Models only talks to /api/models - this toggle is the only place the three
  * are visually adjacent. */
 @Component({

@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { AuthService } from '../auth.service';
 import { ModelOpsService } from './model-ops.service';
 import {
@@ -72,7 +73,18 @@ export class Models implements OnInit, OnDestroy {
   constructor(
     protected readonly service: ModelOpsService,
     private readonly authService: AuthService,
+    private readonly router: Router,
   ) {}
+
+  /** A case number as a link to the Cases tab. Only chat cases have one; a Work-tab sample does not. */
+  protected isCaseNumber(value: string | null | undefined): boolean {
+    return !!value && /^CASE-\d+$/i.test(value);
+  }
+
+  protected openCase(event: Event, caseNumber: string): void {
+    event.preventDefault();
+    void this.router.navigate(['/cases'], { queryParams: { case: caseNumber } });
+  }
 
   ngOnInit(): void {
     void this.service.refresh();
@@ -119,6 +131,15 @@ export class Models implements OnInit, OnDestroy {
 
   /** "override rate 40%" style one-liners from a report's snapshot, for the numbers worth a glance. */
   protected driftFigures(report: DriftReport): string[] {
+    const corrections = report.stats.corrections;
+    if (corrections) {
+      const days = report.stats.window_days;
+      const window = days ? `the last ${days} days` : 'the recent window';
+      return [
+        `${corrections.recent} correction${corrections.recent === 1 ? '' : 's'} in ${window}`,
+        `${corrections.previous} before`,
+      ];
+    }
     const recent = report.stats.recent;
     if (!recent || recent.cases === 0) {
       return [];

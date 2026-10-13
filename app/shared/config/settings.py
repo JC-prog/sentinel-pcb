@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     # the Models tab's app/modelops/, and the chat monitoring agent). Kill switch, same pattern as
     # the others - off hides the Models tab's API and removes the drift/retraining chat tools.
     modelops_enabled: bool = True
+    # A drift report is raised on its own when a model version collects this many confirmed
+    # corrections (retraining tickets, from chat or the Work tab) inside the window below - one open
+    # report per model version (app/shared/modelops/drift.py). 0 turns it off.
+    drift_auto_report_threshold: int = 5
+    drift_auto_report_window_days: int = 7
 
     # Lets the chat LLM itself decide to call a registered Tool (app/chat/agents/registry.py) mid-
     # conversation - e.g. inspect_image, get_drift_summary. Kill switch, same
@@ -185,6 +190,30 @@ class Settings(BaseSettings):
     # pattern as the others.
     sample_lookup_agent_enabled: bool = True
 
+    # Record every chat image inspection (verdict, model versions, no image) so chat can say how
+    # many were inspected and how many a person confirmed were right (app/chat/services/
+    # inspection_log.py). Off: nothing is recorded and those counts stay empty.
+    inspection_log_enabled: bool = True
+
+    # Explain agent (app/chat/agents/explain_agent/) - an advisory explanation of the image just
+    # inspected, asked of Agent 2's MCP service (app/workflow/services/agent2_mcp_service.py, run as
+    # its own process). Off unless AGENT2_MCP_URL points at it; fails open when it is unreachable.
+    explain_agent_enabled: bool = True
+    agent2_mcp_url: str = ""
+    agent2_mcp_timeout_seconds: float = 60.0
+    # Where that service listens when it is run (python -m app.workflow.services.agent2_mcp_service).
+    agent2_mcp_host: str = "127.0.0.1"
+    agent2_mcp_port: int = 8002
+
+    # The lowest cosine score a retrieved IPC-standard chunk may have to be given to Agent 2 as a
+    # precedent (app/workflow/src/data/qdrant_store.py). Not calibrated against real documents -
+    # raise it if unrelated chunks are cited, lower it if nothing ever comes back.
+    ipc_precedent_min_score: float = 0.3
+
+    # Case agent (app/chat/agents/case_agent/) - read-only lookups of the Cases chat has saved
+    # (get_case, list_cases): what the Cases tab shows, answerable in the conversation.
+    case_lookup_agent_enabled: bool = True
+
     # Chat guardrails (app/chat/guardrails/) - a NeMo Guardrails input rail run on the raw user
     # message before it reaches any chat LLM call, checking for
     # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single
@@ -241,6 +270,12 @@ class Settings(BaseSettings):
     # Uploaded dataset CSVs, inspection XMLs, and image-root folders for Work-tab runs - same
     # cwd-relative convention/caveat as chat_upload_dir.
     orchestrator_data_dir: str = "data/orchestrator"
+
+    @property
+    def explain_available(self) -> bool:
+        """The explain agent is on and has a service to ask."""
+
+        return self.explain_agent_enabled and bool(self.agent2_mcp_url.strip())
 
     @property
     def selectable_chat_models(self) -> list[str]:

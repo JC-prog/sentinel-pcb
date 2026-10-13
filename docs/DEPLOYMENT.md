@@ -262,3 +262,7 @@ This setup is built to be thrown away. Before using it for anything that must su
 or for more than one backend task, see "Known gaps" in
 [`infra/production/README.md`](../infra/production/README.md): Qdrant and the uploads need a
 persistent volume or a managed service first, and chat uploads should move to S3.
+
+One thing is restorable without that: Agent 2's IPC corpus. Upload an export of it to the corpus
+bucket once and run the loader task after each Qdrant start (`terraform output
+ipc_corpus_load_command`); see "The IPC corpus is restored, nothing else" in the same README.

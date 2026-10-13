@@ -70,6 +70,32 @@ describe('App', () => {
     expect(compiled.querySelector('app-mode-toggle')).toBeTruthy();
   });
 
+  it('puts the mode toggle and theme toggle in a top bar the page starts below', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/work');
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const header = compiled.querySelector('header');
+    expect(header?.querySelector('app-mode-toggle')).toBeTruthy();
+    expect(header?.querySelector('app-theme-toggle')).toBeTruthy();
+    // the router outlet is a sibling after the bar, not under it
+    expect(header?.nextElementSibling?.querySelector('router-outlet')).toBeTruthy();
+  });
+
+  it('keeps just the theme toggle, no top bar, on the login route', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/login');
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('header')).toBeFalsy();
+    expect(compiled.querySelector('app-mode-toggle')).toBeFalsy();
+    expect(compiled.querySelector('app-theme-toggle')).toBeTruthy();
+  });
+
   it('hides the sidebar on the register route', async () => {
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/register');

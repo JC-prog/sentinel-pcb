@@ -5,10 +5,19 @@ draft_job() is what turns open tickets into a retraining request, and doesn't ca
 ticket came from.
 """
 
+import logging
+
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.db.models import RetrainingTicket, RetrainingTicketStatus
+from app.shared.db.models import (
+    RetrainingJob,
+    RetrainingTicket,
+    RetrainingTicketStatus,
+)
+from app.shared.modelops import drift as drift_repo
+
+logger = logging.getLogger(__name__)
 
 
 async def create_ticket(
@@ -47,7 +56,21 @@ async def create_ticket(
     session.add(ticket)
     await session.commit()
     await session.refresh(ticket)
+    await _notice_drift(session, ticket)
     return ticket
+
+
+async def _notice_drift(session: AsyncSession, ticket: RetrainingTicket) -> None:
+    """A correction may be the one that tips a model version into drift; raise the report for it.
+    Never fails the correction: the ticket is already saved, so anything wrong here is logged."""
+
+    try:
+        await drift_repo.maybe_raise_report(session, ticket)
+    except Exception:
+        logger.exception("could not check drift after ticket %s", ticket.id)
+        await session.rollback()
+        # The rollback expires the ticket; reload it so the caller can still read it (it is saved).
+        await session.refresh(ticket)
 
 
 async def sample_refs_for_run(session: AsyncSession, run_id: str) -> dict[str, str]:
@@ -108,3 +131,29 @@ async def count_tickets(
     if run_id is not None:
         stmt = stmt.where(RetrainingTicket.run_id == run_id)
     return {name: count for name, count in (await session.execute(stmt)).tuples()}
+
+
+async def list_flagged_by(
+    session: AsyncSession, user_id: str, *, limit: int = 10
+) -> list[tuple[RetrainingTicket, str | None]]:
+    """The corrections a user confirmed (newest first), each with the status of the retraining job
+    it is part of - None while it is not in any plan."""
+
+    rows = await session.execute(
+        select(RetrainingTicket, RetrainingJob.status)
+        .outerjoin(RetrainingJob, RetrainingJob.id == RetrainingTicket.job_id)
+        .where(RetrainingTicket.flagged_by_user_id == user_id)
+        .order_by(RetrainingTicket.created_at.desc())
+        .limit(limit)
+    )
+    return [(ticket, job_status) for ticket, job_status in rows.tuples()]
+
+
+async def withdraw_ticket(session: AsyncSession, ticket: RetrainingTicket) -> None:
+    """Removes a ticket that is not in any plan yet. The caller checks that; a ticket already
+    drafted into a job is that job's record and is released by cancelling the job instead."""
+
+    if ticket.job_id is not None or ticket.status != RetrainingTicketStatus.OPEN:
+        raise ValueError("only an open ticket outside any plan can be withdrawn")
+    await session.delete(ticket)
+    await session.commit()

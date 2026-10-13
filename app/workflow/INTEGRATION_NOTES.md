@@ -222,12 +222,14 @@ precedents and no longer lets physical telemetry decide the verdict. Deliberate 
   laser height or ICT status. The heuristic self-check then keeps the baseline label and reports
   `self_check_passed: false`, and the LLM is told the readings were not recorded.
 - Config path resolved from the file, and no `rglob` crawl for images (kept from the first port).
-- Ported tests: `test_agent_graph`, `test_agent2_security`, `test_mcp_tools`. Not ported: `main.py`
-  (CLI), `integrate_ui.py`, `evals/`, `src/data/qdrant_store.py` and its test (the MCP server is
-  unwired, and uses a local embedded Qdrant), `test_metadata_and_telemetry` (needs `main.py`).
+- Ported tests: `test_agent_graph`, `test_agent2_security`, `test_mcp_tools`, and (Oct 13) `test_qdrant_rag`
+  (adapted to the OpenAI-embedding reader) and `test_metadata_and_telemetry`. Not ported: `main.py`
+  (CLI) and `integrate_ui.py`; `evals/` is ported as manual scripts - see the Oct 13 section below.
   `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
-  `test_agent2_security[../../../../../../etc/passwd]` fail the same way upstream.
-  Run them from `app/workflow/`: `PYTHONPATH=<repo>:. python -m pytest tests/<file>`.
+  `test_agent2_security[../../../../../../etc/passwd]` (and `[/etc/shadow]` on Linux, where the file exists) fail the same way upstream.
+  Run them from `app/workflow/`, one file per process (`test_mcp_tools` replaces `src.data` with a
+  stub and `test_agent_graph` sets a dummy `OPENAI_API_KEY` on import, so together they interfere):
+  `PYTHONPATH=<repo>:. python -m pytest tests/<file>`. CI does this (job "Ported Agent 2 tests").
 
 ## Region corrections and ticket identity (Oct 2026)
 
@@ -242,12 +244,105 @@ review's evidence flags).
 
 ## Explicitly kept, not wired
 
-- **`src/agent2_explainability/{a2a,mcp}/`** - the A2A server and the FastMCP tool server. Present
-  in the drop-in, unused: the review pipeline is called directly in-process.
+- **`src/agent2_explainability/a2a/`** - the A2A server. Present in the drop-in, unused: the review
+  pipeline is called directly in-process.
+- **`src/agent2_explainability/mcp/agent2_mcp_server.py`** - kept exactly as ported and *not served
+  directly*. It cannot load under a real FastMCP (`case_context_retrieval_tool` takes `**kwargs`),
+  its visual and measurement tools read any path they are given (its own upstream traversal test
+  fails), and `measurement_evidence_tool` invents nominal telemetry - even `FAIL` values keyed off
+  the image's file name - when it finds none. `app/workflow/services/agent2_mcp_service.py` imports
+  it with a plain stand-in for the decorator, uses its tools as functions, and serves a single
+  guarded tool, `explain_inspection`, that takes an uploaded file's *name*, uses telemetry only when
+  read from an inspection XML, and maps the guardrail's classes (`WRONG_PART`...) to the app's
+  (`wrong part`...). Chat's explain agent calls it over MCP at `AGENT2_MCP_URL`. This is a second
+  explanation path next to the Work tab's in-process review, by decision: both are advisory.
+  Precedent search is now ported - see "Precedents" below.
+
+## Precedents: the reader was ported, and the collection it reads is now filled (Oct 2026)
+
+Upstream had a writer and a reader that never met: `data/qdrant_indexer.py` wrote inspection
+records to `ipc_defect_precedents` (OpenAI, 1536 dims), while `src/data/qdrant_store.py` searched
+`pcb_standards_precedents` (FastEmbed `bge-small`, 384 dims) - a collection of IPC *document chunks*
+(`text`, `source_file`, `page`) that nothing in the project created, so its search was always empty.
+`fastembed` was not even in its requirements.
+
+- **`src/data/qdrant_store.py`** - ported and *adapted*: reads this app's Docker Qdrant
+  (`settings.qdrant_url`) instead of an embedded `qdrant_db/`; embeds with the app's OpenAI embedding
+  model instead of FastEmbed (no model download, no extra dependency); returns nothing, never a
+  made-up vector, when no embedding can be made; drops hits under `IPC_PRECEDENT_MIN_SCORE`. The
+  function names and the hit shape are upstream's.
+- **`services/ipc_ingest.py`** - new, this repo's own: fills `pcb_standards_precedents` from `.txt`,
+  `.md` and `.pdf` files you supply (`python -m app.workflow.services.ipc_ingest <path> [--replace]`).
+  It ships no content: IPC-A-610 is a licensed document. Until something is ingested the search finds
+  nothing, as before, and the explanation says no precedents were found.
+- **Not changed:** `data/qdrant_indexer.py` still writes `ipc_defect_precedents`, which nothing reads.
+  Its records carry almost no descriptive fields (it reads `board_id` / `defect_hint`, which the
+  prepared samples do not have), its point ids come from `sample_id` and so overwrite each other
+  across runs, and it falls back to hash vectors offline. Left as ported; worth raising upstream.
+- **Min score is uncalibrated.** 0.3 is a starting point for `text-embedding-3-small`, not a tuned
+  value; raise it if unrelated chunks are cited.
 - **`adc_shared/data_api.py`, `agent2_api.py`, `client.py`, `adc_rest.py`, `test_rest.py`,
   `README_rest.md`, `compose.qdrant.yaml`** - the separate Shared Data API + Agent 2 REST API
   processes (and their own dedicated Qdrant in `compose.qdrant.yaml`). Not run: only
   `adc_shared/repository.py` is used, in-process, by `services/run_store.py`.
+
+## The teammate's Oct 13 batch: tests, evals, PDFs
+
+He sent a folder of Agent 2 unit tests, four evals, three "Updated Scripts" and five PDFs, then newer
+data (a paper, a JSON file and a PDF). What was done with it:
+
+- **"Updated Scripts" (`review_graph.py`, `agent2_mcp_server.py`, `qdrant_store.py`) were not merged.**
+  They are byte-identical to the upstream copies this drop-in was ported from, i.e. the pre-port
+  versions (Ollama/LLaVA, `requests`, cwd-relative paths, a repo-wide `rglob`, zero-filled "measured"
+  telemetry). Copying them would undo every deviation in this file. Nothing in them was new.
+- **`test_agent_graph.py`** was already here, identical. **`test_mcp_tools.py`**: this repo's adapted
+  copy is kept (his still patches `query_local_llava`).
+- **Added:** `tests/test_qdrant_rag.py` (adapted), `tests/test_metadata_and_telemetry.py` with
+  `src/data/filename_metadata.py` (`normalize_defect_label` / `parse_filename_metadata`, verbatim from
+  his `main.py`), and `tests/conftest.py`. Its two telemetry tests assert the ported measurement
+  tool's invented nominal values (laser height 42.0 ...); kept as documentation of the tool, which
+  `services/agent2_mcp_service.py` never calls without an XML.
+- **`tests/conftest.py` exists because adding `fastmcp` broke collection** of `test_mcp_tools` and
+  `test_agent2_security`: the ported server only ever loaded because `fastmcp` was absent and its own
+  stub took over, and a real FastMCP rejects `case_context_retrieval_tool(**kwargs)`. The conftest
+  gives the module the same plain stand-in. Nothing ran these tests before, so it went unnoticed;
+  CI now has a job for them.
+- **`evals/`** (4 scripts) ported to `app/workflow/evals/` as manual CLI scripts with only their paths
+  adapted (see its README). One of them seeds each case with the ground truth.
+- **Corpus** (ingested locally with `services/ipc_ingest.py`, into `data/ipc_corpus/`, **never
+  committed**; 7 PDFs and 1 JSON, 272 chunks): from the older folder, two blog articles (JLCPCB's AOI
+  and tombstoning posts) and three IPC tables of contents (IPC-A-610F, IPC-9712, IPC-9716); from the
+  newer data, `AOI based on IPC Standards.pdf` (a 2025 open-access journal paper, 20 pages) and
+  `ipc_a_610_chip_components.json` (despite the name, a 21-entry overview of IPC standards, sent
+  wrapped in a markdown code fence). `ipc-9716.pdf` was **ingested on the owner's say-so**: its last
+  page carries a standards-piracy site's watermark, so it is an unlicensed copy of a purchasable IPC
+  standard. It is only front matter, a TOC and the scope, and it is the first thing to remove
+  (`--replace` of a folder without it, or delete its points by `source_file`) if licensing says so.
+- **What retrieval returned** on the first look (94 chunks; scores are cosine, `text-embedding-3-small`):
+  an unrelated query scores 0.12-0.16 (dropped at 0.3), AOI-quality questions 0.59-0.67, defect
+  questions 0.37-0.49. Two limits: the corpus has no tombstone content, so a tombstone query returns
+  the nearest *irrelevant* standards (0.32-0.37, kept at 0.3); and the ported tool wraps every query
+  in "Defect inspection for ... IPC criteria", which swamps the symptom (all such queries return the
+  same generic AOI chunks at 0.61-0.63). `IPC_PRECEDENT_MIN_SCORE` 0.3 looks too low (about 0.4 would
+  drop the irrelevant ones); not changed.
+
+### Moving the corpus without re-embedding (dev and production)
+
+Embedding is the only slow, paid step (about 10 s and cents for the 272 chunks), but it needs an
+OpenAI key and the documents. `services/ipc_ingest.py` therefore has:
+
+- **skip unchanged**: each chunk carries its file's SHA-256; re-ingesting a folder embeds only files
+  that changed (a 2 s no-op for the whole corpus). `--force` embeds anyway.
+- **`export FILE`** writes every chunk with its vector as JSONL, behind a header naming the embedding
+  model and dimension; **`import FILE [--replace] [--force]`** loads it into any Qdrant with no
+  embedding call and no key. Import refuses a different dimension outright and a different model
+  unless `--force`, because those vectors would not match the app's queries.
+- **Keep the export out of git.** It holds the documents' text, so it is as licensed as they are
+  (`/data/ipc_corpus/` is gitignored).
+- **Production:** the Qdrant task has no persistent volume (`infra/production/qdrant.tf`), so the
+  collection is empty after every restart. Until it has one, run `import` as a one-off step from a
+  private location (an S3 object, say) after Qdrant starts; with an EFS/EBS volume it is a one-time
+  load. Nothing in the infrastructure does this yet.
 
 ## See also
 

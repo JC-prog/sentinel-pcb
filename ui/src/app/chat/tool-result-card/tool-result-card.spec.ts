@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { InspectionResult, ToolResult } from '../models/chat.models';
+import { Explanation, InspectionResult, ToolResult } from '../models/chat.models';
 import { ToolResultCard } from './tool-result-card';
 
 const ACCEPTED: InspectionResult = {
@@ -45,10 +45,52 @@ describe('ToolResultCard', () => {
     it('shows the verdict and what each classifier found, and that no case was saved', () => {
       const { el } = render({ name: 'inspect_image', result: ACCEPTED });
 
-      expect(text(el, 'case-state')).toBe('Not saved as a case');
+      expect(text(el, 'case-state')).toBe('Not saved as a case yet');
       expect(text(el, 'verdict')).toBe('Accepted');
-      expect(text(el, 'region')).toBe('Body · 91%');
-      expect(text(el, 'defect')).toBe('MissingPart · 87%');
+      expect(text(el, 'region')).toContain('Body · 91%');
+      expect(text(el, 'defect')).toContain('MissingPart · 87%');
+    });
+
+    it('says which image it is when several were attached', () => {
+      const { el } = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, image_number: 2, images_attached: 3 },
+      });
+
+      expect(text(el, 'card-title')).toContain('image 2 of 3');
+      expect(text(render({ name: 'inspect_image', result: ACCEPTED }).el, 'card-title')).not.toContain('image');
+    });
+
+    it('shows which model version answered, and a confidence meter for each stage', () => {
+      const { el } = render({ name: 'inspect_image', result: ACCEPTED });
+
+      expect(text(el, 'region')).toContain('JcProg/region@v1');
+      expect(text(el, 'defect')).toContain('JcProg/body@v1');
+      const meters = Array.from(el.querySelectorAll('[role="meter"]')).map((m) =>
+        m.getAttribute('aria-valuenow'),
+      );
+      expect(meters).toEqual(['91', '87']);
+    });
+
+    it("shows the assistant's one-line summary of the inspection when there is one", () => {
+      const { el } = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, inspection_summary: 'Clean pads, no visible defect.' },
+      });
+
+      expect(text(el, 'summary')).toBe('Clean pads, no visible defect.');
+      expect(render({ name: 'inspect_image', result: ACCEPTED }).el.querySelector('[data-testid="summary"]')).toBeNull();
+    });
+
+    it('says what to do next: correct the label, or inspect a clearer image', () => {
+      const classified = render({ name: 'inspect_image', result: ACCEPTED }).el;
+      const unclassified = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, defect: null, review_required: true, verdict: 'review_required' },
+      }).el;
+
+      expect(text(classified, 'next-step')).toContain('tell me the right one');
+      expect(text(unclassified, 'next-step')).toContain('no label to correct');
     });
 
     it('lists what else the model considered, best first', () => {
@@ -235,10 +277,11 @@ describe('ToolResultCard', () => {
       expect(card).toContain('Body');
       expect(card).toContain('Bridge');
       expect(card).toContain('61%');
-      expect(card).toContain('needs a person to approve or override');
+      expect(card).toContain('tell me if the label is wrong');
+      expect(card).not.toContain('approve');
     });
 
-    it('tells the user an accepted case can still be relabelled', () => {
+    it('says there is nothing to correct when no defect model ran', () => {
       const { el } = render({
         name: 'create_case',
         result: {
@@ -254,7 +297,77 @@ describe('ToolResultCard', () => {
       const card = text(el, 'case-created');
       expect(card).toContain('Accepted');
       expect(card).toContain('defect not classified');
-      expect(card).toContain('relabel it');
+      expect(card).toContain('no label to correct');
+    });
+  });
+
+  describe('an explanation', () => {
+    const EXPLANATION: Explanation = {
+      status: 'ok',
+      advisory: true,
+      label: 'tombstone',
+      confidence: 0.8,
+      summary: 'One end of the part is lifted off its pad.',
+      visual_evidence_cited: 'lifted at one end',
+      ipc_precedent_cited: 'IPC-A-610 tombstone criteria',
+      model_label: 'tombstone',
+      agrees_with_model: true,
+      guardrail: { status: 'PASSED', hallucination_flagged: false, note: null },
+      evidence: { visual: 'lifted', telemetry_recorded: false, precedents_found: false },
+    };
+
+    it('shows what Agent 2 found, that it agrees, and that it is advisory', () => {
+      const { el } = render({ name: 'explain_inspection', result: EXPLANATION });
+
+      expect(text(el, 'explanation-label')).toContain('tombstone');
+      expect(text(el, 'explanation-label')).toContain('80%');
+      expect(text(el, 'agreement')).toBe('Agrees with the model');
+      expect(text(el, 'explanation-summary')).toContain('lifted off its pad');
+      expect(text(el, 'explanation')).toContain('Advisory only');
+      expect(text(el, 'telemetry')).toBe('Not recorded');
+    });
+
+    it('says plainly when it disagrees and what the model said', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, label: 'missing part', model_label: 'tombstone', agrees_with_model: false },
+      });
+
+      expect(text(el, 'agreement')).toBe('Disagrees with the model');
+      expect(text(el, 'explanation')).toContain('The model said tombstone');
+    });
+
+    it('does not pretend to decide when Agent 2 declined to', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, label: null, confidence: 0.2, agrees_with_model: null },
+      });
+
+      expect(text(el, 'explanation-label')).toContain('Could not decide');
+      expect(text(el, 'agreement')).toBe('No comparison');
+    });
+
+    it('warns when its own checks flagged the explanation', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: {
+          ...EXPLANATION,
+          status: 'flagged',
+          guardrail: { status: 'FLAGGED', hallucination_flagged: true, note: 'Visual evidence is too vague.' },
+        },
+      });
+
+      expect(text(el, 'flagged')).toContain('weakly grounded');
+      expect(text(el, 'flagged')).toContain('too vague');
+    });
+
+    it('says when measurements were read from the inspection XML', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, evidence: { ...EXPLANATION.evidence, telemetry_recorded: true } },
+      });
+
+      expect(text(el, 'telemetry')).toBe('Read from the inspection XML');
     });
   });
 });

@@ -1,7 +1,7 @@
 <div
   class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
 >
-  <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 pt-16 pb-10">
+  <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 pt-6 pb-10">
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 class="text-lg font-bold">Models</h1>
@@ -271,9 +271,18 @@
                     "
                     >{{ report.status }}</span
                   >
+                  @if (report.stats.auto) {
+                    <span
+                      class="ml-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                      data-testid="auto-badge"
+                      title="Raised automatically after enough corrections"
+                      >auto</span
+                    >
+                  }
                 </p>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Reported by {{ report.reported_by }} · {{ formatDate(report.created_at) }}
+                  {{ report.stats.auto ? 'Raised after a correction by' : 'Reported by' }}
+                  {{ report.reported_by }} · {{ formatDate(report.created_at) }}
                 </p>
               </div>
               @if (isAdmin() && report.status === 'open') {
@@ -303,9 +312,12 @@
             @if (report.case_numbers.length > 0) {
               <p class="mt-2 flex flex-wrap gap-1 text-xs">
                 @for (caseNumber of report.case_numbers; track caseNumber) {
-                  <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono dark:bg-slate-800">{{
-                    caseNumber
-                  }}</span>
+                  <a
+                    [href]="'/cases?case=' + caseNumber"
+                    (click)="openCase($event, caseNumber)"
+                    class="rounded bg-slate-100 px-1.5 py-0.5 font-mono underline-offset-2 hover:underline dark:bg-slate-800"
+                    >{{ caseNumber }}</a
+                  >
                 }
               </p>
             }
@@ -449,7 +461,16 @@
                   @for (sample of detail.samples; track sample.ticket_id ?? sample.case_id ?? sample.sample_ref) {
                     <tr class="border-t border-slate-200 dark:border-slate-800">
                       <td class="py-1 pr-3 font-mono">
-                        {{ sample.case_number ?? sample.case_id ?? sample.sample_ref ?? '—' }}
+                        @if (isCaseNumber(sample.case_number)) {
+                          <a
+                            [href]="'/cases?case=' + sample.case_number"
+                            (click)="openCase($event, sample.case_number!)"
+                            class="underline-offset-2 hover:underline"
+                            >{{ sample.case_number }}</a
+                          >
+                        } @else {
+                          {{ sample.case_number ?? sample.case_id ?? sample.sample_ref ?? '—' }}
+                        }
                         @if (sample.run_id) {
                           <span class="text-slate-500 dark:text-slate-400" data-testid="sample-run">
                             · run {{ sample.run_id.slice(0, 8) }}

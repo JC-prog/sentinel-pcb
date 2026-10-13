@@ -11,10 +11,17 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # Inspecting saves nothing; creating the Case (only after the user says yes) is what makes the
     # inspection something to relabel or review.
     "create_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # The positive half of feedback: the label was right. Saves a confirmation, not a case.
+    "confirm_label_correct": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Advisory only: Agent 2's explanation of the inspection the user is looking at. Nothing saved.
+    "explain_inspection": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a relabel saves nothing; confirming it records the correction and queues a
     # retraining ticket - an Admin still approves the retraining itself in the Models tab.
     "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_relabel": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # The user's own corrections: reading them, and taking one back while it is not in a plan yet.
+    "list_my_corrections": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "withdraw_correction": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a case review saves nothing; confirming it resolves the case (APPROVED/OVERRIDDEN).
     "review_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_review": frozenset({UserRole.QA, UserRole.ADMIN}),
@@ -33,6 +40,12 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "get_retraining_job": frozenset({UserRole.ADMIN}),
     # Read-only views of the Work tab's stored runs, which are QA/Admin only there too.
     "get_sample": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Read-only views of saved cases - the same list the Cases tab shows to QA and Admin.
+    "get_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "list_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "get_component_history": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Counts of what happened over a period - cases, inspections, ratings are shared QA/Admin data.
+    "get_activity_summary": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_runs": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_review_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_run_drift": frozenset({UserRole.QA, UserRole.ADMIN}),

@@ -41,6 +41,12 @@ describe('routes', () => {
     expect(router.url).toBe('/models');
   });
 
+  it('serves the Cases tab at "/cases"', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/cases');
+    expect(router.url).toBe('/cases');
+  });
+
   it('still serves Chat at the explicit "/chat" path', async () => {
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/chat');

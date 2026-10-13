@@ -76,7 +76,8 @@ def test_chat_stream_uses_openai_by_default(
 
     assert providers == ["openai"]
     assert _reply(body) == "Hello from OpenAI"
-    assert _parse_sse(body)[-1] == ("done", {})
+    event, data = _parse_sse(body)[-1]
+    assert event == "done" and set(data) == {"message_id"}
 
 
 def _record_chat_models(monkeypatch: pytest.MonkeyPatch, reply: str) -> list[str | None]:

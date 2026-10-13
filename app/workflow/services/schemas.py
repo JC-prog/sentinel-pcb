@@ -367,3 +367,29 @@ class WorkflowReviewCaseOut(BaseModel):
     has_defect_image: bool
     review: WorkflowReviewOut | None
     decision: WorkflowReviewDecisionOut | None
+
+
+class WorkflowRunSummaryOut(BaseModel):
+    """One stored run in the Work tab's run history: when it finished and where its samples ended
+    up. `decided` counts flagged samples the operator has already made a final call on."""
+
+    run_id: str
+    saved_at_utc: str
+    status: str
+    input_samples: int
+    preparation_ready: int
+    preparation_failed: int
+    verification_passed: int
+    verification_failed: int
+    inference_attempted: int
+    inference_completed: int
+    accepted: int
+    review_required: int
+    inference_aborted: int
+    decided: int
+
+
+class WorkflowRunListOut(BaseModel):
+    runs: list[WorkflowRunSummaryOut]
+    # False when the run store could not be read, so an empty list is not mistaken for "no runs".
+    available: bool = True

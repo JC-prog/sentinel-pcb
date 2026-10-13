@@ -1,5 +1,6 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { vi } from 'vitest';
 import { AuthService, AuthUser } from '../auth.service';
 import { Models } from './models';
@@ -328,6 +329,23 @@ describe('Models', () => {
       expect(card.textContent).toContain('CASE-000007');
     });
 
+    it('links a report\'s case numbers to the Cases tab', async () => {
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      const link = root().querySelector('[data-report="r-1"] a[href="/cases?case=CASE-000007"]') as HTMLElement;
+
+      link.click();
+
+      expect(link.textContent).toContain('CASE-000007');
+      expect(navigate).toHaveBeenCalledWith(['/cases'], { queryParams: { case: 'CASE-000007' } });
+    });
+
+    it('does not mark a report filed by hand as auto', () => {
+      const card = root().querySelector('[data-report="r-1"]') as HTMLElement;
+
+      expect(card.querySelector('[data-testid="auto-badge"]')).toBeNull();
+    });
+
     it('summarises reported and open counts per model', () => {
       const counts = root().querySelector('[data-testid="drift-counts"]')!.textContent!;
 
@@ -341,6 +359,24 @@ describe('Models', () => {
       expect(fake.service.setDriftWindow).toHaveBeenCalledWith(7);
       expect(button('7 days')!.getAttribute('aria-pressed')).toBe('true');
       expect(button('30 days')!.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('shows a report that counts corrections as a number of corrections, not rates', () => {
+      fake.driftSignal.set(
+        drift({
+          reports: [
+            report({
+              stats: { corrections: { recent: 6, previous: 1 }, window_days: 7, signals: [] },
+            }),
+          ],
+        }),
+      );
+      fixture.detectChanges();
+
+      const card = root().querySelector('[data-report="r-1"]') as HTMLElement;
+      expect(card.textContent).toContain('6 corrections in the last 7 days');
+      expect(card.textContent).toContain('1 before');
+      expect(card.textContent).not.toContain('override rate');
     });
 
     it('lets an Admin resolve an open report but not a resolved one', async () => {

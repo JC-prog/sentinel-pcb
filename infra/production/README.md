@@ -115,6 +115,26 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   it goes with `terraform destroy` (no final snapshot). To keep data across restarts, give Qdrant and
   the backend an EFS volume first - Qdrant does not officially support network filesystems, so for
   real use prefer block storage or Qdrant Cloud.
+- **The IPC corpus is restored, nothing else.** Agent 2's precedent collection
+  (`pcb_standards_precedents`) is empty after every Qdrant restart, and "Explain this result" then
+  answers without precedents. `ipc_corpus.tf` makes it a one-command fix: a private bucket holds an
+  export of the corpus (vectors included, so loading it spends no OpenAI tokens) and a one-shot ECS
+  task imports it. Nothing runs it automatically; after Qdrant starts:
+
+  ```bash
+  # once, from a machine whose Qdrant holds the corpus (needs the dev Qdrant and .env):
+  uv run python -m app.workflow.services.ipc_ingest export ipc-corpus.jsonl
+  aws s3 cp ipc-corpus.jsonl "s3://$(terraform output -raw ipc_corpus_bucket_name)/ipc-corpus.jsonl"
+
+  # after every Qdrant start (the output is the full `aws ecs run-task ...` command):
+  eval "$(terraform output -raw ipc_corpus_load_command)"
+  ```
+
+  Watch `/ecs/<project>-ipc-corpus-loader` in CloudWatch: `fetch` copies the file, `import` prints
+  `imported N chunk(s)`. It waits up to about 3 minutes for Qdrant, and is safe to run twice. The
+  export holds the documents' text, so it never goes in git or the image. Chat memory and Work-tab
+  runs are still lost on a Qdrant restart: a real fix there is block storage or Qdrant Cloud, not EFS
+  (Qdrant does not support network filesystems).
 - **Chat image uploads are on local container disk** (`app/chat/uploads/service.py`), not S3. Fine at
   `desired_count = 1`; breaks if scaled to more than one task, since disk isn't shared between
   them. Move to S3 before scaling out.
@@ -129,8 +149,17 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   if that cadence becomes painful.
 - **Inference service has no autoscaling and `desired_count = 1`.** Add target-tracking on CPU,
   or a queue in front, once classification traffic justifies it.
-- **RDS is provisioned but unused.** No schema, no migrations, no app code touches it yet -
-  that's the future multi-user/auth feature's job.
+- **The database schema comes from `create_all`, not Alembic.** The backend creates its tables at
+  start-up (`app/shared/db/session.py`), which is right for a fresh, short-lived RDS instance but
+  does not alter an existing one. Keeping a database across versions means running
+  `alembic upgrade head` against it first.
+- **"Explain this result" runs as a sidecar of the backend task** (`explain_enabled`, default on):
+  Agent 2's MCP service (`agent2-mcp`, `ecs.tf`) listens on the task's loopback and reads uploads from
+  a volume shared with the backend, so `AGENT2_MCP_URL` is set for you. It is not an essential
+  container, so if it dies the backend keeps running and the chat button just reports the explanation
+  is unavailable. Its precedents come from the corpus the loader above restores; with an empty
+  collection it explains without citing any. Set `explain_enabled = false` to leave it out (the
+  backend then also needs only 2048 MiB).
 
 ## Tearing down
 

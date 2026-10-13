@@ -54,13 +54,17 @@ reference; sections 3-8 explain each row.
 | You want to... | Attach | Say something like | Tool(s) it calls | Saves anything? |
 | --- | --- | --- | --- | --- |
 | Inspect a component image | image (+ optional inspection XML) | "What defect does this component have? It is C754 on Board1." | `inspect_image` | **No** |
+| Ask why the model said that | nothing | "Explain this result." (a button under the inspection) | `explain_inspection` | No - advisory |
+| Say the label is right | nothing | "That label is right." | `confirm_label_correct` | Yes - a confirmation, no case |
 | Keep that inspection as a case | nothing | "Save this as a case." | `create_case` | Yes - a case, after "yes" |
 | Correct a wrong defect label | nothing | "That label is wrong - it's actually a wrong part, because the markings don't match." then "Yes, confirm it." | `relabel_case`, then `confirm_relabel` | Yes, after "yes" |
+| Summarise a period | nothing | "What happened this week?" | `get_activity_summary` | No |
+| See what chat knows about a part | nothing | "Has U7 on BOARD-1 failed before?" | `get_component_history` | No |
 | See which Work-tab runs exist | nothing | "Which runs do I have?" | `list_runs` | No |
 | Look up a Work-tab sample | nothing | "What do you know about sample S000001?" | `get_sample` | No |
 | See what is waiting for review | nothing | "Which samples are still waiting for review?" | `list_review_cases` | No |
 | See how the models did in a Work-tab run | nothing | "How did the models do in the last run, and what did the operator correct?" | `get_run_drift` | No |
-| Check whether a model is drifting (saved cases) | nothing | "Is the pcb_text_defect model drifting?" | `get_drift_summary` | No |
+| Check whether corrections are piling up | nothing | "Are corrections to pcb_text_defect piling up?" | `get_drift_summary` | No |
 | File a drift report | nothing | "Report that - lots of false Golden calls since Monday." | `report_model_drift` | Yes |
 | Plan a retraining | nothing | "Draft a retraining plan for pcb_text_defect." (or the **Draft retraining plan** button in the Work tab) | `draft_retraining_plan` | Yes - a plan *awaiting Admin approval* |
 | Model overview (Admin) | nothing | "What is the model status?" | `monitoring_status` | No |
@@ -72,6 +76,10 @@ which model writes the chat reply from the list the server offers (the operator'
 server's default is first). The choice only affects the reply: memory, guardrails and the inspection
 agents keep their own models, and tool behaviour (what gets saved, the confirm step) is the same
 whichever you pick.
+
+**Memory.** The assistant keeps a few durable facts about you between conversations. `/remember <text>`
+adds one, `/memories` lists them (newest first, numbered) and `/forget 2` or `/forget all` removes
+them. These three never reach the model, and only ever touch your own memories.
 
 **If a prompt does nothing useful**
 - *"Inspect this board"* with **no image attached** - the inspect tool is only offered when an image
@@ -172,12 +180,13 @@ tells you to run a dataset in the Work tab first.
 
 ## 7. Model health and retraining (chat)
 
-> *"Is the pcb_text_defect model drifting?"*
+> *"Are corrections to the pcb_text_defect model piling up?"*
 
-`get_drift_summary` compares the model's recent period with the one before it over **saved cases**
-(from the relabel / review steps above): how many needed review, how often reviewers overrode or
-**corrected** it, its confidence, by model version, with plain-language notes. (For a Work-tab
-**run**, use the run question in section 6 instead - it measures the run's samples.)
+`get_drift_summary` counts the **corrections** people confirmed for the model (from chat relabels
+and from the Work tab), this period against the one before, split by model version, with
+plain-language notes and where the automatic drift-report threshold is. It is a **count, not an
+error rate**: only labels someone looked at and corrected are counted. (For how a Work-tab **run**
+did, use the run question in section 6 instead - it measures that run's samples.)
 
 If it looks wrong:
 
@@ -226,6 +235,15 @@ flagged sample (about 35 seconds for 11 samples) and the log prints each one:
 
 The run and everything Agent 2 and you decide are **stored**, so the Review Console survives a
 page reload or a backend restart.
+
+### 8.1a Run history
+
+The sidebar on the Work tab lists the runs that have been stored, newest first, each with its
+time, how many samples it had, how many were flagged and how many already have your decision.
+Click one to reopen it: the summary, the Review Console, Model feedback and the Retraining queue
+all show that run. You cannot switch while a run is in progress. Runs are shared by everyone with
+QA or Admin access. If the sidebar says history is unavailable, the run store (Qdrant) could not
+be read; running a dataset still works.
 
 ### 8.2 Explanation Review - make the final call
 
@@ -306,7 +324,7 @@ the open tickets (including chat relabels).
 
 - **Live models** - each model's live version, with **Roll back** (Admin) and, for other known
   versions, **Promote** (Admin).
-- **Drift reports** - reports filed from chat or from the Work tab (a report filed for a Work-tab run
+- **Drift reports** - reports filed from chat or from the Work tab, plus ones raised automatically when a model version gets 5 corrections in 7 days (marked "auto"; case numbers link to the Cases tab) (a report filed for a Work-tab run
   carries a snapshot of the run's numbers); an Admin can **Mark resolved**.
 - **Retraining queue** - jobs and their tickets. A job's *Show flagged cases* lists what it was
   drafted from (case numbers for chat tickets; sample id and run for Work-tab tickets). **Approve**
