@@ -30,11 +30,11 @@ You need:
 | An OpenAI API key (`sk-...`) | you have it |
 | Internet access during the image build (the inference build downloads the ONNX models from Hugging Face) | |
 
-Decide the region. The config defaults to `us-east-1`; the commands below use it. If you change
+Decide the region. The config defaults to `ap-southeast-1` (Singapore); the commands below use it. If you change
 it, change it in `infra/production/backend.tf` and `bootstrap/` too.
 
 ```bash
-export AWS_REGION=us-east-1
+export AWS_REGION=ap-southeast-1
 export TF_VAR_openai_api_key='sk-...'     # never commit this; it is stored only in Secrets Manager
 ```
 
