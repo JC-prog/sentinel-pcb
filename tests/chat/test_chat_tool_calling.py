@@ -69,6 +69,7 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
         "list_drift_reports",
         "get_retraining_job",
         "create_case",
+        "confirm_label_correct",
         "get_sample",
         "get_case",
         "list_cases",

@@ -54,6 +54,7 @@ reference; sections 3-8 explain each row.
 | You want to... | Attach | Say something like | Tool(s) it calls | Saves anything? |
 | --- | --- | --- | --- | --- |
 | Inspect a component image | image (+ optional inspection XML) | "What defect does this component have? It is C754 on Board1." | `inspect_image` | **No** |
+| Say the label is right | nothing | "That label is right." | `confirm_label_correct` | Yes - a confirmation, no case |
 | Keep that inspection as a case | nothing | "Save this as a case." | `create_case` | Yes - a case, after "yes" |
 | Correct a wrong defect label | nothing | "That label is wrong - it's actually a wrong part, because the markings don't match." then "Yes, confirm it." | `relabel_case`, then `confirm_relabel` | Yes, after "yes" |
 | See which Work-tab runs exist | nothing | "Which runs do I have?" | `list_runs` | No |

@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.services.cases import get_case_by_sequence_number, parse_case_number
+from app.chat.services.inspection_log import chat_activity
 from app.shared.db.models import (
     DriftReport,
     DriftReportStatus,
@@ -60,11 +61,21 @@ class DraftedPlan:
     drift_reports_linked: int
 
 
+async def _trend(session: AsyncSession, model: str, *, days: int) -> dict[str, Any]:
+    """Corrections over time (shared, every origin) plus what chat itself inspected, so the answer
+    can say how many images the corrections are out of - for the chat's own inspections."""
+
+    return {
+        **await correction_trend(session, model, days=days),
+        "chat": await chat_activity(session, model, days=days),
+    }
+
+
 async def drift_overview(session: AsyncSession, model: str, *, days: int) -> dict[str, Any]:
     """The drift summary plus what the user will want next to it: the live version and how many
     reports and tickets are already open for this model."""
 
-    summary = await correction_trend(session, model, days=days)
+    summary = await _trend(session, model, days=days)
     live = await version_repo.get_live_version(session, model)
     open_reports = await drift_repo.count_reports_by_model(session, status=DriftReportStatus.OPEN)
     open_tickets = await ticket_repo.count_tickets(session, status=RetrainingTicketStatus.OPEN)
@@ -104,7 +115,7 @@ async def file_drift_report(
             case_ids.append(case.id)
             known_numbers.append(case.case_number)
 
-    summary = await correction_trend(session, model, days=days)
+    summary = await _trend(session, model, days=days)
     live = await version_repo.get_live_version(session, model)
     report = await drift_repo.create_drift_report(
         session,
@@ -136,7 +147,7 @@ async def draft_plan(
         session, model_name=model, status=DriftReportStatus.OPEN
     )
     if not rationale:
-        summary = await correction_trend(session, model, days=DEFAULT_WINDOW_DAYS)
+        summary = await _trend(session, model, days=DEFAULT_WINDOW_DAYS)
         rationale = default_rationale(model, len(open_reports), summary["signals"])
 
     try:

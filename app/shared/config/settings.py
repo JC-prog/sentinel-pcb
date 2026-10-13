@@ -190,6 +190,11 @@ class Settings(BaseSettings):
     # pattern as the others.
     sample_lookup_agent_enabled: bool = True
 
+    # Record every chat image inspection (verdict, model versions, no image) so chat can say how
+    # many were inspected and how many a person confirmed were right (app/chat/services/
+    # inspection_log.py). Off: nothing is recorded and those counts stay empty.
+    inspection_log_enabled: bool = True
+
     # Case agent (app/chat/agents/case_agent/) - read-only lookups of the Cases chat has saved
     # (get_case, list_cases): what the Cases tab shows, answerable in the conversation.
     case_lookup_agent_enabled: bool = True

@@ -35,7 +35,8 @@ async def get_drift_summary(
     """Shows whether corrections to a model are piling up: how many confirmed corrections it got in
     the recent window against the window before, split by model version, and where the automatic
     drift-report threshold is. It counts corrections people made, NOT the model's error rate - say
-    so, and for how a run did use get_run_drift. Read-only, and the first thing to call for any
+    so, and for how a run did use get_run_drift. The result's `chat` block gives how many images chat
+    inspected, how many were corrected and how many a person confirmed right, for the same window. Read-only, and the first thing to call for any
     'is the model getting worse?' question - use it before reporting drift or planning a retrain."""
 
     return await service.drift_overview(

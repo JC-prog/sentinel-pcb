@@ -14,7 +14,7 @@ from app.chat.agents.inspection_agent import policy, react, steps
 from app.chat.agents.inspection_agent.state import InspectionRequest, InspectionRun
 from app.chat.agents.inspection_agent.verdict import Verdict, decide
 from app.chat.db.models import CaseDraft
-from app.chat.services import drafts
+from app.chat.services import drafts, inspection_log
 from app.shared.config.langfuse import traced
 from app.shared.config.settings import settings
 
@@ -48,11 +48,19 @@ async def run_inspection(
 
     verdict = decide(run)
     run.note(f"Workflow finalized as {verdict.status.value}.")
+    fields = _case_fields(run, verdict)
     draft = await drafts.save_draft(
         session,
         conversation_id=run.request.conversation_id,
         user_id=run.request.user_id,
-        payload=_case_fields(run, verdict),
+        payload=fields,
+    )
+    # The record that this image was inspected, kept whether or not anyone acts on it.
+    await inspection_log.record(
+        session,
+        user_id=run.request.user_id,
+        conversation_id=run.request.conversation_id,
+        case_fields=fields,
     )
     return InspectionOutcome(run, verdict, draft, summary)
 

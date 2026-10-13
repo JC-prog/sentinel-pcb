@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **chat now records what it inspected, and whether the model was right.** Every image
+  inspection is logged (verdict, model versions, board and component; never the image), and saying
+  "the label is right" records that confirmation (`confirm_label_correct`; a button appears under
+  the result). "Are corrections piling up?" then also reports, for chat's own inspections, how many
+  there were, how many were corrected, how many were confirmed right and the share corrected - the
+  denominator corrections alone never had. Switch off with `INSPECTION_LOG_ENABLED=false`. New
+  migration `f6b2d8a4c931` (`inspection_log`). Work-tab runs are not in these counts.
 - Chat: **see and forget what is remembered.** `/memories` lists what the assistant remembers about
   you (newest first); `/forget 2` forgets one by its number and `/forget all` forgets everything.
   Like `/remember`, they never reach the model, and a forget is scoped to your own memories inside

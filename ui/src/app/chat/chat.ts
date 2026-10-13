@@ -349,6 +349,7 @@ export class Chat {
         }
         case 'inspect_image':
           return [
+            ...(result.defect ? ['The label is right.'] : []),
             "The model's defect label is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
             result.review_required

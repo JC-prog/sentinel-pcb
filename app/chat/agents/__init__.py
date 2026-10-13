@@ -19,7 +19,7 @@ plumbing beside them.
 """
 
 from app.chat.agents.case_agent import GET_CASE, LIST_CASES
-from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
+from app.chat.agents.inspection_agent import CONFIRM_LABEL_CORRECT, CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
     GET_DRIFT_SUMMARY,
@@ -41,6 +41,7 @@ from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_
 tool_registry = ToolRegistry(
     [
         INSPECT_IMAGE,
+        CONFIRM_LABEL_CORRECT,
         CREATE_CASE,
         RELABEL_CASE,
         CONFIRM_RELABEL,

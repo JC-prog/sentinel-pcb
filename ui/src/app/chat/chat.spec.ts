@@ -384,6 +384,39 @@ describe('Chat', () => {
     expect(sent?.map((m) => m.content)).toContain('Open a case for this inspection.');
   });
 
+  it('offers "The label is right." after an inspection that found a label, not otherwise', async () => {
+    const inspection = (defect: unknown) => ({
+      name: 'inspect_image',
+      result: {
+        case_created: false,
+        verdict: 'accepted',
+        review_required: false,
+        review_reasons: [],
+        inspection_summary: null,
+        region: null,
+        defect,
+        measurement_validation: null,
+      },
+    });
+    await openConversation(() =>
+      of({
+        type: 'toolResult',
+        toolResult: inspection({
+          model: 'pcb_body_defect',
+          model_version: null,
+          label: 'Golden',
+          confidence: 0.9,
+          top_scores: [],
+        }),
+      }),
+    );
+    expect(buttonWithText('The label is right.')).toBeTruthy();
+
+    TestBed.resetTestingModule();
+    await openConversation(() => of({ type: 'toolResult', toolResult: inspection(null) }));
+    expect(buttonWithText('The label is right.')).toBeUndefined();
+  });
+
   it('sends a self-contained suggestion immediately', async () => {
     await setup(new FakeActivatedRoute());
     const chatService = TestBed.inject(ChatService);

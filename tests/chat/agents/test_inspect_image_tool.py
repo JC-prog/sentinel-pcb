@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.agents.inspection_agent import INSPECT_IMAGE
-from app.chat.db.models import Case, CaseDraft, Conversation
+from app.chat.db.models import Case, CaseDraft, Conversation, InspectionLog
 from app.shared.config.settings import settings
 from app.shared.db.models import User, UserRole
 from tests.chat.agents._helpers import VALID_IMAGE, call, tool_context, upload
@@ -357,3 +357,37 @@ async def test_an_image_number_that_is_not_attached_is_refused(
 
     assert "out of range" in result["error"]
     assert await _drafts(db_async_session) == []
+
+
+async def test_every_inspection_is_logged_even_when_nobody_acts_on_it(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    await _inspect(db_async_session, uploads)
+
+    (row,) = (await db_async_session.scalars(select(InspectionLog))).all()
+    assert (row.defect_model, row.defect_label, row.verdict) == (
+        "pcb_body_defect",
+        "MissingPart",
+        "accepted",
+    )
+    assert (row.board_id, row.component_ref) == ("BOARD-1", "U7")
+    assert row.verified is False
+    assert await _all_cases(db_async_session) == []  # logging made no case
+
+
+async def test_a_failure_to_log_never_costs_the_user_their_result(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    def broken_row(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("log table gone")
+
+    monkeypatch.setattr("app.chat.services.inspection_log.InspectionLog", broken_row)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert result["verdict"] == "accepted"
+    assert len(await _drafts(db_async_session)) == 1

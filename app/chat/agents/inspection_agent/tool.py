@@ -19,6 +19,7 @@ from app.chat.agents.inspection_agent.state import InspectionRequest, Stage
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, returns_json, text
 from app.chat.core.tools import ToolContext
 from app.chat.db.models import Case
+from app.chat.services import inspection_log
 from app.chat.uploads import resolve_upload_path
 from app.shared.config.settings import settings
 
@@ -110,6 +111,31 @@ async def create_case(runtime: Runtime) -> dict[str, Any]:
     }
 
 
+@tool("confirm_label_correct")
+@returns_json
+async def confirm_label_correct(runtime: Runtime) -> dict[str, Any]:
+    """RECORDS A CONFIRMATION: the user says the model's defect label on the image just inspected was
+    RIGHT. Only call it when the user has clearly said so ("that's right", "the label is correct").
+    It takes no label: it marks the most recent inspection in this conversation as confirmed. It
+    does not create a case or ticket. This is what lets the model's accuracy be counted at all,
+    since corrections alone only ever record its mistakes."""
+
+    ctx = runtime.context
+    try:
+        row = await inspection_log.confirm_correct(
+            ctx.session, conversation_id=ctx.conversation_id, user_id=ctx.user.id
+        )
+    except inspection_log.CannotConfirm as refusal:
+        raise ToolRefused(refusal.message) from refusal
+    return {
+        "status": "confirmed",
+        "model": row.defect_model,
+        "model_version": row.defect_model_version,
+        "label": row.defect_label,
+        "note": "Recorded that the model's label was right. Nothing else was saved.",
+    }
+
+
 def _after_creating(case: Case) -> str:
     created = f"Tell the user {case.case_number} was created."
     if not case.defect_label:
@@ -137,6 +163,7 @@ INSPECT_IMAGE = ChatTool(
     shows_card=True,
 )
 CREATE_CASE = ChatTool(create_case, label="Case creation", enabled=_enabled, shows_card=True)
+CONFIRM_LABEL_CORRECT = ChatTool(confirm_label_correct, label="Label confirmed", enabled=_enabled)
 
 
 def _request(ctx: ToolContext, *, image_number: int = 1, **identity: Any) -> InspectionRequest:
@@ -175,9 +202,10 @@ def _result(outcome: InspectionOutcome) -> dict[str, Any]:
     return {
         "case_created": False,
         "instruction": (
-            "Nothing is saved yet. Report the result. If the user says the defect label is wrong, "
-            "call relabel_case - the inspection does not need to be a case first; confirming the "
-            "relabel saves it as one. Only call create_case if they ask to save the inspection as "
+            "Nothing is saved as a case yet. Report the result. If the user says the defect label "
+            "is wrong, call relabel_case - the inspection does not need to be a case first; "
+            "confirming the relabel saves it as one. If they say the label is right, call "
+            "confirm_label_correct. Only call create_case if they ask to save the inspection as "
             "a case without correcting it, and only after they say yes."
         ),
         "verdict": outcome.verdict.status.value,
