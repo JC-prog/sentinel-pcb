@@ -1,0 +1,325 @@
+<div
+  class="h-full w-full overflow-y-auto bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pt-6 pb-10">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-bold">Cases</h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Inspections saved from chat, with the model's call and any correction. Correct a label in
+          chat; it shows up here.
+        </p>
+      </div>
+      <button
+        type="button"
+        (click)="refresh()"
+        [disabled]="loading()"
+        class="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        {{ loading() ? 'Refreshing…' : 'Refresh' }}
+      </button>
+    </div>
+
+    @if (loadError(); as error) {
+      <div
+        role="alert"
+        class="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+      >
+        {{ error }}
+      </div>
+    }
+
+    <form
+      class="flex flex-wrap items-end gap-2 text-sm"
+      aria-label="Filter cases"
+      (submit)="$event.preventDefault(); filtersChanged()"
+    >
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Search</span>
+        <input
+          type="search"
+          placeholder="Case, board, component, label"
+          class="w-56 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+          [value]="q()"
+          (input)="q.set($any($event.target).value)"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Status</span>
+        <select
+          class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700 dark:bg-slate-900"
+          [value]="status()"
+          (change)="status.set($any($event.target).value); filtersChanged()"
+        >
+          <option value="">All</option>
+          @for (item of statuses; track item[0]) {
+            <option [value]="item[0]">{{ item[1] }}</option>
+          }
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Model</span>
+        <select
+          class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700 dark:bg-slate-900"
+          [value]="model()"
+          (change)="model.set($any($event.target).value); filtersChanged()"
+        >
+          <option value="">All</option>
+          @for (name of models; track name) {
+            <option [value]="name">{{ name }}</option>
+          }
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Correction</span>
+        <select
+          class="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700 dark:bg-slate-900"
+          [value]="corrected()"
+          (change)="corrected.set($any($event.target).value); filtersChanged()"
+        >
+          <option value="">Any</option>
+          <option value="yes">Corrected</option>
+          <option value="no">Not corrected</option>
+        </select>
+      </label>
+      <button
+        type="submit"
+        class="rounded border border-slate-300 px-3 py-1 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Search
+      </button>
+      @if (hasFilters()) {
+        <button
+          type="button"
+          class="px-2 py-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+          (click)="clearFilters()"
+        >
+          Clear
+        </button>
+      }
+    </form>
+
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <section aria-label="Cases">
+        @if (cases().length === 0 && !loading()) {
+          <p class="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            @if (hasFilters()) {
+              No cases match these filters.
+            } @else {
+              No cases yet. Inspect an image in chat and say its label is wrong; confirming it saves
+              the case.
+            }
+          </p>
+        } @else {
+          <ul class="flex flex-col divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            @for (item of cases(); track item.case_number) {
+              <li>
+                <button
+                  type="button"
+                  class="flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800"
+                  [class]="item.case_number === selectedNumber() ? 'bg-slate-100 dark:bg-slate-800' : ''"
+                  [attr.aria-current]="item.case_number === selectedNumber() ? 'true' : null"
+                  (click)="open(item.case_number)"
+                >
+                  <span class="flex items-center justify-between gap-2">
+                    <span class="font-mono font-medium">{{ item.case_number }}</span>
+                    <span class="rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(item.status)">{{
+                      statusLabel(item.status)
+                    }}</span>
+                  </span>
+                  <span class="text-xs text-slate-500 dark:text-slate-400">
+                    {{ item.board_id }} · {{ item.component_ref }} · {{ item.defect_model ?? item.region ?? 'unclassified' }}
+                  </span>
+                  <span class="flex items-center justify-between gap-2 text-xs">
+                   <span>
+                    Model:
+                    <span [class]="item.corrected_label ? 'line-through' : 'font-medium'">{{
+                      item.defect_label ?? '-'
+                    }}</span>
+                    @if (item.corrected_label) {
+                      →
+                      <span class="font-medium">{{ item.corrected_label }}</span>
+                    }
+                   </span>
+                   <span class="shrink-0 text-slate-400 dark:text-slate-500">{{ formatDate(item.created_at) }}</span>
+                  </span>
+                </button>
+              </li>
+            }
+          </ul>
+          <div class="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span>{{ pageStart() }}-{{ pageEnd() }} of {{ total() }}</span>
+            <span class="flex gap-2">
+              <button
+                type="button"
+                class="rounded border border-slate-300 px-2 py-1 disabled:opacity-40 dark:border-slate-700"
+                [disabled]="offset() === 0 || loading()"
+                (click)="previous()"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                class="rounded border border-slate-300 px-2 py-1 disabled:opacity-40 dark:border-slate-700"
+                [disabled]="offset() + page >= total() || loading()"
+                (click)="next()"
+              >
+                Next
+              </button>
+            </span>
+          </div>
+        }
+      </section>
+
+      <section #detailPane aria-label="Case detail" class="lg:sticky lg:top-4 lg:self-start">
+        @if (detailError(); as error) {
+          <p role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+            {{ error }}
+          </p>
+        } @else if (detailLoading() && !detail()) {
+          <p class="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+        } @else if (detail(); as c) {
+          <article class="flex flex-col gap-4 rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
+            <header class="flex items-start justify-between gap-2">
+              <div>
+                <h2 class="flex items-center gap-2 font-mono text-base font-semibold">
+                  <span data-testid="case-title">{{ c.case_number }}</span>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 font-sans text-xs font-normal text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                    (click)="copyNumber(c.case_number)"
+                    aria-label="Copy case number"
+                  >
+                    {{ copied() ? 'Copied' : 'Copy' }}
+                  </button>
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400" data-testid="case-meta">
+                  {{ c.board_id }} · {{ c.component_ref }}
+                  @if (c.package) { · {{ c.package }} }
+                  · by {{ c.created_by ?? 'unknown' }} · {{ formatDate(c.created_at) }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                (click)="close()"
+                aria-label="Close case"
+              >
+                Close
+              </button>
+            </header>
+
+            @if (imageUrl(); as url) {
+              <img [src]="url" alt="Inspected component" class="max-h-64 w-auto self-start rounded border border-slate-200 dark:border-slate-700" />
+            } @else if (imageMissing()) {
+              <p class="text-xs text-slate-500 dark:text-slate-400">The inspected image is no longer stored.</p>
+            }
+
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-2">
+              <div>
+                <dt class="text-xs text-slate-500 dark:text-slate-400">Status</dt>
+                <dd><span class="rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(c.status)">{{ statusLabel(c.status) }}</span></dd>
+              </div>
+              <div>
+                <dt class="text-xs text-slate-500 dark:text-slate-400">Region</dt>
+                <dd>{{ c.region ?? '-' }} ({{ percent(c.region_confidence) }})</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-slate-500 dark:text-slate-400">Defect model</dt>
+                <dd>{{ c.defect_model ?? 'not run' }}</dd>
+                @if (c.defect_model_version) {
+                  <dd class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ c.defect_model_version }}</dd>
+                }
+              </div>
+              <div>
+                <dt class="text-xs text-slate-500 dark:text-slate-400">Model said</dt>
+                <dd>{{ c.defect_label ?? '-' }} ({{ percent(c.defect_confidence) }})</dd>
+              </div>
+            </dl>
+
+            @if (scores(c).length > 0) {
+              <div>
+                <h3 class="mb-1 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">Scores</h3>
+                <ul class="flex flex-col gap-1">
+                  @for (s of scores(c); track s.label) {
+                    <li class="flex items-center gap-2">
+                      <span class="w-32 shrink-0 truncate">{{ s.label }}</span>
+                      <span class="h-2 flex-1 rounded bg-slate-100 dark:bg-slate-800">
+                        <span class="block h-2 rounded bg-slate-500" [style.width.%]="s.value * 100"></span>
+                      </span>
+                      <span class="w-10 text-right text-xs">{{ percent(s.value) }}</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+
+            @if (c.corrected_label) {
+              <div class="rounded-lg border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-700 dark:bg-emerald-950/40" data-testid="correction">
+                <p class="text-xs tracking-wide text-emerald-800 uppercase dark:text-emerald-200">Corrected</p>
+                <p class="mt-1">
+                  <span class="line-through">{{ c.defect_label }}</span> → <span class="font-semibold">{{ c.corrected_label }}</span>
+                </p>
+                @if (c.correction_reason) {
+                  <p class="mt-1 text-slate-600 dark:text-slate-300">{{ c.correction_reason }}</p>
+                }
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  by {{ c.corrected_by ?? 'unknown' }} · {{ formatDate(c.corrected_at) }}
+                </p>
+              </div>
+            } @else if (c.pending_label) {
+              <div class="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/40" data-testid="pending">
+                <p class="text-xs tracking-wide text-amber-800 uppercase dark:text-amber-200">Relabel proposed, not confirmed</p>
+                <p class="mt-1">→ <span class="font-semibold">{{ c.pending_label }}</span></p>
+                @if (c.pending_reason) {
+                  <p class="mt-1 text-slate-600 dark:text-slate-300">{{ c.pending_reason }}</p>
+                }
+              </div>
+            }
+
+            @if (c.ticket; as t) {
+              <p class="text-xs text-slate-500 dark:text-slate-400" data-testid="ticket">
+                Retraining ticket <span class="font-mono">{{ t.id.slice(0, 8) }}</span> · {{ t.status }}
+                @if (t.job_id) { · in plan <span class="font-mono">{{ t.job_id.slice(0, 8) }}</span> }
+              </p>
+            }
+
+            @if (c.resolved_at) {
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Resolved by {{ c.resolved_by ?? 'unknown' }} · {{ formatDate(c.resolved_at) }}{{ c.resolution_note ? ': ' + c.resolution_note : '' }}
+              </p>
+            }
+
+            @if (c.measurement_validation; as mv) {
+              <p class="text-xs">
+                XML measurements: {{ mv.valid ? 'valid' : 'issues found' }}
+                @if (mv.issues && mv.issues.length > 0) { - {{ mv.issues.join('; ') }} }
+              </p>
+            }
+
+            @if (c.observations.length > 0) {
+              <ul class="list-disc pl-5 text-xs text-slate-600 dark:text-slate-300">
+                @for (o of c.observations; track $index) {
+                  <li>{{ o }}</li>
+                }
+              </ul>
+            }
+
+            @if (c.conversation_id) {
+              <a
+                [routerLink]="['/c', c.conversation_id]"
+                class="self-start rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Open the conversation
+              </a>
+            }
+          </article>
+        } @else {
+          <p class="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Select a case to see what the model said and what was corrected.
+          </p>
+        }
+      </section>
+    </div>
+  </div>
+</div>

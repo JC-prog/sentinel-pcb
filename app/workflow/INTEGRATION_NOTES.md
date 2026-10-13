@@ -1,0 +1,352 @@
+# Integration notes: pcb_agentic_inspector -> app/workflow/
+
+What's in this directory, how it got here, and what was moved, adapted, or deleted along the way.
+Written for whoever next touches `app/workflow/` and wonders why it looks like two different
+codebases stitched together - it is.
+
+## What happened
+
+`app/workflow/` was emptied and replaced with a raw copy of a teammate's separate project,
+`pcb_agentic_inspector` (an "Agent 1 orchestrator" + "Agent 2 explainability" pair, previously
+ported/adapted by hand into this repo's own conventions under `app/workflow/agents/
+{orchestrator_agent,explainability_review_agent}/` - that hand-port is gone now, replaced by this
+closer-to-source drop-in). Then:
+
+1. The raw drop-in's copies of the four ONNX models (`models/{feature,body,lead,text}/`) were
+   deleted - they were exact duplicates of what `inference/` already deploys as
+   `pcb_region`/`pcb_body_defect`/`pcb_lead_defect`/`pcb_text_defect` (same Hugging Face repos,
+   same labels, same input sizes). Their model-card documentation was kept, consolidated into
+   [`inference/MODELS.md`](../../inference/MODELS.md) instead of living twice in the repo.
+2. `app/workflow/api/` and `app/workflow/services/` - this repo's own thin FastAPI routing layer
+   (the drop-in has no HTTP entrypoint of its own; only a tkinter UI, a CLI batch runner, and two
+   standalone REST APIs that persist *results after* a run, not what runs one) - were rebuilt
+   around the drop-in's actual business logic.
+3. Two files inside the drop-in were adapted (not left verbatim) to call this repo's `inference/`
+   microservice over HTTP instead of loading local ONNX files, and one file got a minimal,
+   additive hook for live progress streaming. Everything else in `src/agent1_orchestrator/` (and
+   its sibling top-level `planner/`, `state/`, `verification/` packages) is untouched.
+4. A handful of files that only made sense for the drop-in's own standalone entrypoints (tkinter
+   launcher, CLI runner, a one-time source patcher) were deleted as unused now that routing goes
+   through `app/workflow/api/` instead.
+5. The drop-in's committed sample images/datasets were moved out of `app/workflow/` (source) to
+   `data/workflow/` (data), matching this repo's existing `data/images`, `data/golden_images`,
+   `data/orchestrator` convention.
+
+## Adapted (not verbatim) - the inference swap
+
+- **`src/agent1_orchestrator/services/model_lifecycle.py`** - originally loaded four local ONNX
+  files via `config/models.yaml` + `ONNXImageClassifier`. Now resolves each of the four approved
+  model keys (`feature`/`body`/`lead`/`text`) straight to the matching `inference/models.toml`
+  model name (`pcb_region`/`pcb_body_defect`/`pcb_lead_defect`/`pcb_text_defect`) - no local
+  loading at all. `config/models.yaml` and `src/agent1_orchestrator/inference/onnx_classifier.py`
+  are deleted as a result (confirmed nothing else referenced either).
+- **`src/agent1_orchestrator/services/multimodal_inference.py`** - originally called
+  `.predict()` on the local ONNX classifier objects. Now calls `app.shared.inference.classify()`
+  (the same async HTTP client `inspect_image`/Models-tab code already uses) via `asyncio.run()`
+  internally, since the surrounding method stays synchronous (see below) but the call it makes is
+  not. `routing` gained a `service_model` field alongside the existing `selected_model` (the real
+  inference-service model name vs. the internal routing key - `app/workflow/services/
+  monitoring.py`'s drift-report/retraining-ticket routes need the former, never the latter), and
+  each stage result gained `model_version`.
+- **Why still synchronous:** `OrchestratorAgent._execute_inference()` calls
+  `self.inference.infer_sample(sample)` with no `await` - changing that would mean touching
+  `agents/orchestrator.py` well beyond the one small hook described below. Since `infer_sample()`
+  only ever runs inside `app/workflow/services/streaming.py`'s `asyncio.to_thread(agent.run, ...)`
+  worker thread (which has no event loop of its own), calling `asyncio.run()` once per classify
+  call from inside it is safe and keeps `agents/orchestrator.py` itself unchanged.
+
+## Adapted (not verbatim) - vector-db indexing now writes to this app's shared Qdrant
+
+- **`data/qdrant_indexer.py`** - originally opened a *local embedded* Qdrant at a `db_path`
+  directory (`qdrant_db/`, a throwaway store on disk nothing else in this app could read).
+  `populate_qdrant_db()` now connects to this app's own Docker Qdrant instance instead
+  (`QdrantClient(url=settings.qdrant_url)`) - the same container `app/chat/memory/qdrant_store.py`
+  uses for chat's long-term memory, just a different collection (`ipc_defect_precedents`, 1536-dim
+  OpenAI `text-embedding-3-small`, vs. chat memory's own collection/dimension), so the two never
+  collide. The `db_path` parameter is kept (unused) purely so `agents/orchestrator.py`'s untouched
+  call site (`populate_qdrant_db(state.prepared_samples, db_path="qdrant_db")`) didn't need editing.
+- **`app/workflow/services/streaming.py`** - `_run_full` now builds `OrchestratorAgent` with
+  `populate_vector_db=True` (was `False`), and mirrors `settings.orchestrator_openai_api_key` into
+  `OPENAI_API_KEY` unconditionally (was only when `request.use_llm`) - `get_embeddings()` needs a
+  real key for real embeddings on every run, not just ones that also use the LLM planner. Without
+  a valid key it still runs - `get_embeddings()` falls back to deterministic hash-based vectors,
+  same as the source project offline.
+
+## Adapted (not verbatim) - the live-progress hook
+
+`src/agent1_orchestrator/agents/orchestrator.py`'s `OrchestratorAgent.run()` is the one other
+touched file, and the only change to it is additive and three lines: an `on_step: Optional[
+Callable[[WorkflowState], None]]` parameter (default `None`, so any other caller - `ui.py`, the
+drop-in's own tests - needs no change), and one `if on_step: on_step(state)` call at the end of
+each planner loop iteration. `app/workflow/services/streaming.py` uses it to stream `log`/
+`plan_step`/`status` SSE events live, instead of the Work tab only learning the outcome once the
+whole run finishes.
+
+## Everything else under `src/agent1_orchestrator/`, `planner/`, `state/`, `verification/`
+
+Untouched. `DatasetPreparationService`, `DatasetVerificationService`, `PolicyEngine`, `Planner`
+(the LLM/deterministic planner), `WorkflowState`, and the verification helpers are exactly what
+was dropped in. `app/workflow/services/streaming.py`'s `_bridge_sys_path()` is the one place that
+reaches into them, by inserting `app/workflow/` and `app/workflow/src/agent1_orchestrator/` onto
+`sys.path` - mirroring exactly what the drop-in's own `ui.py` does for a direct tkinter launch, so
+its bare (`agents.orchestrator`, `services.dataset_preparation`, ...) imports resolve the same way
+they always have.
+
+## Deleted as unused
+
+Once `app/workflow/api/` routes to the drop-in's services directly, these standalone entrypoints
+had nothing left calling them:
+
+- `main.py` - a separate CLI batch runner with its own dataset-discovery logic; never called
+  `OrchestratorAgent` at all.
+- `run_ui.bat` - launched the tkinter UI directly; not applicable to a web backend.
+- `integrate_ui.py` - a one-time source patcher already applied to produce the `ui.py` now here.
+- `src/agent1_orchestrator/inference/onnx_classifier.py`, `config/models.yaml` - unused after the
+  inference swap above (grep-verified nothing else referenced either).
+- `qdrant_db/`, `outputs/` - runtime-generated artifacts (an embedded-Qdrant scaffold, an example
+  `result.json`), not real inputs. Nothing writes an `outputs/result.json` file in this app - a
+  run's results are streamed live (SSE) and, where a human reviews one, persisted to Postgres
+  (see the Agent 2 review section below), never dumped to a JSON file on disk.
+- `tests/workflow/agents/{test_multimodal_inference,test_orchestrator_escalation,
+  test_review_agent_pure_nodes}.py` (repo-root `tests/`, not this drop-in's own `tests/`) tested
+  the old hand-port's internals directly and don't apply to this drop-in's different shape -
+  replaced by `tests/workflow/test_orchestrator_inference_swap.py`.
+
+`ui.py` (the tkinter app), `main.py`'s sibling `example_result.json`, `LICENSE`, `README.md`,
+`README_rest.md`, `requirements*.txt`, and the drop-in's own `tests/` are kept as reference/
+documentation even though nothing in this repo runs them.
+
+## Moved: static sample data -> `data/workflow/`
+
+The drop-in's committed sample images/datasets don't belong inside `app/workflow/` (source) - they
+now live under `data/workflow/`, the same top-level-`data/` convention as `data/images`,
+`data/golden_images`, `data/orchestrator` (the last one, `settings.orchestrator_data_dir`, is
+where *uploaded* Work-tab runs land - unaffected by this, it was already outside `app/workflow/`):
+
+- `app/workflow/sample_data/` -> `data/workflow/sample_data/`
+- `app/workflow/data/{35-900032-AAA-RV1,inputs}/` -> `data/workflow/data/`
+  (`app/workflow/data/qdrant_indexer.py` - code, not data - stayed in place)
+
+## Agent 2 review + human-in-the-loop (second pass, `feat/workflow-agent2-hitl`)
+
+The teammate's updated drop-in ("UI Review Updated") adds an Agent 2 review step and a tkinter
+conflict-resolution dialog/console that persist operator decisions to a Qdrant-backed Data API.
+Here that became:
+
+- **`src/agent2_explainability/pipeline/review_graph.py`** - replaced with the updated version
+  (real precedent/telemetry/VLM/GPT-4o-with-heuristic-fallback nodes). One adaptation: its
+  `config/agent2_config.yaml` is now resolved relative to the file, not the cwd, because the web
+  backend is not launched from `app/workflow/`; and `locate_image()` no longer falls back to
+  `rglob()`-ing `.` and `../..` for a missing image (that crawled `.venv`/`node_modules` and the
+  repo's parent directory on every miss - the backend only passes absolute, already-resolved
+  paths, so a miss now just skips visual inspection). `adc_shared/*` were refreshed to the updated
+  copies too; its `Repository` is now used in-process by `services/run_store.py` (see below), the
+  Data API / Agent 2 REST services stay unwired.
+- **`app/workflow/services/reviews.py`** + routes under `/api/orchestrator/reviews/` - the flow
+  `ui.py` intends: when a full run finishes, **every REVIEW_REQUIRED sample is sent to Agent 2
+  automatically** (`streaming._auto_review`, the equivalent of `_dispatch_agent2_reviews`), with the
+  same live log blocks (Agent 1 baseline, Agent 2 audit, full explanation, "Review Required" /
+  "agents agree") and a `review` SSE event per sample. The Agent 2 pipeline runs in-process
+  (`OrchestratorAgent` is still built with `enable_a2a=False` - A2A is a dead protocol in the
+  source project: its README says so, but its dispatcher/agent-card code was never removed). The
+  run mints a `run_id` and registers each sample's Agent 2 input **server-side**; the browser only
+  ever sends `{run_id, sample_id}`, and the golden/defect images are served by
+  `GET .../reviews/image` from that registry. A browser-supplied image path would be read from disk
+  and sent to a VLM, and the monitoring routes' "trust what the browser sends" approach is not
+  acceptable there. The registry is an in-memory, bounded cache over Qdrant (below): after a
+  backend restart `reviews.ensure_run_loaded` rebuilds it from the stored sample points, so the
+  Review Console still lists the run. Only with Qdrant unreachable does a restart mean the dataset
+  must be rerun.
+- **Nothing is auto-approved.** Like the updated `ui.py` (whose per-sample modal was replaced by a
+  persistent Review Console), agreement between the agents only changes what the log says -
+  "Operator may still review it". The operator makes the final call for every case.
+- **Runs, reviews and decisions persist to Qdrant, like the source project** - the three
+  payload-only collections `adc_orchestrator_runs`, `adc_inspection_results`, `adc_agent2_reviews`
+  (point ids are uuid5 of `run_id[, sample_id]`; `adc_shared/repository.py` untouched). Instead of
+  the source's separate Data API process (:8000) and Agent 2 REST service (:8001),
+  `services/run_store.py` runs the `Repository` in-process against this app's Docker Qdrant
+  (`QDRANT_URL`; no vectors, so no clash with chat memory), one instance per process in a worker
+  thread. `streaming._run_full` saves the finished `WorkflowState` (`asdict(state)`, as `ui.py` does);
+  `run_review` stores Agent 2's output as the sample's review point (`GENERATED_UNVALIDATED`; the
+  first one is immutable, so asking again returns it without another VLM call); `save_decision` adds
+  `human_decision` / `review_status=COMPLETED` / `reviewed_at_utc` to that same point without
+  touching Agent 2's evidence (plus `decided_by_user_id` and `ai_diagnosis`, which the source
+  lacks). `selected_source` keeps the source's `MACHINE`/`AI`/`MANUAL` vocabulary; `final_result` is
+  the canonical lower-case IPC class. Fail-open: if Qdrant can't be reached the run still completes
+  from memory, and a decision falls back to Postgres (`workflow_review_decisions`, one row per
+  `(run_id, sample_id)`), which also still holds decisions saved before this change;
+  `list_decisions` merges both. The table is no longer the primary store - dropping it needs an
+  Alembic migration and is a follow-up. Uploaded images are still on local disk, so a restarted
+  *and* redeployed backend would list a run whose images are gone.
+- **Work tab** - an "Open Review Console" button (next to Run Agentic Workflow, with a pending
+  count) opens a popup in `ui/src/app/work/` mirroring the tkinter `ReviewConsole`: an "Explanation
+  Review Queue" with a Pending/Reviewed filter and a list of the run's cases (item, machine, AI,
+  status) and, for the selected one, the golden and defect images side by side, the Machine / AI
+  results, Agent 2's explanation, and Accept Machine / Accept AI / Manual with notes and Confirm
+  Decision. It refetches as Agent 2 finishes each sample; Esc, Close or the backdrop dismiss it.
+- **Model feedback and the Retraining queue (formerly Drift & Retraining) follow the decisions.** The console's second tab no longer trusts what the
+  browser sends. `GET /api/orchestrator/monitoring/run-drift?run_id=` reads the run's sample and
+  review points from Qdrant (`run_store.sample_points`, `reviews_for_run`) and computes per-model
+  drift: the operator's final decision is the sample's label, and drift is - of the samples a defect
+  model classified - the share whose label it did not predict (normalised, so `WrongPart_13` ==
+  `wrong part`). Samples where no defect model ran ("couldn't decide") are counted separately, not as
+  drift, and are routed for training by the region model's guess, mirroring Agent 1's router. The
+  Review Console and what it saves are untouched. Computed with the pure
+  `app/shared/modelops/run_drift.py`, which chat's `get_run_drift` tool shares (chat may not import
+  workflow). The UI refetches after every saved decision. `POST .../run-retraining-tickets
+  {run_id, sample_ids}` builds one `RetrainingTicket` per selected correction from the *stored*
+  sample and decision (model, version, observed = the model's prediction, correct = the operator's label), all or
+  nothing; a sample with no correction or no routed model rejects the request, and one already
+  queued is skipped (`retraining_tickets.run_id` + a partial unique index on `(run_id, sample_ref)`,
+  because sample ids restart every run). Corrections are queued by the operator, never automatically.
+  Drift reports filed with a `run_id` snapshot the server's numbers into `DriftReport.stats`; the older
+  browser-sample forms remain under "Manual". Fail-open: with Qdrant unreachable the tab shows a
+  message and queueing returns 503.
+- The review/decision routes stay QA/Admin-gated, behind both `ORCHESTRATOR_AGENT_ENABLED` and
+  `EXPLAINABILITY_REVIEW_AGENT_ENABLED`. Nothing from `app/workflow/` is registered in `app/chat/`;
+  chat reads the same Qdrant collections read-only through its own reader
+  (`app/chat/services/run_samples.py`, the sample agent).
+
+## Agent 2 re-port (Oct 2026) and where it deviates from `pcb_agentic_inspector`
+
+`src/agent2_explainability/pipeline/review_graph.py` and `mcp/agent2_mcp_server.py` were re-ported
+from the upstream copy dated 2026-10-10. Its grounding prompt weights visual evidence and IPC
+precedents and no longer lets physical telemetry decide the verdict. Deliberate deviations:
+
+- **OpenAI only, no Ollama.** The visual step (and the MCP `visual_evidence_tool`) call an OpenAI
+  vision model (`models.vlm.model_name`, `gpt-4o`) with `OPENAI_API_KEY`, instead of a local LLaVA.
+  Without a key (or when the call fails) it falls back to the fixed sentence and says so:
+  `visual_evidence_source` is `vision_model`, `fallback` or `skipped`.
+- **No invented telemetry.** `extract_telemetry_node` still fills missing readings with 0.0 (so the
+  state shape is unchanged) but sets `telemetry_source: "not_recorded"` when the AOI record has no
+  laser height or ICT status. The heuristic self-check then keeps the baseline label and reports
+  `self_check_passed: false`, and the LLM is told the readings were not recorded.
+- Config path resolved from the file, and no `rglob` crawl for images (kept from the first port).
+- Ported tests: `test_agent_graph`, `test_agent2_security`, `test_mcp_tools`, and (Oct 13) `test_qdrant_rag`
+  (adapted to the OpenAI-embedding reader) and `test_metadata_and_telemetry`. Not ported: `main.py`
+  (CLI) and `integrate_ui.py`; `evals/` is ported as manual scripts - see the Oct 13 section below.
+  `test_mcp_tools::test_grounding_and_self_check_tool_parses_json` (expected failure) and
+  `test_agent2_security[../../../../../../etc/passwd]` (and `[/etc/shadow]` on Linux, where the file exists) fail the same way upstream.
+  Run them from `app/workflow/`, one file per process (`test_mcp_tools` replaces `src.data` with a
+  stub and `test_agent_graph` sets a dummy `OPENAI_API_KEY` on import, so together they interfere):
+  `PYTHONPATH=<repo>:. python -m pytest tests/<file>`. CI does this (job "Ported Agent 2 tests").
+
+## Region corrections and ticket identity (Oct 2026)
+
+The Review Console records the part area (Body / Lead / Text) with every decision (`region_result`).
+`run_drift.corrections_of` turns a different area into a **region correction** for `pcb_region`, next
+to the defect correction a sample may already carry, so a sample can have two tickets. Ticket
+identity is therefore (run, sample, model): the partial unique index `uq_retraining_tickets_run_sample`
+covers `run_id, sample_ref, model_name` (Alembic `a9c4e17d3b52`). `POST .../run-retraining-tickets`
+takes `items: [{sample_id, model_name}]`; a bare `sample_ids` list still means each sample's defect
+correction. Run summaries gain `region`, `funnel` (shared) and `agent2` (workflow layer, it needs the
+review's evidence flags).
+
+## Explicitly kept, not wired
+
+- **`src/agent2_explainability/a2a/`** - the A2A server. Present in the drop-in, unused: the review
+  pipeline is called directly in-process.
+- **`src/agent2_explainability/mcp/agent2_mcp_server.py`** - kept exactly as ported and *not served
+  directly*. It cannot load under a real FastMCP (`case_context_retrieval_tool` takes `**kwargs`),
+  its visual and measurement tools read any path they are given (its own upstream traversal test
+  fails), and `measurement_evidence_tool` invents nominal telemetry - even `FAIL` values keyed off
+  the image's file name - when it finds none. `app/workflow/services/agent2_mcp_service.py` imports
+  it with a plain stand-in for the decorator, uses its tools as functions, and serves a single
+  guarded tool, `explain_inspection`, that takes an uploaded file's *name*, uses telemetry only when
+  read from an inspection XML, and maps the guardrail's classes (`WRONG_PART`...) to the app's
+  (`wrong part`...). Chat's explain agent calls it over MCP at `AGENT2_MCP_URL`. This is a second
+  explanation path next to the Work tab's in-process review, by decision: both are advisory.
+  Precedent search is now ported - see "Precedents" below.
+
+## Precedents: the reader was ported, and the collection it reads is now filled (Oct 2026)
+
+Upstream had a writer and a reader that never met: `data/qdrant_indexer.py` wrote inspection
+records to `ipc_defect_precedents` (OpenAI, 1536 dims), while `src/data/qdrant_store.py` searched
+`pcb_standards_precedents` (FastEmbed `bge-small`, 384 dims) - a collection of IPC *document chunks*
+(`text`, `source_file`, `page`) that nothing in the project created, so its search was always empty.
+`fastembed` was not even in its requirements.
+
+- **`src/data/qdrant_store.py`** - ported and *adapted*: reads this app's Docker Qdrant
+  (`settings.qdrant_url`) instead of an embedded `qdrant_db/`; embeds with the app's OpenAI embedding
+  model instead of FastEmbed (no model download, no extra dependency); returns nothing, never a
+  made-up vector, when no embedding can be made; drops hits under `IPC_PRECEDENT_MIN_SCORE`. The
+  function names and the hit shape are upstream's.
+- **`services/ipc_ingest.py`** - new, this repo's own: fills `pcb_standards_precedents` from `.txt`,
+  `.md` and `.pdf` files you supply (`python -m app.workflow.services.ipc_ingest <path> [--replace]`).
+  It ships no content: IPC-A-610 is a licensed document. Until something is ingested the search finds
+  nothing, as before, and the explanation says no precedents were found.
+- **Not changed:** `data/qdrant_indexer.py` still writes `ipc_defect_precedents`, which nothing reads.
+  Its records carry almost no descriptive fields (it reads `board_id` / `defect_hint`, which the
+  prepared samples do not have), its point ids come from `sample_id` and so overwrite each other
+  across runs, and it falls back to hash vectors offline. Left as ported; worth raising upstream.
+- **Min score is uncalibrated.** 0.3 is a starting point for `text-embedding-3-small`, not a tuned
+  value; raise it if unrelated chunks are cited.
+- **`adc_shared/data_api.py`, `agent2_api.py`, `client.py`, `adc_rest.py`, `test_rest.py`,
+  `README_rest.md`, `compose.qdrant.yaml`** - the separate Shared Data API + Agent 2 REST API
+  processes (and their own dedicated Qdrant in `compose.qdrant.yaml`). Not run: only
+  `adc_shared/repository.py` is used, in-process, by `services/run_store.py`.
+
+## The teammate's Oct 13 batch: tests, evals, PDFs
+
+He sent a folder of Agent 2 unit tests, four evals, three "Updated Scripts" and five PDFs, then newer
+data (a paper, a JSON file and a PDF). What was done with it:
+
+- **"Updated Scripts" (`review_graph.py`, `agent2_mcp_server.py`, `qdrant_store.py`) were not merged.**
+  They are byte-identical to the upstream copies this drop-in was ported from, i.e. the pre-port
+  versions (Ollama/LLaVA, `requests`, cwd-relative paths, a repo-wide `rglob`, zero-filled "measured"
+  telemetry). Copying them would undo every deviation in this file. Nothing in them was new.
+- **`test_agent_graph.py`** was already here, identical. **`test_mcp_tools.py`**: this repo's adapted
+  copy is kept (his still patches `query_local_llava`).
+- **Added:** `tests/test_qdrant_rag.py` (adapted), `tests/test_metadata_and_telemetry.py` with
+  `src/data/filename_metadata.py` (`normalize_defect_label` / `parse_filename_metadata`, verbatim from
+  his `main.py`), and `tests/conftest.py`. Its two telemetry tests assert the ported measurement
+  tool's invented nominal values (laser height 42.0 ...); kept as documentation of the tool, which
+  `services/agent2_mcp_service.py` never calls without an XML.
+- **`tests/conftest.py` exists because adding `fastmcp` broke collection** of `test_mcp_tools` and
+  `test_agent2_security`: the ported server only ever loaded because `fastmcp` was absent and its own
+  stub took over, and a real FastMCP rejects `case_context_retrieval_tool(**kwargs)`. The conftest
+  gives the module the same plain stand-in. Nothing ran these tests before, so it went unnoticed;
+  CI now has a job for them.
+- **`evals/`** (4 scripts) ported to `app/workflow/evals/` as manual CLI scripts with only their paths
+  adapted (see its README). One of them seeds each case with the ground truth.
+- **Corpus** (ingested locally with `services/ipc_ingest.py`, into `data/ipc_corpus/`, **never
+  committed**; 7 PDFs and 1 JSON, 272 chunks): from the older folder, two blog articles (JLCPCB's AOI
+  and tombstoning posts) and three IPC tables of contents (IPC-A-610F, IPC-9712, IPC-9716); from the
+  newer data, `AOI based on IPC Standards.pdf` (a 2025 open-access journal paper, 20 pages) and
+  `ipc_a_610_chip_components.json` (despite the name, a 21-entry overview of IPC standards, sent
+  wrapped in a markdown code fence). `ipc-9716.pdf` was **ingested on the owner's say-so**: its last
+  page carries a standards-piracy site's watermark, so it is an unlicensed copy of a purchasable IPC
+  standard. It is only front matter, a TOC and the scope, and it is the first thing to remove
+  (`--replace` of a folder without it, or delete its points by `source_file`) if licensing says so.
+- **What retrieval returned** on the first look (94 chunks; scores are cosine, `text-embedding-3-small`):
+  an unrelated query scores 0.12-0.16 (dropped at 0.3), AOI-quality questions 0.59-0.67, defect
+  questions 0.37-0.49. Two limits: the corpus has no tombstone content, so a tombstone query returns
+  the nearest *irrelevant* standards (0.32-0.37, kept at 0.3); and the ported tool wraps every query
+  in "Defect inspection for ... IPC criteria", which swamps the symptom (all such queries return the
+  same generic AOI chunks at 0.61-0.63). `IPC_PRECEDENT_MIN_SCORE` 0.3 looks too low (about 0.4 would
+  drop the irrelevant ones); not changed.
+
+### Moving the corpus without re-embedding (dev and production)
+
+Embedding is the only slow, paid step (about 10 s and cents for the 272 chunks), but it needs an
+OpenAI key and the documents. `services/ipc_ingest.py` therefore has:
+
+- **skip unchanged**: each chunk carries its file's SHA-256; re-ingesting a folder embeds only files
+  that changed (a 2 s no-op for the whole corpus). `--force` embeds anyway.
+- **`export FILE`** writes every chunk with its vector as JSONL, behind a header naming the embedding
+  model and dimension; **`import FILE [--replace] [--force]`** loads it into any Qdrant with no
+  embedding call and no key. Import refuses a different dimension outright and a different model
+  unless `--force`, because those vectors would not match the app's queries.
+- **Keep the export out of git.** It holds the documents' text, so it is as licensed as they are
+  (`/data/ipc_corpus/` is gitignored).
+- **Production:** the Qdrant task has no persistent volume (`infra/production/qdrant.tf`), so the
+  collection is empty after every restart. Until it has one, run `import` as a one-off step from a
+  private location (an S3 object, say) after Qdrant starts; with an EFS/EBS volume it is a one-time
+  load. Nothing in the infrastructure does this yet.
+
+## See also
+
+- [`inference/MODELS.md`](../../inference/MODELS.md) - the four models' documentation, consolidated
+  here from the drop-in's own copy after its `models/*.onnx` files were deleted as duplicates.
+- `tests/workflow/test_orchestrator_inference_swap.py` - unit tests for the two adapted files
+  above, mocking `app.shared.inference.classify()`.

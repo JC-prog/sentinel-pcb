@@ -32,6 +32,21 @@ else
   echo "==> .env already exists, leaving it alone"
 fi
 
+# Fill in a JWT_SECRET_KEY if it's still blank - the app refuses to issue usable tokens without
+# one, and there's no reason to make every developer do this by hand.
+if grep -qE '^JWT_SECRET_KEY=$' .env; then
+  echo "==> Generating JWT_SECRET_KEY in .env"
+  secret="$(uv run python -c 'import secrets; print(secrets.token_hex(32))')"
+  # portable in-place edit (BSD and GNU sed disagree on -i)
+  tmp="$(mktemp)"
+  sed "s|^JWT_SECRET_KEY=$|JWT_SECRET_KEY=${secret}|" .env > "$tmp" && mv "$tmp" .env
+fi
+
+if grep -qE '^OPENAI_API_KEY=$' .env; then
+  echo "    Note: put your own OpenAI key in OPENAI_API_KEY in .env for the OpenAI features"
+  echo "    (chat, memory, guardrails, the Work tab planner, Agent 2). It is required."
+fi
+
 echo "==> Checking Docker (needed for the local Postgres container)"
 if ! command -v docker >/dev/null 2>&1; then
   if [ "$IS_MACOS" = true ]; then
@@ -52,15 +67,29 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Starting local Postgres + Qdrant (docker compose up -d --wait db qdrant)"
-docker compose -f infra/development/docker-compose.yml up -d --wait db qdrant
+echo "==> Starting local Postgres + Qdrant (docker compose up -d --wait)"
+docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant
 
-echo "==> Checking for Ollama (http://localhost:11434)"
-if curl -sf http://localhost:11434 -o /dev/null 2>&1; then
-  echo "    Found - the Local LLM option in Settings will work."
-else
-  echo "    Not found. Install it to use the Local LLM option: https://ollama.com"
-  echo "    (not required if you'll only use the OpenAI option)"
+# pg_isready (what --wait's healthcheck uses above) only confirms Postgres is accepting
+# connections, not that these specific credentials work - a "db" volume left over from an
+# earlier run (different credentials, or a same-named volume from an unrelated project on this
+# machine) reports healthy, but every real connection then fails with
+# asyncpg.exceptions.InvalidPasswordError, and every DB-backed test with it. Checking via `docker
+# compose exec` would give a false pass here - this image's pg_hba.conf trusts any connection
+# that looks like it originates from the container's own loopback interface, so a check run
+# *inside* the container never actually exercises password auth. Connect the exact way the app
+# does instead: asyncpg, over TCP, from the host, through the published port.
+# The volume name below follows Compose's <project>_<name> convention for this file's own
+# `name: sentinelchat` + the "sentinelchat-db-data" volume key - if either changes, update this.
+echo "==> Verifying Postgres credentials"
+if ! uv run python -c "
+import asyncio, asyncpg
+asyncio.run(asyncpg.connect('postgresql://sentinelchat:sentinelchat@localhost:5433/sentinelchat', timeout=5))
+" >/dev/null 2>&1; then
+  echo "    Existing Postgres data doesn't match these credentials - resetting its volume."
+  docker compose -f infra/development/docker-compose.yml --env-file .env rm -sf db
+  docker volume rm sentinelchat_sentinelchat-db-data >/dev/null 2>&1 || true
+  docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db
 fi
 
 echo "==> UI: installing Node dependencies (npm install)"
@@ -85,7 +114,15 @@ echo "==> UI checks (unit tests)"
 (cd ui && npx ng test --watch=false)
 
 echo ""
-echo "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml down to stop them)."
+echo "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml --env-file .env down to stop them)."
 echo "To run the app:"
 echo "  terminal 1: uv run uvicorn app.main:app --reload   # http://localhost:8000"
 echo "  terminal 2: cd ui && npm start                     # http://localhost:4200"
+echo ""
+echo "Qdrant's built-in dashboard: http://localhost:6333/dashboard"
+echo ""
+echo "Optional docker-compose profiles (only run your slice):"
+echo "  --profile ui         the containerized UI"
+echo "  --profile inference  the ONNX inference service (needs inference/models.toml filled)"
+echo "  --profile langfuse   self-hosted LangFuse tracing UI (http://localhost:3000)"
+echo "  --profile full       everything"

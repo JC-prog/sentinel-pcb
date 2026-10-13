@@ -15,7 +15,13 @@ resource "aws_ecs_task_definition" "backend" {
   memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
-  container_definitions = jsonencode([
+  # Chat uploads, shared with the Agent 2 sidecar below (it reads the image by upload id). Scratch
+  # space like the task's own disk was: gone when the task stops, same as before.
+  volume {
+    name = "uploads"
+  }
+
+  container_definitions = jsonencode(concat([
     {
       name      = "backend"
       image     = "${aws_ecr_repository.backend.repository_url}:${var.container_image_tag}"
@@ -23,17 +29,29 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [
         { containerPort = var.container_port, protocol = "tcp" }
       ]
-      environment = [
+      mountPoints = [{ sourceVolume = "uploads", containerPath = "/code/data/uploads" }]
+      environment = concat([
         # CloudFront is the one browser-facing origin (see static_site.tf) - the ALB itself has
         # no cert and is never called directly by the browser, but CORS is still checked against
         # whatever Origin header the browser sends, which will be the CloudFront domain.
         { name = "CORS_ALLOW_ORIGINS", value = jsonencode(["https://${aws_cloudfront_distribution.site.domain_name}"]) },
-        # No OLLAMA_BASE_URL override - there's no Ollama instance in this deployment. The Local
-        # LLM option in Settings simply won't work in production until one is stood up
-        # separately; the OpenAI (bring-your-own-key) option works as-is.
-      ]
+        # Internal ONNX classification service (inference.tf), resolved over Cloud Map private DNS.
+        { name = "INFERENCE_BASE_URL", value = "http://${aws_service_discovery_service.inference.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.inference_container_port}" },
+        # No OPENAI_BASE_URL override - OpenAI-compatible calls go straight to api.openai.com
+        # (settings.openai_base_url's default) using the OPENAI_API_KEY secret below.
+        # The UI and API are both served over HTTPS from the CloudFront domain (static_site.tf), so
+        # the auth cookies must carry the Secure flag (settings.cookie_secure defaults to False).
+        { name = "COOKIE_SECURE", value = "True" },
+        # Qdrant (qdrant.tf), resolved over Cloud Map private DNS like the inference service.
+        { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
+        ], var.explain_enabled ? [
+        # "Explain this result": Agent 2's MCP service runs beside the backend (sidecar below).
+        { name = "AGENT2_MCP_URL", value = "http://127.0.0.1:${var.agent2_mcp_port}/mcp" },
+      ] : [])
       secrets = [
-        { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn }
+        { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
+        { name = "JWT_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.jwt.arn}:JWT_SECRET_KEY::" },
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -44,7 +62,36 @@ resource "aws_ecs_task_definition" "backend" {
         }
       }
     }
-  ])
+    ], var.explain_enabled ? [
+    # Agent 2's MCP service (app/workflow/services/agent2_mcp_service.py): serves only the one
+    # guarded `explain_inspection` tool, on the task's loopback - nothing outside the task can reach
+    # it. A sidecar rather than its own service because it reads the user's upload from the same
+    # volume; not essential, so if it dies the backend keeps running and the chat button just fails
+    # open. Precedents come from Qdrant (restore the corpus: ipc_corpus.tf).
+    {
+      name        = "agent2-mcp"
+      image       = "${aws_ecr_repository.backend.repository_url}:${var.container_image_tag}"
+      essential   = false
+      command     = [".venv/bin/python", "-m", "app.workflow.services.agent2_mcp_service"]
+      mountPoints = [{ sourceVolume = "uploads", containerPath = "/code/data/uploads", readOnly = true }]
+      environment = [
+        { name = "AGENT2_MCP_HOST", value = "127.0.0.1" },
+        { name = "AGENT2_MCP_PORT", value = tostring(var.agent2_mcp_port) },
+        { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
+      ]
+      secrets = [
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "agent2-mcp"
+        }
+      }
+    },
+  ] : []))
 }
 
 resource "aws_ecs_service" "backend" {
@@ -53,6 +100,9 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+  # The backend imports a lot at start-up (LangChain, LangGraph, NeMo Guardrails) and creates its
+  # database tables; don't let the load balancer's health check kill it as "unhealthy" before then.
+  health_check_grace_period_seconds = 180
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids
@@ -66,7 +116,7 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener_rule.from_cloudfront, aws_ecs_service.qdrant]
 }
 
 resource "aws_lb" "main" {
@@ -75,6 +125,9 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = data.aws_subnets.default.ids
+  # Must be at least CloudFront's origin read timeout (static_site.tf), or the ALB drops a streaming
+  # response that CloudFront is still willing to wait for.
+  idle_timeout = 120
 }
 
 resource "aws_lb_target_group" "backend" {
@@ -98,8 +151,31 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Anything that did not come through this stack's CloudFront distribution (which adds the header
+  # below) gets a 403 from the ALB itself.
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
+    }
   }
 }

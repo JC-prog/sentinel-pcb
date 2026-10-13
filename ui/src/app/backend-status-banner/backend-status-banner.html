@@ -1,0 +1,19 @@
+@if (backendStatus.status() === 'offline') {
+  <div
+    role="alert"
+    class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-200"
+  >
+    <span>
+      SentinelChat is having trouble reaching the server. Some features may not work right now.
+      Please check back in a few minutes.
+    </span>
+    <button
+      type="button"
+      class="shrink-0 rounded-md border border-amber-400 px-2 py-0.5 text-xs font-medium hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:hover:bg-amber-900/50"
+      [disabled]="backendStatus.checking()"
+      (click)="retry()"
+    >
+      {{ backendStatus.checking() ? 'Checking…' : 'Retry now' }}
+    </button>
+  </div>
+}

@@ -1,0 +1,327 @@
+import { firstValueFrom } from 'rxjs';
+import { toArray } from 'rxjs/operators';
+import { vi } from 'vitest';
+import { AuthService } from '../auth.service';
+import { ChatResponderError } from './chat-responder';
+import { HttpChatResponder } from './http-chat-responder';
+import { SettingsService } from './settings.service';
+
+function sseResponse(body: string, ok = true): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(body));
+      controller.close();
+    },
+  });
+  return { ok, status: ok ? 200 : 500, body: stream } as unknown as Response;
+}
+
+/** HttpChatResponder only ever calls fetchWithAuth() - a minimal stand-in avoids pulling in
+ * AuthService's own Router dependency for tests that don't care about auth itself. */
+function fakeAuthService(): AuthService {
+  return {
+    fetchWithAuth: (input: string, init: RequestInit = {}) =>
+      fetch(input, { ...init, credentials: 'include' }),
+  } as AuthService;
+}
+
+describe('HttpChatResponder', () => {
+  let settings: SettingsService;
+  let authService: AuthService;
+
+  beforeEach(() => {
+    localStorage.clear();
+    settings = new SettingsService();
+    authService = fakeAuthService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits one delta event per delta frame, in order, then completes', async () => {
+    const body =
+      'event: delta\ndata: {"text":"Hel"}\n\n' +
+      'event: delta\ndata: {"text":"lo"}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const chunks = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(chunks).toEqual([
+      { type: 'delta', text: 'Hel' },
+      { type: 'delta', text: 'lo' },
+    ]);
+  });
+
+  it('emits the saved reply\'s id from the done frame', async () => {
+    const body = 'event: delta\ndata: {"text":"hi"}\n\nevent: done\ndata: {"message_id":"srv-9"}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toContainEqual({ type: 'messageId', id: 'srv-9' });
+  });
+
+  it('emits a usage event when the done frame reports the tokens a turn used', async () => {
+    const body =
+      'event: delta\ndata: {"text":"Hi"}\n\n' +
+      'event: done\ndata: {"usage":{"input_tokens":120,"output_tokens":8}}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([
+      { type: 'delta', text: 'Hi' },
+      { type: 'usage', inputTokens: 120, outputTokens: 8 },
+    ]);
+  });
+
+  it('emits a toolCall event for a tool_call frame', async () => {
+    const body =
+      'event: tool_call\ndata: {"name":"create_case","label":"ADC Inspection Agent"}\n\n' +
+      'event: delta\ndata: {"text":"Done."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([
+      { type: 'toolCall', label: 'ADC Inspection Agent' },
+      { type: 'delta', text: 'Done.' },
+    ]);
+  });
+
+  it('emits a toolResult event, carrying the tool\'s structured result, for a tool_result frame', async () => {
+    const result = { case_number: 'CASE-000001', verdict: 'accepted' };
+    const body =
+      'event: tool_call\ndata: {"name":"inspect_image","label":"Image inspection"}\n\n' +
+      `event: tool_result\ndata: ${JSON.stringify({ name: 'inspect_image', result })}\n\n` +
+      'event: delta\ndata: {"text":"Done."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([
+      { type: 'toolCall', label: 'Image inspection' },
+      { type: 'toolResult', toolResult: { name: 'inspect_image', result } },
+      { type: 'delta', text: 'Done.' },
+    ]);
+  });
+
+  it('ignores a tool_result for a tool the UI has no card for', async () => {
+    const body =
+      'event: tool_result\ndata: {"name":"something_else","result":{}}\n\n' +
+      'event: delta\ndata: {"text":"Hi."}\n\n' +
+      'event: done\ndata: {}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    const events = await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    expect(events).toEqual([{ type: 'delta', text: 'Hi.' }]);
+  });
+
+  it('errors the observable when the stream sends an error frame', async () => {
+    const body = 'event: error\ndata: {"message":"upstream failed"}\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(body)));
+
+    await expect(
+      firstValueFrom(
+        new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+      ),
+    ).rejects.toThrow('upstream failed');
+  });
+
+  function failingResponse(status: number, detail?: string): Response {
+    return {
+      ok: false,
+      status,
+      json: () => (detail ? Promise.resolve({ detail }) : Promise.reject(new Error('no body'))),
+    } as unknown as Response;
+  }
+
+  async function failureOf(status: number, detail?: string): Promise<Error> {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failingResponse(status, detail)));
+    try {
+      await firstValueFrom(
+        new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+      );
+    } catch (error) {
+      return error as Error;
+    }
+    throw new Error('expected the stream to fail');
+  }
+
+  it('tells the user their session expired on a 401', async () => {
+    const error = await failureOf(401);
+    expect(error).toBeInstanceOf(ChatResponderError);
+    expect(error.message).toContain('session has expired');
+  });
+
+  it('tells the user to wait on a 429', async () => {
+    expect((await failureOf(429)).message).toContain('Too many requests');
+  });
+
+  it("shows the server's own message when the provider is not configured (503)", async () => {
+    const error = await failureOf(503, 'OpenAI provider is not configured on this server');
+    expect(error.message).toBe('OpenAI provider is not configured on this server');
+  });
+
+  it('does not leak a server error body, only the status', async () => {
+    const error = await failureOf(500, 'Traceback: secret internals');
+    expect(error.message).toContain('HTTP 500');
+    expect(error.message).not.toContain('secret');
+  });
+
+  it('turns a network failure into a "can\'t reach the server" message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    await expect(
+      firstValueFrom(
+        new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+      ),
+    ).rejects.toThrow("Can't reach the server");
+  });
+
+  it('names the file when an upload is rejected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(failingResponse(422, 'file must be an image')),
+    );
+    const file = new File(['x'], 'notes.png', { type: 'image/png' });
+
+    await expect(
+      firstValueFrom(
+        new HttpChatResponder(settings, authService).respond('c1', 'hi', [file]).pipe(toArray()),
+      ),
+    ).rejects.toThrow("Couldn't upload notes.png: file must be an image.");
+  });
+
+  it('aborts the chat request when the subscriber unsubscribes (Stop)', async () => {
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        signal = init.signal as AbortSignal;
+        return new Promise(() => undefined); // never answers
+      }),
+    );
+
+    const subscription = new HttpChatResponder(settings, authService)
+      .respond('c1', 'hi', [])
+      .subscribe();
+    await Promise.resolve();
+    await Promise.resolve();
+    subscription.unsubscribe();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('uploads each image before opening the chat stream', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/api/uploads')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 'img-1', url: '/api/uploads/img-1.png' }),
+        } as Response);
+      }
+      return Promise.resolve(sseResponse('event: done\ndata: {}\n\n'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['x'], 'board.png', { type: 'image/png' });
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService)
+        .respond('c1', 'see attached', [file])
+        .pipe(toArray()),
+    );
+
+    const chatCall = fetchMock.mock.calls.find((call: unknown[]) =>
+      (call[0] as string).endsWith('/api/chat/stream'),
+    );
+    const requestBody = JSON.parse(chatCall![1].body);
+    expect(requestBody.image_ids).toEqual(['img-1']);
+  });
+
+  it('uploads each XML file before opening the chat stream', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/api/uploads/xml')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 'xml-1', url: '/api/uploads/xml-1.xml' }),
+        } as Response);
+      }
+      return Promise.resolve(sseResponse('event: done\ndata: {}\n\n'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['<x/>'], 'inspection.xml', { type: 'application/xml' });
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService)
+        .respond('c1', 'see attached', [], [file])
+        .pipe(toArray()),
+    );
+
+    const chatCall = fetchMock.mock.calls.find((call: unknown[]) =>
+      (call[0] as string).endsWith('/api/chat/stream'),
+    );
+    const requestBody = JSON.parse(chatCall![1].body);
+    expect(requestBody.xml_ids).toEqual(['xml-1']);
+  });
+
+  it('sends an empty xml_ids array when no XML is attached', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.xml_ids).toEqual([]);
+  });
+
+  it('sends the openai provider and never a key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.provider).toBe('openai');
+    expect(requestBody.openai_api_key).toBeUndefined();
+  });
+
+  it('sends the picked chat model, and none when the server default is used', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBeUndefined();
+
+    settings.setModel('gpt-4o');
+    fetchMock.mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+    await firstValueFrom(
+      new HttpChatResponder(settings, authService).respond('c1', 'hi', []).pipe(toArray()),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe('gpt-4o');
+  });
+});

@@ -1,0 +1,290 @@
+import { Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+import { AuthService } from '../auth.service';
+import {
+  OrchestratorPlanStepEvent,
+  OrchestratorRunRequest,
+  OrchestratorRunResult,
+  OrchestratorStatus,
+  OrchestratorStatusEvent,
+  OrchestratorUploadRecord,
+  WorkflowReviewDecisionOut,
+  WorkflowQueueCorrectionsOut,
+  WorkflowQueueCorrectionsRequest,
+  WorkflowRetrainingPlanOut,
+  WorkflowReviewCaseOut,
+  WorkflowRunDrift,
+  WorkflowRunList,
+  WorkflowReviewDecisionRequest,
+  WorkflowReviewOut,
+} from './models/orchestrator.models';
+
+export type WorkResponderEvent =
+  | { type: 'log'; text: string }
+  | { type: 'status'; status: OrchestratorStatusEvent }
+  | { type: 'planStep'; step: OrchestratorPlanStepEvent }
+  | { type: 'result'; result: OrchestratorRunResult }
+  | { type: 'review'; review: WorkflowReviewOut }
+  | { type: 'error'; message: string };
+
+interface SseFrame {
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/** The API answers errors with `{detail: string}` (our own HTTPException) or, for request
+ * validation, `{detail: [{msg, ...}]}` - same helper as ui/src/app/models/model-ops-client.ts,
+ * duplicated rather than imported: work/ and models/ are separate UI areas, the same way this
+ * file's own parseSseFrame below duplicates rather than imports chat's SSE parser to keep work/
+ * and chat/ decoupled. */
+async function errorMessage(response: Response): Promise<string> {
+  try {
+    const body: { detail?: unknown } = await response.json();
+    const detail = body.detail;
+    if (typeof detail === 'string' && detail) {
+      return detail;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((item) =>
+          item && typeof item === 'object' && 'msg' in item
+            ? String((item as { msg: unknown }).msg)
+            : String(item),
+        )
+        .join('; ');
+    }
+  } catch {
+    // not JSON - fall through to the generic message
+  }
+  return `Request failed (${response.status})`;
+}
+
+/** Same tiny SSE-frame parser as http-chat-responder.ts, duplicated rather than shared - the Work
+ * tab deliberately does not implement ChatResponder/use CHAT_RESPONDER, so chat and Work stay
+ * decoupled end to end (the chat UI must never be able to reach the orchestrator agent, and vice
+ * versa). */
+function parseSseFrame(raw: string): SseFrame {
+  let event = 'message';
+  let data = '{}';
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('event:')) {
+      event = line.slice('event:'.length).trim();
+    } else if (line.startsWith('data:')) {
+      data = line.slice('data:'.length).trim();
+    }
+  }
+  return { event, data: JSON.parse(data) };
+}
+
+@Injectable({ providedIn: 'root' })
+export class WorkOrchestratorClient {
+  constructor(private readonly authService: AuthService) {}
+
+  async getStatus(): Promise<OrchestratorStatus> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/status`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as OrchestratorStatus;
+  }
+
+  async uploadDataset(file: File): Promise<string> {
+    return this.upload('/api/orchestrator/uploads/dataset', file);
+  }
+
+  async uploadXml(file: File): Promise<string> {
+    return this.upload('/api/orchestrator/uploads/xml', file);
+  }
+
+  /** `files` came from an <input webkitdirectory multiple> folder picker - each File's
+   * webkitRelativePath is sent alongside it so the server can rebuild the folder structure
+   * DatasetPreparationService's image-root remapping expects (see
+   * app/agents/orchestrator_agent/uploads.py). */
+  async uploadImageRootFiles(files: File[]): Promise<string> {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+      formData.append('relative_paths', file.webkitRelativePath || file.name);
+    }
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/uploads/image-root`,
+      { method: 'POST', body: formData },
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    const body: OrchestratorUploadRecord = await response.json();
+    return body.id;
+  }
+
+  private async upload(path: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}${path}`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    const body: OrchestratorUploadRecord = await response.json();
+    return body.id;
+  }
+
+  run(request: OrchestratorRunRequest): Observable<WorkResponderEvent> {
+    return new Observable<WorkResponderEvent>((subscriber) => {
+      const controller = new AbortController();
+
+      (async () => {
+        const response = await this.authService.fetchWithAuth(
+          `${environment.apiBaseUrl}/api/orchestrator/run/stream`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          throw new Error(await errorMessage(response));
+        }
+        if (!response.body) {
+          throw new Error('The run returned no data.');
+        }
+
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += value;
+
+          let separatorIndex: number;
+          while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+            const frame = parseSseFrame(buffer.slice(0, separatorIndex));
+            buffer = buffer.slice(separatorIndex + 2);
+
+            if (frame.event === 'log') {
+              subscriber.next({ type: 'log', text: String(frame.data['text']) });
+            } else if (frame.event === 'status') {
+              subscriber.next({ type: 'status', status: frame.data as unknown as OrchestratorStatusEvent });
+            } else if (frame.event === 'plan_step') {
+              subscriber.next({ type: 'planStep', step: frame.data as unknown as OrchestratorPlanStepEvent });
+            } else if (frame.event === 'result') {
+              subscriber.next({ type: 'result', result: frame.data as unknown as OrchestratorRunResult });
+            } else if (frame.event === 'review') {
+              subscriber.next({ type: 'review', review: frame.data as unknown as WorkflowReviewOut });
+            } else if (frame.event === 'error') {
+              subscriber.next({ type: 'error', message: String(frame.data['message'] ?? 'Run error') });
+            } else if (frame.event === 'done') {
+              subscriber.complete();
+              return;
+            }
+          }
+        }
+        subscriber.complete();
+      })().catch((error: unknown) => subscriber.error(error));
+
+      return () => controller.abort();
+    });
+  }
+
+  async listRuns(): Promise<WorkflowRunList> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/runs`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowRunList;
+  }
+
+  /** A stored run in the shape of a live run's final result. */
+  async getRun(runId: string): Promise<OrchestratorRunResult> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/runs/${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as OrchestratorRunResult;
+  }
+
+  async getRunDrift(runId: string): Promise<WorkflowRunDrift> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/monitoring/run-drift?run_id=${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowRunDrift;
+  }
+
+  async queueCorrections(
+    request: WorkflowQueueCorrectionsRequest,
+  ): Promise<WorkflowQueueCorrectionsOut> {
+    return this.post('/api/orchestrator/monitoring/run-retraining-tickets', request);
+  }
+
+  async draftRetrainingPlan(modelName: string): Promise<WorkflowRetrainingPlanOut> {
+    return this.post('/api/orchestrator/monitoring/retraining-plan', { model_name: modelName });
+  }
+
+  async getReviewCases(runId: string): Promise<WorkflowReviewCaseOut[]> {
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/reviews/cases?run_id=${encodeURIComponent(runId)}`,
+    );
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as WorkflowReviewCaseOut[];
+  }
+
+  /** An object URL for the golden/defect crop of a review case - an <img src> can't carry the auth
+   * header, so the image is fetched with it and handed to the page as a blob. The caller revokes
+   * the URL. Resolves null when the server has no such image. */
+  async getReviewImageUrl(
+    runId: string,
+    sampleId: string,
+    kind: 'golden' | 'defect',
+  ): Promise<string | null> {
+    const query = `run_id=${encodeURIComponent(runId)}&sample_id=${encodeURIComponent(sampleId)}&kind=${kind}`;
+    const response = await this.authService.fetchWithAuth(
+      `${environment.apiBaseUrl}/api/orchestrator/reviews/image?${query}`,
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return URL.createObjectURL(await response.blob());
+  }
+
+  async saveReviewDecision(
+    request: WorkflowReviewDecisionRequest,
+  ): Promise<WorkflowReviewDecisionOut> {
+    return this.send('PUT', '/api/orchestrator/reviews/decision', request);
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    return this.send('POST', path, body);
+  }
+
+  private async send<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
+    const response = await this.authService.fetchWithAuth(`${environment.apiBaseUrl}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response));
+    }
+    return (await response.json()) as T;
+  }
+}

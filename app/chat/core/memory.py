@@ -1,0 +1,49 @@
+"""Pure interfaces for long-term (cross-conversation) memory - no framework/IO imports, same
+reasoning as app/chat/core/chat.py. Concrete implementations live in app/chat/memory/; that package's
+service.py holds the get_memory_store()/get_embedding_service() factories, mirroring
+app/shared/config/llm.py's build_chat_model().
+
+The production vector-store choice is still open (see the project's vector-store-choice note) -
+everything outside app/chat/memory/qdrant_store.py depends only on MemoryStore, so swapping the
+backing store later touches one implementation file, not this interface or any caller.
+"""
+
+from datetime import datetime
+from typing import Protocol
+
+from pydantic import BaseModel
+
+
+class MemoryRecord(BaseModel):
+    id: str
+    user_id: str
+    text: str
+    source_conversation_id: str | None
+    created_at: datetime
+    category: str | None = None
+
+
+class MemoryMatch(BaseModel):
+    record: MemoryRecord
+    score: float
+
+
+class MemoryStore(Protocol):
+    async def upsert(self, record: MemoryRecord, embedding: list[float]) -> None: ...
+
+    async def search(
+        self, user_id: str, query_embedding: list[float], *, top_k: int
+    ) -> list[MemoryMatch]: ...
+
+    async def list_for_user(self, user_id: str, *, limit: int) -> list[MemoryRecord]:
+        """The user's memories, newest first. Never another user's."""
+        ...
+
+    async def delete(self, user_id: str, record_ids: list[str]) -> int:
+        """Removes the given memories if (and only if) they belong to `user_id`; returns how many
+        of them existed for that user."""
+        ...
+
+
+class EmbeddingService(Protocol):
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...

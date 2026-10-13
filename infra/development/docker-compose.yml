@@ -19,11 +19,14 @@ services:
       # only resolvable on the compose network - bare local dev (uv run uvicorn ...) still reads
       # .env's own DATABASE_URL directly (localhost:5433).
       DATABASE_URL: postgresql+asyncpg://sentinelchat:sentinelchat@db:5432/sentinelchat
-      # Ollama runs natively on the host (not containerized - see the note below), and inside a
-      # container "localhost" means the container itself, not the host - host.docker.internal is
-      # the container's route back to the host.
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
       QDRANT_URL: http://qdrant:6333
+      # Same story for LangFuse (--profile langfuse below) - only matters when this container and
+      # that profile are both up; LANGFUSE_ENABLED/keys still come from .env either way.
+      LANGFUSE_HOST: http://langfuse-web:3000
+    volumes:
+      # Uploads (chat images/XML) are written here and read by the explain service below, so both
+      # containers must see the same directory (the app's chat_upload_dir, cwd-relative).
+      - sentinelchat-uploads:/code/data/uploads
     extra_hosts:
       # host.docker.internal is built into Docker Desktop (Mac/Windows); on Linux it needs this
       # explicit mapping to the host gateway.
@@ -68,9 +71,22 @@ services:
     volumes:
       - sentinelchat-qdrant-data:/qdrant/storage
 
+  # Services below are opt-in via profiles, so you only build/run your slice. "..." below always
+  # stands for `-f infra/development/docker-compose.yml --env-file .env` (run from the repo
+  # root) - the --env-file is required, not optional: without it Compose's project directory
+  # defaults to this file's own directory (no .env there), and every ${...} substitution below
+  # (the LangFuse keys, ...) silently resolves empty. setup-dev.sh/.ps1 already pass it.
+  #   docker compose ... up -d                      # db + qdrant + app (backend default)
+  #   docker compose ... --profile ui up -d         # + the containerized UI
+  #   docker compose ... --profile inference up -d  # + the ONNX inference service
+#   docker compose ... --profile explain up -d    # + Agent 2's explanation service (chat "Explain")
+  #   docker compose ... --profile langfuse up -d   # + self-hosted LangFuse tracing UI
+  #   docker compose ... --profile full up -d       # everything
+
   # Full containerized UI for a quick end-to-end smoke test. The primary dev loop is still
   # `npm start` (hot reload) - see README.md.
   ui:
+    profiles: ["ui", "full"]
     build:
       context: ../../ui
       dockerfile: Dockerfile
@@ -81,6 +97,221 @@ services:
     depends_on:
       - app
 
+  # ONNX classification service (inference/). Its image bakes models from Hugging Face at build
+  # time, so `inference/models.toml` must have real repos before `--profile inference build`
+  # works (see infra/production/README.md). REQUIRE_MODELS_ON_STARTUP=false lets the API boot
+  # without every model present.
+  inference:
+    profiles: ["inference", "full"]
+    build:
+      context: ../../inference
+      dockerfile: Dockerfile
+    labels:
+      project: sentinelchat
+    ports:
+      - "8001:8001"
+    environment:
+      LOG_FORMAT: json
+      REQUIRE_MODELS_ON_STARTUP: "false"
+
+  # Agent 2's explanation as a service (app/workflow/services/agent2_mcp_service.py): the chat's
+  # "Explain this result" asks it over MCP. Same image as "app". Only the one guarded
+  # explain_inspection tool is served - the ported MCP server's raw tools are never exposed. Needs
+  # OPENAI_API_KEY (from .env) and the same uploads volume as "app". To use it, set
+  # AGENT2_MCP_URL=http://agent2-mcp:8002/mcp in .env (or http://localhost:8002/mcp for a native
+  # backend); with it unset the chat simply does not offer the button.
+  agent2-mcp:
+    profiles: ["explain", "full"]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    labels:
+      project: sentinelchat
+    command: [".venv/bin/python", "-m", "app.workflow.services.agent2_mcp_service"]
+    env_file:
+      - ../../.env
+    environment:
+      AGENT2_MCP_HOST: 0.0.0.0
+      AGENT2_MCP_PORT: "8002"
+    ports:
+      - "8002:8002"
+    volumes:
+      - sentinelchat-uploads:/code/data/uploads
+
+  # Self-hosted LangFuse (LLM observability/tracing for the LangGraph pipelines - see
+  # app/shared/config/langfuse.py). Opt-in like ui/inference above - `--profile langfuse` or
+  # `--profile full`. LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY in .env are used twice: to seed
+  # langfuse-web's headless init below (LANGFUSE_INIT_PROJECT_*) so a dev never has to click
+  # through the web UI to get an API key, and by the app itself (app/shared/config/settings.py) to
+  # authenticate the CallbackHandler - set them once, both sides just work. Every other secret
+  # below is a fixed, committed dev-only default - never reuse these values for anything but
+  # local dev.
+  #
+  # A dedicated Postgres rather than reusing "db" above: docker-entrypoint-initdb.d init scripts
+  # only run against a fresh, empty volume, and most devs already have a populated "db" volume -
+  # reusing it would silently fail to provision LangFuse's database for anyone past first setup.
+  langfuse-db:
+    image: postgres:16-alpine
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    ports:
+      - "5434:5432" # host 5434 - 5433 is already "db" above, 5432 may be a native local Postgres
+    volumes:
+      - sentinelchat-langfuse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  langfuse-clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - sentinelchat-langfuse-clickhouse-data:/var/lib/clickhouse
+      - sentinelchat-langfuse-clickhouse-logs:/var/log/clickhouse-server
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  langfuse-redis:
+    image: docker.io/redis:7
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    command: ["--requirepass", "langfuseredissecret", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6380:6379" # 6379 may already be a native local Redis
+    volumes:
+      - sentinelchat-langfuse-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuseredissecret", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "9090:9000"          # S3 API - kept open per LangFuse's own guidance (batch export)
+      - "127.0.0.1:9091:9001" # console UI
+    volumes:
+      - sentinelchat-langfuse-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4 # pin a numbered tag for real use
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    restart: always
+    depends_on: &langfuse-depends-on
+      langfuse-db:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3030:3030"
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      SALT: sentinelchat-langfuse-dev-salt
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      # Our clickhouse-server is a single standalone node with no Zookeeper, but the image ships
+      # a default "default" cluster definition regardless - without this, langfuse-worker's
+      # migration runner issues `ON CLUSTER default` DDL (ReplicatedMergeTree), which needs
+      # Zookeeper and fails migrations on startup.
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: langfuseredissecret
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    profiles: ["langfuse", "full"]
+    labels:
+      project: sentinelchat
+    restart: always
+    depends_on: *langfuse-depends-on
+    ports:
+      - "3000:3000" # the only LangFuse port the bare-metal `app` process talks to (LANGFUSE_HOST)
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: sentinelchat-langfuse-dev-nextauth-secret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://langfuse-minio:9000
+      # Headless init - auto-provisions an org/project/API-key pair and a login user on first
+      # boot (empty langfuse-db volume only), so nobody has to click through the web UI. The
+      # public/secret key pair here MUST match .env's LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY -
+      # that's what the app authenticates with.
+      LANGFUSE_INIT_ORG_ID: sentinelchat-dev
+      LANGFUSE_INIT_ORG_NAME: SentinelChat Dev
+      LANGFUSE_INIT_PROJECT_ID: sentinelchat-dev
+      LANGFUSE_INIT_PROJECT_NAME: SentinelChat
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-sentinelchat-dev}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-sentinelchat-dev}
+      LANGFUSE_INIT_USER_EMAIL: dev@sentinelchat.local
+      LANGFUSE_INIT_USER_NAME: Dev
+      LANGFUSE_INIT_USER_PASSWORD: sentinelchat-dev-password
+
 volumes:
+  sentinelchat-uploads:
   sentinelchat-db-data:
   sentinelchat-qdrant-data:
+  sentinelchat-langfuse-db-data:
+  sentinelchat-langfuse-clickhouse-data:
+  sentinelchat-langfuse-clickhouse-logs:
+  sentinelchat-langfuse-redis-data:
+  sentinelchat-langfuse-minio-data:

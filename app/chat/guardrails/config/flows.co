@@ -1,0 +1,9 @@
+define bot refuse to respond
+  "I'm built for PCB defect inspection and quality workflows, so I can't help with that here. Try rephrasing your question around inspection, cases, drift, or retraining."
+
+define flow self check input
+  $response = execute self_check_input
+  $allowed = not $response.is_blocked
+  if $response.is_blocked
+    bot refuse to respond
+    stop

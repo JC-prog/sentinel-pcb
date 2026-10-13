@@ -1,0 +1,19 @@
+<button
+  type="button"
+  role="switch"
+  aria-label="Dark mode"
+  [attr.aria-checked]="themeService.theme() === 'dark'"
+  class="relative flex h-7 w-12 shrink-0 items-center rounded-full border border-slate-300 bg-slate-200 px-0.5 shadow-sm transition-colors hover:bg-slate-300 dark:border-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
+  (click)="themeService.toggle()"
+>
+  <span
+    class="pointer-events-none absolute inset-0 flex items-center justify-between px-1.5 text-[10px] leading-none"
+  >
+    <span aria-hidden="true">☀️</span>
+    <span aria-hidden="true">🌙</span>
+  </span>
+  <span
+    class="z-10 h-6 w-6 rounded-full bg-white shadow transition-transform dark:bg-slate-900"
+    [class.translate-x-5]="themeService.theme() === 'dark'"
+  ></span>
+</button>

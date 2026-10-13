@@ -1,15 +1,56 @@
-import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
-import { Settings } from './settings/settings';
-import { SettingsService } from './settings.service';
-import { Sidebar } from './sidebar/sidebar';
+import { Component, Signal, computed, effect, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter, map } from 'rxjs';
+import { BackendStatusBanner } from './backend-status-banner/backend-status-banner';
+import { ModeToggle } from './mode-toggle/mode-toggle';
+import { Icon } from './chat/icons/icon';
+import { Settings } from './chat/settings/settings';
+import { SettingsService } from './chat/settings.service';
+import { Sidebar } from './chat/sidebar/sidebar';
+import { ThemeToggle } from './theme-toggle/theme-toggle';
+
+// The sidebar itself (branding, Settings, user/logout) is shown everywhere once logged in - only
+// its "New chat" button and conversation history are chat-specific (see Sidebar.showChatNav) and
+// hidden on Work/Models, which have their own controls (pickers/run buttons; version/queue
+// actions) instead. Not shown pre-login at all - there's no user/logout to offer yet.
+const ROUTES_WITHOUT_SIDEBAR = new Set(['/login', '/register']);
+
+// The Chat/Work/Models toggle only makes sense once logged in - login/register aren't "modes" to switch
+// between, so it stays hidden there (unlike the sidebar, it IS shown on /work and /models - that's
+// the whole point of the toggle).
+const ROUTES_WITHOUT_MODE_TOGGLE = new Set(['/login', '/register']);
 
 @Component({
-  imports: [RouterOutlet, Sidebar, Settings],
+  imports: [RouterOutlet, Sidebar, Settings, BackendStatusBanner, ThemeToggle, ModeToggle, Icon],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
 export class App {
-  constructor(protected readonly settingsService: SettingsService) {}
+  protected readonly showSidebar: Signal<boolean>;
+  protected readonly showModeToggle: Signal<boolean>;
+  /** The sidebar drawer on narrow screens; from md up the sidebar is always shown. */
+  protected readonly sidebarOpen = signal(false);
+
+  constructor(
+    protected readonly settingsService: SettingsService,
+    private readonly router: Router,
+  ) {
+    const url = toSignal(
+      this.router.events.pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        map((event) => event.urlAfterRedirects),
+      ),
+      { initialValue: this.router.url },
+    );
+    this.showSidebar = computed(() => !ROUTES_WITHOUT_SIDEBAR.has(url()));
+    this.showModeToggle = computed(() => !ROUTES_WITHOUT_MODE_TOGGLE.has(url()));
+
+    // Picking a conversation (or New chat) is a navigation - close the drawer behind it.
+    effect(() => {
+      url();
+      this.sidebarOpen.set(false);
+    });
+  }
 }

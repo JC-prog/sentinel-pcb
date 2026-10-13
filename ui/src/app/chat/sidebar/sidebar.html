@@ -1,0 +1,201 @@
+<aside
+  class="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+>
+  <div class="flex items-center gap-2 border-b border-slate-200 px-3 py-3 dark:border-slate-800">
+    <svg viewBox="0 0 24 24" class="h-6 w-6 shrink-0" aria-hidden="true">
+      <path d="M4 4 L20 4 L20 12 L12 22 L4 12 Z" class="fill-slate-900 dark:fill-slate-100" />
+      <g class="fill-none stroke-cyan-500" stroke-width="1.3" stroke-linecap="round">
+        <path d="M12 10 V6 M10 12 H6 M14 12 H18 M12 14 V17.5" />
+      </g>
+      <g class="fill-cyan-500">
+        <rect x="10" y="10" width="4" height="4" rx="0.5" />
+        <circle cx="12" cy="6" r="1" />
+        <circle cx="6" cy="12" r="1" />
+        <circle cx="18" cy="12" r="1" />
+        <circle cx="12" cy="17.5" r="1" />
+      </g>
+    </svg>
+    <span class="truncate text-sm font-semibold tracking-tight">SentinelChat</span>
+  </div>
+
+  @if (showChatNav()) {
+    <div class="flex flex-col gap-2 p-3">
+      <a
+        routerLink="/chat"
+        class="flex w-full items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        <app-icon name="plus" [size]="16" />
+        New chat
+      </a>
+      @if (conversations().length > 0) {
+        <label class="relative block">
+          <span class="sr-only">Search conversations</span>
+          <span
+            class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+          >
+            <app-icon name="search" [size]="14" />
+          </span>
+          <input
+            type="search"
+            placeholder="Search chats"
+            class="w-full rounded-lg border border-slate-200 bg-transparent py-1.5 pr-2 pl-8 text-sm outline-none placeholder:text-slate-400 focus-visible:border-slate-400 dark:border-slate-700 dark:placeholder:text-slate-500 dark:focus-visible:border-slate-500"
+            [value]="query()"
+            (input)="query.set($any($event.target).value)"
+          />
+        </label>
+      }
+    </div>
+
+    <nav class="flex-1 overflow-y-auto px-2 pb-3" aria-label="Conversations">
+      @if (conversations().length === 0) {
+        <p class="px-2 py-4 text-sm text-slate-400 dark:text-slate-500">No conversations yet.</p>
+      } @else if (visibleConversations().length === 0) {
+        <p class="px-2 py-4 text-sm text-slate-400 dark:text-slate-500">No chats match your search.</p>
+      }
+      <ul class="flex flex-col gap-1">
+        @for (conversation of visibleConversations(); track conversation.id) {
+          <li class="group relative">
+            @if (editingId() === conversation.id) {
+              <input
+                #titleInput
+                type="text"
+                maxlength="80"
+                aria-label="Conversation title"
+                class="w-full rounded-lg border border-slate-400 bg-transparent px-3 py-2 text-sm outline-none dark:border-slate-500"
+                [value]="editTitle()"
+                (input)="editTitle.set($any($event.target).value)"
+                (keydown.enter)="commitRename(conversation.id)"
+                (keydown.escape)="cancelRename()"
+                (blur)="commitRename(conversation.id)"
+              />
+            } @else if (confirmingId() === conversation.id) {
+              <div
+                class="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-sm dark:bg-red-950/40"
+                role="alertdialog"
+                aria-label="Delete this chat?"
+              >
+                <span class="flex-1 truncate text-red-700 dark:text-red-300">Delete this chat?</span>
+                <button
+                  type="button"
+                  class="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-red-500"
+                  aria-label="Confirm delete"
+                  (click)="confirmDelete(conversation.id)"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md px-2 py-1 text-xs hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-red-500 dark:hover:bg-red-900/40"
+                  (click)="cancelDelete()"
+                >
+                  Cancel
+                </button>
+              </div>
+            } @else {
+              <a
+                [routerLink]="['/c', conversation.id]"
+                class="flex items-center rounded-lg px-3 py-2 pr-16 text-sm hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800"
+                [class]="isActive(conversation.id) ? 'bg-slate-100 dark:bg-slate-800' : ''"
+                [attr.aria-current]="isActive(conversation.id) ? 'page' : null"
+              >
+                <span class="truncate">{{ conversation.title }}</span>
+              </a>
+              <div
+                class="absolute top-1/2 right-1 flex -translate-y-1/2 items-center opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+              >
+                <button
+                  type="button"
+                  class="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                  aria-label="Rename conversation"
+                  (click)="startRename(conversation)"
+                >
+                  <app-icon name="pencil" [size]="14" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-slate-500 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-red-400"
+                  aria-label="Delete conversation"
+                  (click)="askDelete(conversation.id)"
+                >
+                  <app-icon name="trash" [size]="14" />
+                </button>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    </nav>
+  } @else if (showRuns()) {
+    <nav class="flex-1 overflow-y-auto px-2 py-3" aria-label="Runs">
+      <h2 class="px-2 pb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
+        Runs
+      </h2>
+      @if (workService.runsError(); as error) {
+        <p class="px-2 pb-2 text-xs text-red-600 dark:text-red-400" role="alert">{{ error }}</p>
+      }
+      @if (!workService.runsAvailable()) {
+        <p class="px-2 py-2 text-sm text-slate-400 dark:text-slate-500">
+          Run history is unavailable right now (the run store could not be read).
+        </p>
+      } @else if (runs().length === 0) {
+        <p class="px-2 py-2 text-sm text-slate-400 dark:text-slate-500">
+          No runs yet. Run the workflow and it will be listed here.
+        </p>
+      }
+      <ul class="flex flex-col gap-1">
+        @for (run of runs(); track run.run_id) {
+          <li>
+            <button
+              type="button"
+              class="flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 disabled:opacity-60 dark:hover:bg-slate-800"
+              [class]="run.run_id === currentRunId() ? 'bg-slate-100 dark:bg-slate-800' : ''"
+              [attr.aria-current]="run.run_id === currentRunId() ? 'true' : null"
+              [disabled]="workService.running()"
+              (click)="openRun(run.run_id)"
+            >
+              <span class="flex items-center justify-between gap-2">
+                <span class="truncate font-medium">{{ runTime(run.saved_at_utc) }}</span>
+                <span class="shrink-0 font-mono text-xs text-slate-400 dark:text-slate-500">{{
+                  run.run_id.slice(0, 8)
+                }}</span>
+              </span>
+              <span class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                {{ run.input_samples }} samples · {{ run.review_required }} flagged ·
+                {{ run.decided }} decided
+              </span>
+            </button>
+          </li>
+        }
+      </ul>
+    </nav>
+  } @else {
+    <div class="flex-1"></div>
+  }
+
+  <div class="flex flex-col gap-1 border-t border-slate-200 p-3 dark:border-slate-800">
+    <button
+      type="button"
+      class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-slate-500 dark:hover:bg-slate-800"
+      (click)="settingsService.open()"
+    >
+      <app-icon name="settings" [size]="16" />
+      <span>Settings</span>
+    </button>
+
+    @if (authService.currentUser(); as user) {
+      <div class="mt-1 flex items-center justify-between gap-2 border-t border-slate-200 pt-2 dark:border-slate-800">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium">{{ user.username }}</p>
+          <p class="truncate text-xs text-slate-500 uppercase dark:text-slate-400">{{ user.role }}</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          (click)="logout()"
+        >
+          Log out
+        </button>
+      </div>
+    }
+  </div>
+</aside>

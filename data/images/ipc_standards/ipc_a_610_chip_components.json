@@ -1,0 +1,241 @@
+{
+  "ipc_standards_framework": {
+    "context": "Surface Mount Assembly, Inspection, Design, Rework, and PCB Defect Prevention",
+    "standards": [
+      {
+        "standard_id": "IPC-A-610",
+        "title": "Acceptability of Electronic Assemblies",
+        "category": "Inspection & Quality Assurance",
+        "role": "Primary Visual Acceptance Standard",
+        "relevance": "Provides post-reflow visual acceptance and defect thresholds, including side overhang, end overhang, and solder joint width, categorized by Class 1, 2, and 3.",
+        "key_references": [
+          "Section 9.3 (Surface Mount Assemblies - Chip Components)",
+          "Section 9.3.1 (Rectangular and Square End Components)"
+        ]
+      },
+      {
+        "standard_id": "IPC J-STD-001",
+        "title": "Requirements for Soldered Electrical and Electronic Assemblies",
+        "category": "Manufacturing Process & Materials",
+        "role": "Soldering Process Counterpart to IPC-A-610",
+        "relevance": "Defines manufacturing materials, methods, and process verification required to produce acceptable soldered interconnections.",
+        "key_references": [
+          "Section 7.5 (Surface Mount Soldering Requirements)",
+          "Section 7.5.1 (Chip Components - Stacking, Overhang, Wetting)"
+        ]
+      },
+      {
+        "standard_id": "IPC-7711/7721",
+        "title": "Rework, Modification and Repair of Electronic Assemblies",
+        "category": "Rework & Repair",
+        "role": "Corrective Action and Component Replacement",
+        "relevance": "Provides procedures to remove and replace defective or misaligned components while minimizing damage to substrates and adjacent components.",
+        "key_references": [
+          "IPC-7711 Part 3, Section 3.3 (Chip Component Removal and Replacement)",
+          "IPC-7721 (Board and Conductor Repair for Land or Pad Damage)"
+        ]
+      },
+      {
+        "standard_id": "IPC-7351",
+        "title": "Generic Requirements for Surface Mount Design and Land Pattern Standard",
+        "category": "PCB Design & Footprints",
+        "role": "Land Pattern Geometry and Pad Dimensions",
+        "relevance": "Specifies SMT land-pattern geometry and pad dimensions used to establish component placement and solder-joint tolerances.",
+        "key_references": [
+          "Section 3.1 (Land Pattern Naming and Sizing)",
+          "Section 3.4 (Standard SMT Rectangular and Square Components)"
+        ]
+      },
+      {
+        "standard_id": "IPC-A-600",
+        "title": "Acceptability of Printed Boards",
+        "category": "Bare Board Fabrication",
+        "role": "Visual Acceptance of Bare PCB Quality",
+        "relevance": "Defines visual criteria for acceptable and nonconforming bare-board conditions, including lands, conductors, holes, vias, solder mask, and laminate defects.",
+        "key_references": [
+          "Section 3.1 (Surface Pattern Geometry and Lands)",
+          "Section 3.1.1 (Conductor Width and Spacing)"
+        ]
+      },
+      {
+        "standard_id": "IPC/JEDEC J-STD-033",
+        "title": "Handling, Packing, Shipping and Use of Moisture, Reflow, and Process Sensitive Devices",
+        "category": "Component Handling & Reliability",
+        "role": "Moisture Sensitivity Control During Rework",
+        "relevance": "Governs baking, dry storage, floor-life control, and thermal exposure limits for moisture-sensitive components before reflow or localized rework heating.",
+        "key_references": [
+          "Section 5 (Safe Storage, Packaging, and Baking Procedures)",
+          "Section 6 (Thermal Exposure and Rework Considerations)"
+        ]
+      },
+      {
+        "standard_id": "IPC-2221C",
+        "title": "Generic Standard on Printed Board Design",
+        "category": "PCB Design & Defect Prevention",
+        "role": "Generic Design Rules",
+        "relevance": "Establishes generic PCB design requirements for spacing, annular rings, vias, conductors, creepage, clearance, and producibility to prevent design-originated defects.",
+        "key_references": [
+          "Generic physical design principles",
+          "Use with applicable IPC-2220 sectional design standards"
+        ]
+      },
+      {
+        "standard_id": "IPC-2222",
+        "title": "Sectional Design Standard for Rigid Organic Printed Boards",
+        "category": "PCB Design & Defect Prevention",
+        "role": "Rigid PCB Design Rules",
+        "relevance": "Provides rigid organic PCB-specific design requirements that supplement IPC-2221 and help prevent fabrication and assembly defects.",
+        "key_references": [
+          "Rigid organic printed-board design requirements",
+          "Layout solvability and manufacturability considerations"
+        ]
+      },
+      {
+        "standard_id": "IPC-6011A",
+        "title": "Generic Performance Specification for Printed Boards",
+        "category": "Bare Board Fabrication",
+        "role": "Generic Bare-Board Performance Baseline",
+        "relevance": "Defines generic quality and reliability-assurance requirements for acquiring printed boards and selecting applicable IPC-6010-series specifications.",
+        "key_references": [
+          "General performance requirements",
+          "Quality and reliability assurance requirements"
+        ]
+      },
+      {
+        "standard_id": "IPC-6012F",
+        "title": "Qualification and Performance Specification for Rigid Printed Boards",
+        "category": "Bare Board Fabrication",
+        "role": "Rigid PCB Qualification and Performance Requirements",
+        "relevance": "Defines fabrication, qualification, and performance criteria for rigid boards, including PTHs, vias, microvias, copper, dielectric integrity, solder mask, and inspection frequency.",
+        "key_references": [
+          "Rigid-board performance classes",
+          "Finished-board acceptance requirements"
+        ]
+      },
+      {
+        "standard_id": "IPC-9252B",
+        "title": "Requirements for Electrical Testing of Unpopulated Printed Boards",
+        "category": "Bare Board Test & Verification",
+        "role": "Electrical Open and Short Detection",
+        "relevance": "Defines selection of equipment, parameters, data, and fixtures for bare-board electrical testing to verify conductive-network continuity and isolation.",
+        "key_references": [
+          "Electrical conformance to PCB design",
+          "Open and short-circuit verification"
+        ]
+      },
+      {
+        "standard_id": "IPC-TM-650",
+        "title": "Test Methods Manual",
+        "category": "Test Methods & Failure Analysis",
+        "role": "PCB and PCBA Defect-Test Method Library",
+        "relevance": "Provides test methods for microsectioning, dimensional inspection, ionic contamination, insulation resistance, thermal stress, thermal cycling, and conductive anodic filament evaluation.",
+        "key_references": [
+          "Method 2.1.1 (Microsectioning)",
+          "Method 2.3.25 (ROSE Ionic Contamination)",
+          "Method 2.3.28 (Ion Chromatography)",
+          "Method 2.6.7.2 (Thermal Shock, Thermal Cycle and Continuity)",
+          "Method 2.6.25 (CAF Resistance)"
+        ]
+      },
+      {
+        "standard_id": "IPC-9701B",
+        "title": "Thermal Cycling Test Method for Fatigue Life Characterization of Surface Mount Attachments",
+        "category": "Reliability Testing",
+        "role": "SMT Solder-Joint Fatigue Evaluation",
+        "relevance": "Characterizes fatigue life of surface-mount solder attachments under thermal cycling, addressing latent reliability failures not necessarily visible during inspection.",
+        "key_references": [
+          "Thermal-cycling solder-joint fatigue characterization",
+          "Surface-mount attachment reliability"
+        ]
+      },
+      {
+        "standard_id": "IPC/JEDEC J-STD-020F",
+        "title": "Moisture/Reflow Sensitivity Classification for Nonhermetic Surface Mount Devices",
+        "category": "Component Handling & Reliability",
+        "role": "Package Moisture/Reflow Classification",
+        "relevance": "Defines moisture sensitivity classifications used to determine safe package handling and reflow exposure conditions for nonhermetic surface-mount devices.",
+        "key_references": [
+          "Moisture sensitivity level classification",
+          "Reflow exposure classification"
+        ]
+      },
+      {
+        "standard_id": "IPC J-STD-004D",
+        "title": "Requirements for Soldering Fluxes",
+        "category": "Manufacturing Process & Materials",
+        "role": "Flux Material Requirements",
+        "relevance": "Defines flux classifications and performance requirements relevant to wetting, solder balls, residues, corrosion, and insulation reliability.",
+        "key_references": [
+          "Flux classification",
+          "Flux performance and reliability requirements"
+        ]
+      },
+      {
+        "standard_id": "IPC J-STD-005B",
+        "title": "Requirements for Solder Pastes",
+        "category": "Manufacturing Process & Materials",
+        "role": "Solder Paste Material Requirements",
+        "relevance": "Defines solder-paste requirements relevant to stencil printing, solder volume, bridging, insufficient solder, voiding, and reflow consistency.",
+        "key_references": [
+          "Solder paste classification",
+          "Solder paste performance requirements"
+        ]
+      },
+      {
+        "standard_id": "IPC-7530B",
+        "title": "Guidelines for Temperature Profiling for Mass Soldering Processes",
+        "category": "Manufacturing Process Control",
+        "role": "Reflow and Wave-Solder Profiling",
+        "relevance": "Provides profiling guidance for mass-soldering processes and supports diagnosis of tombstoning, insufficient reflow, overheating, warpage, and voiding.",
+        "key_references": [
+          "Reflow temperature profiling",
+          "Wave solder temperature profiling"
+        ]
+      },
+      {
+        "standard_id": "IPC-7093A",
+        "title": "Design and Assembly Process Implementation for Bottom Termination Components",
+        "category": "Component-Specific Assembly & Inspection",
+        "role": "BTC Design, Assembly, Inspection, Repair, and Reliability",
+        "relevance": "Provides guidance for QFN, DFN, LGA, and similar bottom-termination components whose solder connections are difficult or impossible to inspect visually.",
+        "key_references": [
+          "Critical design and assembly issues",
+          "Inspection, repair, quality, and reliability of BTCs"
+        ]
+      },
+      {
+        "standard_id": "IPC-7095",
+        "title": "Design and Assembly Process Implementation for Ball Grid Arrays",
+        "category": "Component-Specific Assembly & Inspection",
+        "role": "BGA and CSP Assembly Guidance",
+        "relevance": "Provides design and assembly guidance for BGA and CSP packages, including hidden solder-joint defects commonly evaluated with X-ray inspection.",
+        "key_references": [
+          "BGA land-pattern and assembly guidance",
+          "Hidden solder-joint inspection considerations"
+        ]
+      },
+      {
+        "standard_id": "IPC-CC-830",
+        "title": "Qualification and Performance of Electrical Insulating Compound for Printed Wiring Assemblies",
+        "category": "Protective Coatings & Reliability",
+        "role": "Conformal-Coating Requirements",
+        "relevance": "Defines qualification and performance requirements for conformal coatings and supports control of coating voids, bubbles, coverage gaps, adhesion issues, and insulation failures.",
+        "key_references": [
+          "Conformal coating qualification",
+          "Electrical insulation performance"
+        ]
+      },
+      {
+        "standard_id": "ANSI/ESD S20.20",
+        "title": "Standard for the Development of an Electrostatic Discharge Control Program",
+        "category": "ESD Control & Reliability",
+        "role": "Latent and Catastrophic ESD Damage Prevention",
+        "relevance": "Defines an ESD-control program for preventing electrostatic damage to components and assemblies that may not be detectable through visual PCB inspection.",
+        "key_references": [
+          "ESD control program requirements",
+          "Handling of electrostatic discharge sensitive devices"
+        ]
+      }
+    ]
+  }
+}

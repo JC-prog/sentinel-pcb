@@ -1,71 +1,185 @@
+"""Composition root: creates the app, wires up middleware/lifespan, and mounts each module's
+routes (app/shared/api/, app/chat/api/, app/workflow/api/, app/modelops/api/). Carries no route
+declarations of its own. app/chat/, app/workflow/ and app/modelops/ are independent feature modules
+that only share app/shared/ - this file is the one place that knows about all of them.
+"""
+
 import json
-from collections.abc import AsyncGenerator
-from typing import Annotated
+import logging
+import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import jwt
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import SecretStr
 
-from app.chat import ChatStreamRequest, get_chat_service
-from app.chat.schemas import LlmProvider
-from app.settings import settings
-from app.uploads import UploadRecord, resolve_upload_path, save_upload
+from app.chat.api import STREAMING_PATHS as _CHAT_STREAMING_PATHS
+from app.chat.api import router as chat_router
+from app.chat.db import models as _chat_models  # registers chat tables on Base.metadata
+from app.modelops.api import STREAMING_PATHS as _MODELOPS_STREAMING_PATHS
+from app.modelops.api import router as modelops_router
+from app.shared.api import STREAMING_PATHS as _SHARED_STREAMING_PATHS
+from app.shared.api import router as shared_router
+from app.shared.api.auth import ACCESS_TOKEN_COOKIE
+from app.shared.auth.security import decode_access_token
+from app.shared.config.langfuse import flush_tracing, init_tracing
+from app.shared.config.logging_config import configure_logging
+from app.shared.config.settings import settings
+from app.shared.db import init_models
+from app.workflow.api import STREAMING_PATHS as _WORKFLOW_STREAMING_PATHS
+from app.workflow.api import router as workflow_router
 
-app = FastAPI(title="SentinelChat")
+# create_all (init_models) only creates tables whose models have been imported; the shared db
+# package can't import chat's models itself, so the composition root does it for every module.
+_REGISTERED_MODEL_PACKAGES = (_chat_models,)
+
+_access_logger = logging.getLogger("app.access")
+logger = logging.getLogger(__name__)
+
+# Configured at import time rather than
+# inside lifespan, so anything logged before the app finishes starting up - or by a standalone
+# script that imports app.main - still gets the right format. See app/shared/config/logging_config.py.
+configure_logging()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    await init_models()
+    init_tracing()
+    yield
+    flush_tracing()
+
+
+app = FastAPI(title="SentinelChat", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.post("/api/uploads")
-async def upload_image(file: Annotated[UploadFile, File()]) -> UploadRecord:
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=422, detail="file must be an image")
-    return await save_upload(file)
+# Every API surface the app exposes, one router per module. Adding a new endpoint means adding (or
+# extending) a route module under that module's api/ package, not this file.
+app.include_router(shared_router)
+app.include_router(chat_router)
+app.include_router(workflow_router)
+app.include_router(modelops_router)
 
 
-@app.get("/api/uploads/{filename}")
-async def get_upload(filename: str) -> FileResponse:
-    path = resolve_upload_path(filename)
-    if path is None:
-        raise HTTPException(status_code=404, detail="upload not found")
-    return FileResponse(path)
+def _redact_and_parse_json_body(raw: bytes, content_type: str) -> Any | None:
+    """Best-effort JSON parse for debug logging - returns None for non-JSON bodies (e.g. the
+    multipart image upload) rather than trying to describe arbitrary binary content. Redacts the
+    top-level "password" field (register/login) so it never ends up in a log line."""
 
-
-async def _chat_sse(
-    provider: LlmProvider, openai_api_key: SecretStr | None, message: str, image_ids: list[str]
-) -> AsyncGenerator[str, None]:
-    """SSE body for POST /api/chat/stream: `event: delta` per chunk from the chat service,
-    `event: error` if it raises, always ending in `event: done`. Same framing as the original
-    app's `_trace_stream` (GET /workflows/{id}/trace)."""
-
-    service = get_chat_service(provider, openai_api_key)
+    if "application/json" not in content_type or not raw:
+        return None
     try:
-        async for chunk in service.stream_reply(message, image_ids):
-            yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
-    except Exception as exc:  # noqa: BLE001 - reported to the client as an SSE error event
-        yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
-        return
-    yield "event: done\ndata: {}\n\n"
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if isinstance(data, dict) and "password" in data:
+        data = {**data, "password": "***"}
+    return data
 
 
-@app.post("/api/chat/stream")
-async def chat_stream(request: ChatStreamRequest) -> StreamingResponse:
-    if not request.message.strip() and not request.image_ids:
-        raise HTTPException(status_code=422, detail="message must not be empty")
-    if request.provider == "openai" and request.openai_api_key is None:
-        raise HTTPException(status_code=422, detail="openai_api_key is required for provider=openai")
-    return StreamingResponse(
-        _chat_sse(request.provider, request.openai_api_key, request.message, request.image_ids),
-        media_type="text/event-stream",
+_STREAMING_RESPONSE_PATHS = (
+    _SHARED_STREAMING_PATHS
+    | _CHAT_STREAMING_PATHS
+    | _WORKFLOW_STREAMING_PATHS
+    | _MODELOPS_STREAMING_PATHS
+)
+
+
+@app.middleware("http")
+async def _log_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """One structured INFO line per request (method, path, status, duration, and the caller's
+    user id when authenticated) - Uvicorn's own access log already prints a plain-text line per
+    request, but doesn't attach these as separate, queryable fields the way app/shared/config/logging_config.py's
+    JSON formatter can. Decodes the access_token cookie directly (JWT only, no DB round trip) just
+    to attribute the log line - any failure (missing/expired/invalid token) just means an
+    unauthenticated-looking log line, not a 401; auth itself is still enforced by
+    get_current_user on whichever routes require it.
+
+    Separately, at DEBUG (settings.log_level), also logs the request/response JSON bodies - gated
+    behind an isEnabledFor() check done *before* touching either body, so there's zero extra
+    buffering when the feature is off (this matters for e.g. large image uploads).
+
+    `call_next()`'s return value is always Starlette's internal `_StreamingResponse` wrapper
+    (confirmed against BaseHTTPMiddleware's source - it wraps every response this way, not just
+    ones that were "really" streaming), so there's no in-memory `.body` to read here for any
+    route - the body has to be drained from `response.body_iterator` and a fresh Response
+    reconstructed from the collected bytes so the client still receives it. That's fine for
+    ordinary quick JSON responses, but draining a streaming route's body_iterator here would
+    buffer the *entire* SSE stream before any of it reaches the browser - so those routes are
+    explicitly skipped (_STREAMING_RESPONSE_PATHS) and log their own request/response content at
+    the source instead (app/chat/services/streaming.py's chat_sse, app/workflow/services/streaming.py's
+    orchestrator_sse)."""
+
+    debug_enabled = _access_logger.isEnabledFor(logging.DEBUG)
+    request_body_bytes = await request.body() if debug_enabled else b""
+
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    user_id: str | None = None
+    access_token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    if access_token:
+        try:
+            user_id = decode_access_token(access_token).user_id
+        except jwt.PyJWTError:
+            pass
+
+    _access_logger.info(
+        "%s %s -> %s (%.1fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 1),
+            "user_id": user_id,
+        },
     )
+
+    if debug_enabled:
+        request_body = _redact_and_parse_json_body(
+            request_body_bytes, request.headers.get("content-type", "")
+        )
+        response_body = None
+        if request.url.path not in _STREAMING_RESPONSE_PATHS:
+            # body_iterator exists at runtime (call_next() always returns Starlette's internal
+            # _StreamingResponse - see the docstring above) but isn't part of Response's public
+            # type, hence the ignore.
+            body_iterator = response.body_iterator  # type: ignore[attr-defined]
+            response_body_bytes = b"".join([chunk async for chunk in body_iterator])
+            response_body = _redact_and_parse_json_body(
+                response_body_bytes, response.headers.get("content-type", "")
+            )
+            # body_iterator is now exhausted - rebuild a Response over the same bytes so the
+            # client still receives it (this becomes what's actually returned, below).
+            # headers=dict(response.headers) would silently collapse repeated header names (e.g.
+            # register/login/refresh's two Set-Cookie headers) down to just the first one - dict()
+            # on Starlette's Headers keeps only one value per key. Copy raw_headers instead so
+            # every original header, duplicates included, survives the rebuild.
+            original_headers = response.raw_headers
+            response = Response(content=response_body_bytes, status_code=response.status_code)
+            response.raw_headers = original_headers
+        _access_logger.debug(
+            "%s %s request body: %s response body: %s",
+            request.method,
+            request.url.path,
+            request_body,
+            response_body,
+            extra={"request_body": request_body, "response_body": response_body},
+        )
+    return response

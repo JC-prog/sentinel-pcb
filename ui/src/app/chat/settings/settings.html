@@ -1,0 +1,54 @@
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+  (click)="settingsService.close()"
+>
+  <div
+    class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold">Settings</h2>
+      <button
+        type="button"
+        class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        aria-label="Close settings"
+        (click)="settingsService.close()"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">Chat model</p>
+    <div class="flex flex-col gap-2" role="radiogroup" aria-label="Chat model" data-testid="model-list">
+      @for (model of settingsService.models(); track model) {
+        <label
+          class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+          [class]="
+            selected() === model
+              ? 'border-slate-900 dark:border-slate-100'
+              : 'border-slate-300 dark:border-slate-700'
+          "
+        >
+          <input
+            type="radio"
+            name="chatModel"
+            [value]="model"
+            [checked]="selected() === model"
+            (change)="pick(model)"
+          />
+          <span class="font-mono">{{ model }}</span>
+          @if (model === settingsService.defaultModel()) {
+            <span class="ml-auto text-xs text-slate-500 dark:text-slate-400">default</span>
+          }
+        </label>
+      } @empty {
+        <p class="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400" data-testid="models-fallback">
+          {{ loadError() ? 'Could not load the model list - the server default is used.' : 'Loading models...' }}
+        </p>
+      }
+    </div>
+    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+      Applies to the assistant's replies. Uses the server's configured API key - no key needed here.
+    </p>
+  </div>
+</div>

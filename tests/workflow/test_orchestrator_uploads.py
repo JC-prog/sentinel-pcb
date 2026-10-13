@@ -1,0 +1,137 @@
+"""Covers the three /api/orchestrator/uploads/* routes (app/main.py) - the web equivalent of the
+tkinter source app's file/folder pickers. See app/workflow/services/uploads.py for the
+storage layer these exercise."""
+
+import shutil
+from collections.abc import Generator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.shared.config.settings import settings
+from app.workflow.services import uploads as orchestrator_uploads
+
+
+@pytest.fixture(autouse=True)
+def _clean_upload_dir() -> Generator[None, None, None]:
+    yield
+    shutil.rmtree(settings.orchestrator_data_dir, ignore_errors=True)
+
+
+def test_dataset_upload_requires_login(client: TestClient) -> None:
+    response = client.post(
+        "/api/orchestrator/uploads/dataset",
+        files={"file": ("dataset.csv", b"a,b\n1,2\n", "text/csv")},
+    )
+    assert response.status_code == 401
+
+
+def test_dataset_upload_requires_qa_or_admin(other_authenticated_client: TestClient) -> None:
+    """other_authenticated_client registers with role "qa" but only sticks if a user already
+    exists - since QA already has access here, this really just exercises the happy path through
+    a second, independent session (see conftest.py's docstring on that fixture)."""
+
+    response = other_authenticated_client.post(
+        "/api/orchestrator/uploads/dataset",
+        files={"file": ("dataset.csv", b"a,b\n1,2\n", "text/csv")},
+    )
+    assert response.status_code == 200
+
+
+def test_dataset_upload_rejects_non_csv(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/dataset",
+        files={"file": ("dataset.txt", b"a,b\n1,2\n", "text/plain")},
+    )
+    assert response.status_code == 422
+
+
+def test_dataset_upload_roundtrip(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/dataset",
+        files={"file": ("dataset.csv", b"a,b\n1,2\n", "text/csv")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"]
+
+
+def test_xml_upload_rejects_non_xml(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/xml",
+        files={"file": ("inspection.txt", b"<root/>", "text/plain")},
+    )
+    assert response.status_code == 422
+
+
+def test_xml_upload_roundtrip(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/xml",
+        files={"file": ("inspection.xml", b"<root/>", "application/xml")},
+    )
+    assert response.status_code == 200
+    assert response.json()["id"]
+
+
+def test_image_root_upload_roundtrip(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[
+            ("files", ("image.jpg", b"fake-image-bytes", "image/jpeg")),
+        ],
+        data={"relative_paths": ["sample_data/35-abc/Golden/image.jpg"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["id"]
+
+
+def test_image_root_upload_rejects_path_traversal(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("image.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["../../etc/passwd"]},
+    )
+    assert response.status_code == 422
+
+
+def test_image_root_upload_rejects_leading_dotdot_disguised_as_folder_name(
+    authenticated_client: TestClient,
+) -> None:
+    """A single ".." segment must not be silently treated as "the picked folder's own name" and
+    stripped - that would turn it into an escape (see save_image_root_files's leading-segment
+    strip)."""
+
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("evil.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["../evil.jpg"]},
+    )
+    assert response.status_code == 422
+
+
+def test_image_root_upload_strips_picked_folder_name(authenticated_client: TestClient) -> None:
+    """webkitRelativePath always starts with the picked folder's own name (e.g.
+    "Sample_data_2/..."), which isn't part of the real tree underneath it - it must be stripped so
+    resolve_image_root_path() lines up with DatasetPreparationService's image-root remapping."""
+
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("image.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["Sample_data_2/35-abc/Golden/image.jpg"]},
+    )
+    assert response.status_code == 200
+    upload_id = response.json()["id"]
+
+    image_root = orchestrator_uploads.resolve_image_root_path(upload_id)
+    assert image_root is not None
+    assert (image_root / "35-abc" / "Golden" / "image.jpg").is_file()
+    assert not (image_root / "Sample_data_2").exists()
+
+
+def test_image_root_upload_rejects_mismatched_lengths(authenticated_client: TestClient) -> None:
+    response = authenticated_client.post(
+        "/api/orchestrator/uploads/image-root",
+        files=[("files", ("image.jpg", b"fake-image-bytes", "image/jpeg"))],
+        data={"relative_paths": ["a.jpg", "b.jpg"]},
+    )
+    assert response.status_code == 422

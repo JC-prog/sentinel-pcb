@@ -1,6 +1,6 @@
 [project]
 name = "sentinel-chat"
-version = "0.2.0"
+version = "0.8.0"
 description = "FastAPI backend for the SentinelChat UI - SSE chat streaming and image uploads."
 authors = [
     { name = "JC-Prog", email = "jeffrey.chong28@gmail.com" }
@@ -8,18 +8,37 @@ authors = [
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.19.2",
+    "asyncpg>=0.31.0",
+    "bcrypt>=5.0.0",
+    "email-validator>=2.2.0",
     "fastapi>=0.141.1",
+    "fastmcp>=4.1.0",
     "httpx>=0.28.1",
+    "langchain>=1.4.2",
+    "langchain-openai>=1.6.2",
+    "langfuse>=4.15.4",
+    "langgraph>=1.2.11",
+    "nemoguardrails>=0.24.1",
+    "numpy>=2.5.2",
+    "openai>=3.8.0",
+    "opencv-python-headless>=4.9",
+    "pandas>=2.0",
+    "pillow>=12.3.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
+    "pyjwt>=2.11.0",
+    "pypdf>=6.20.1",
     "python-multipart>=0.0.20",
+    "qdrant-client>=1.19.0",
+    "sqlalchemy[asyncio]>=2.0.51",
+    "tzdata>=2026.3",
     "uvicorn[standard]>=0.52.0",
 ]
 
 [dependency-groups]
 dev = [
     "mypy>=2.3.0",
-    "pillow>=11.0.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.1",
@@ -27,11 +46,59 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# inference/ is a separate service with its own pyproject, venv, and CI job - it must not be
+# linted or type-checked against this project's dependency set. app/workflow/src/ (and its sibling
+# top-level planner/, state/, verification/, adc_shared/, data/, adc_rest.py, test_rest.py, tests/)
+# is a close-to-verbatim drop-in of an external project someone else maintains
+# (pcb_agentic_inspector) - kept close to its own (untyped, unlinted) source rather than
+# reformatted to this repo's conventions, so a diff against upstream stays legible. Only
+# app/workflow/api/, app/workflow/services/ and app/workflow/__init__.py (the thin FastAPI routing
+# layer wired around it) are this repo's own code and stay linted/typed normally.
+extend-exclude = [
+    "inference",
+    "app/workflow/src",
+    "app/workflow/tests",
+    "app/workflow/planner",
+    "app/workflow/state",
+    "app/workflow/verification",
+    "app/workflow/adc_shared",
+    "app/workflow/data",
+    "app/workflow/evals",
+    "app/workflow/adc_rest.py",
+    "app/workflow/test_rest.py",
+]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# See the ruff extend-exclude comment above for what these are and why. Unlike the old ported
+# agents this carve-out used to cover, nothing under app/workflow/api or app/workflow/services
+# imports any of these paths as a proper `app.workflow....` dotted package (they're reached only
+# via a runtime sys.path insertion - app/workflow/services/streaming.py's _bridge_sys_path - using
+# their own bare, unqualified imports), so a plain top-level `exclude` is enough; mypy never
+# follows an import into them the way it did for the old agents.
+exclude = [
+    '^inference/',
+    '^app/workflow/src/',
+    '^app/workflow/tests/',
+    '^app/workflow/planner/',
+    '^app/workflow/state/',
+    '^app/workflow/verification/',
+    '^app/workflow/adc_shared/',
+    '^app/workflow/data/',
+    '^app/workflow/evals/',
+    '^app/workflow/adc_rest\.py$',
+    '^app/workflow/test_rest\.py$',
+]
+
+[[tool.mypy.overrides]]
+# Ships no py.typed marker (app/chat/guardrails/nemo_checker.py is the only importer).
+module = "nemoguardrails.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Live-LLM evals (tests/evals/test_tool_selection.py) are opt-in: `uv run pytest -m eval`.
+addopts = '-m "not eval"'
+markers = ["eval: live-LLM eval, costs tokens and is non-deterministic; run with -m eval"]
