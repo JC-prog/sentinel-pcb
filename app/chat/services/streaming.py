@@ -34,7 +34,13 @@ from app.chat.agents.toolkit import ChatTool
 from app.chat.core.tools import ToolContext
 from app.chat.db import Conversation
 from app.chat.guardrails import get_guardrails_checker
-from app.chat.memory import build_memory_preamble, maybe_extract, remember_explicit
+from app.chat.memory import (
+    build_memory_preamble,
+    forget_reply,
+    maybe_extract,
+    memories_reply,
+    remember_explicit,
+)
 from app.chat.services import history
 from app.chat.services.messages import build_messages, compose_system_prompt
 from app.chat.services.schemas import LlmProvider
@@ -43,6 +49,8 @@ from app.shared.config.settings import settings
 from app.shared.db import User, UserRole
 
 _REMEMBER_PREFIX = "/remember "
+_FORGET_PREFIX = "/forget"
+_MEMORIES_COMMAND = "/memories"
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +135,24 @@ async def chat_sse(
             if fact
             else "Nothing to remember - add some text after /remember."
         )
+        yield _sse("delta", {"text": reply})
+        await history.append_message(session, conversation.id, "assistant", reply, [])
+        await history.maybe_set_title(session, conversation, message)
+        yield _sse("done", {})
+        return
+
+    # `/memories` and `/forget` are the other half of `/remember`: see what is kept, and drop it.
+    # Same shape - a pure memory command that never reaches the LLM.
+    command = message.strip()
+    is_forget = command == _FORGET_PREFIX or command.startswith(_FORGET_PREFIX + " ")
+    if command == _MEMORIES_COMMAND or is_forget:
+        await history.append_message(session, conversation.id, "user", message, image_ids)
+        if is_forget:
+            reply = await forget_reply(
+                conversation.user_id, provider, command.removeprefix(_FORGET_PREFIX)
+            )
+        else:
+            reply = await memories_reply(conversation.user_id, provider)
         yield _sse("delta", {"text": reply})
         await history.append_message(session, conversation.id, "assistant", reply, [])
         await history.maybe_set_title(session, conversation, message)

@@ -33,6 +33,12 @@ def _from_scored_point(point: models.ScoredPoint) -> MemoryMatch:
     return MemoryMatch(record=record, score=point.score)
 
 
+def _user_filter(user_id: str) -> models.Filter:
+    return models.Filter(
+        must=[models.FieldCondition(key=_PAYLOAD_USER_ID, match=models.MatchValue(value=user_id))]
+    )
+
+
 class QdrantMemoryStore:
     """MemoryStore backed by Qdrant (settings.qdrant_url) - see app/chat/core/memory.py for why
     nothing outside this file should depend on Qdrant specifically."""
@@ -84,6 +90,55 @@ class QdrantMemoryStore:
             limit=top_k,
         )
         return [_from_scored_point(point) for point in response.points]
+
+
+    async def list_for_user(self, user_id: str, *, limit: int) -> list[MemoryRecord]:
+        if not await self._client.collection_exists(self._collection_name):
+            return []
+        records: list[MemoryRecord] = []
+        offset: models.ExtendedPointId | None = None
+        while True:
+            points, offset = await self._client.scroll(
+                self._collection_name,
+                scroll_filter=_user_filter(user_id),
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                records.append(
+                    MemoryRecord(
+                        id=str(point.id),
+                        user_id=payload[_PAYLOAD_USER_ID],
+                        text=payload[_PAYLOAD_TEXT],
+                        source_conversation_id=payload.get(_PAYLOAD_SOURCE_CONVERSATION_ID),
+                        created_at=payload[_PAYLOAD_CREATED_AT],
+                        category=payload.get(_PAYLOAD_CATEGORY),
+                    )
+                )
+            if offset is None:
+                break
+        records.sort(key=lambda r: r.created_at, reverse=True)
+        return records[:limit]
+
+    async def delete(self, user_id: str, record_ids: list[str]) -> int:
+        if not record_ids or not await self._client.collection_exists(self._collection_name):
+            return 0
+        # The user filter is part of the selector, so an id that belongs to someone else matches
+        # nothing - a forget can never reach another user's memory, whatever id it is given.
+        scope = models.Filter(
+            must=[
+                *(_user_filter(user_id).must or []),
+                models.HasIdCondition(has_id=list(record_ids)),
+            ]
+        )
+        existing = await self._client.count(self._collection_name, count_filter=scope, exact=True)
+        await self._client.delete(
+            self._collection_name, points_selector=models.FilterSelector(filter=scope)
+        )
+        return existing.count
 
 
 _client: AsyncQdrantClient | None = None

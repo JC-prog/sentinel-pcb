@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **see and forget what is remembered.** `/memories` lists what the assistant remembers about
+  you (newest first); `/forget 2` forgets one by its number and `/forget all` forgets everything.
+  Like `/remember`, they never reach the model, and a forget is scoped to your own memories inside
+  the vector-store call, so another user's cannot be touched. The memory store gained `list_for_user`
+  and `delete`.
 - Chat (Admin): the opening screen says what is waiting in the Models tab - retraining plans
   awaiting approval, open drift reports (and how many raised themselves) and corrections not yet in
   a plan - with a button to open it. Nothing is shown when nothing is waiting, and QA never sees

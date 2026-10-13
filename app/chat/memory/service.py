@@ -134,6 +134,75 @@ async def remember_explicit(
     return f'Got it, I\'ll remember: "{fact}"'
 
 
+MAX_LISTED_MEMORIES = 20
+
+
+async def list_memories(user_id: str, provider: LlmProvider) -> list[MemoryRecord] | None:
+    """What is remembered about the user, newest first - None when memory is off or unreachable."""
+
+    if not settings.memory_enabled:
+        return None
+    try:
+        store = get_memory_store(embedding_model_name(provider))
+        return await store.list_for_user(user_id, limit=MAX_LISTED_MEMORIES)
+    except Exception:
+        logger.exception("Listing long-term memory failed for user %s", user_id)
+        return None
+
+
+async def memories_reply(user_id: str, provider: LlmProvider) -> str:
+    """The answer to `/memories`."""
+
+    if not settings.memory_enabled:
+        return "Long-term memory is currently disabled."
+    records = await list_memories(user_id, provider)
+    if records is None:
+        return "Sorry, I couldn't read your memories just now."
+    if not records:
+        return "I don't remember anything about you yet. Say `/remember <something>` to add one."
+    lines = [f"{n}. {record.text}" for n, record in enumerate(records, start=1)]
+    return (
+        f"I remember {len(records)} thing{'s' if len(records) != 1 else ''} about you:\n\n"
+        + "\n".join(lines)
+        + "\n\nSay `/forget 2` to forget one by its number, or `/forget all` to forget everything."
+    )
+
+
+async def forget_reply(user_id: str, provider: LlmProvider, what: str) -> str:
+    """The answer to `/forget <number|all>`. Numbers are the ones `/memories` shows (newest first)."""
+
+    if not settings.memory_enabled:
+        return "Long-term memory is currently disabled."
+    what = what.strip().lower()
+    if not what:
+        return "Say what to forget: `/forget 2` (a number from `/memories`) or `/forget all`."
+    records = await list_memories(user_id, provider)
+    if records is None:
+        return "Sorry, I couldn't reach your memories just now."
+    if not records:
+        return "There is nothing to forget - I don't remember anything about you."
+
+    if what == "all":
+        chosen = records
+    else:
+        numbers = {part for part in what.replace(",", " ").split() if part}
+        if not numbers or not all(n.isdigit() for n in numbers):
+            return "Say a number from `/memories` (or `/forget all`), e.g. `/forget 2`."
+        wanted = {int(n) for n in numbers}
+        missing = sorted(n for n in wanted if not 1 <= n <= len(records))
+        if missing:
+            return f"There is no memory number {', '.join(str(n) for n in missing)}; see `/memories`."
+        chosen = [records[n - 1] for n in sorted(wanted)]
+
+    try:
+        store = get_memory_store(embedding_model_name(provider))
+        forgotten = await store.delete(user_id, [r.id for r in chosen])
+    except Exception:
+        logger.exception("Forgetting memories failed for user %s", user_id)
+        return "Sorry, I couldn't forget that just now."
+    return f"Forgot {forgotten} memor{'y' if forgotten == 1 else 'ies'}."
+
+
 async def build_memory_preamble(user_id: str, query_text: str, provider: LlmProvider) -> str | None:
     """Only called for a brand-new conversation (app/chat/services/streaming.py) - retrieval is scoped solely by
     user_id, never by conversation, since surfacing facts from OTHER conversations is the entire

@@ -35,6 +35,15 @@ class MemoryStore(Protocol):
         self, user_id: str, query_embedding: list[float], *, top_k: int
     ) -> list[MemoryMatch]: ...
 
+    async def list_for_user(self, user_id: str, *, limit: int) -> list[MemoryRecord]:
+        """The user's memories, newest first. Never another user's."""
+        ...
+
+    async def delete(self, user_id: str, record_ids: list[str]) -> int:
+        """Removes the given memories if (and only if) they belong to `user_id`; returns how many
+        of them existed for that user."""
+        ...
+
 
 class EmbeddingService(Protocol):
     async def embed(self, texts: list[str]) -> list[list[float]]: ...

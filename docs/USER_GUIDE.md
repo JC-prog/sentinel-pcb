@@ -73,6 +73,10 @@ server's default is first). The choice only affects the reply: memory, guardrail
 agents keep their own models, and tool behaviour (what gets saved, the confirm step) is the same
 whichever you pick.
 
+**Memory.** The assistant keeps a few durable facts about you between conversations. `/remember <text>`
+adds one, `/memories` lists them (newest first, numbered) and `/forget 2` or `/forget all` removes
+them. These three never reach the model, and only ever touch your own memories.
+
 **If a prompt does nothing useful**
 - *"Inspect this board"* with **no image attached** - the inspect tool is only offered when an image
   is attached, so the assistant will ask you to attach one.
