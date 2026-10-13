@@ -104,12 +104,61 @@ async def confirm_relabel(
     }
 
 
+@tool("list_my_corrections")
+@returns_json
+async def list_my_corrections(runtime: Runtime) -> dict[str, Any]:
+    """Lists the corrections the user has confirmed (newest 10): what the model said, what it was
+    corrected to, and where each stands - waiting for a retraining plan, in a plan, or retrained -
+    and whether it can still be withdrawn. Read-only. Use it for 'what did I correct?' and 'what
+    happened to my corrections?'. A retrained model may be simulated: say so if the plan status
+    suggests training has run, since the trainer is a stub today."""
+
+    corrections = await service.own_corrections(runtime.context.session, user_id=runtime.context.user.id)
+    return {"total": len(corrections), "corrections": corrections}
+
+
+@tool("withdraw_correction")
+@returns_json
+async def withdraw_correction(
+    runtime: Runtime,
+    case_number: Annotated[str | None, _CASE_NUMBER] = None,
+) -> dict[str, Any]:
+    """CHANGES A RECORD: takes back a correction the user confirmed - the case goes back to what
+    the model said and its retraining ticket is removed. Only call it when the user has clearly asked
+    to withdraw or undo a correction. It works only on the user's own correction, and only while it
+    is not in a retraining plan; otherwise it says why. Without a case number it takes back the
+    most recent correction that still can be."""
+
+    ctx = runtime.context
+    try:
+        case = await service.withdraw(
+            ctx.session,
+            case_number=text(case_number) or None,
+            conversation_id=ctx.conversation_id,
+            user_id=ctx.user.id,
+        )
+    except RelabelRefused as refusal:
+        raise ToolRefused(refusal.message, **refusal.details) from refusal
+
+    return {
+        "status": "withdrawn",
+        "case_number": case.case_number,
+        "model_label": case.defect_label,
+        "note": (
+            f"{case.case_number} is back to the model's own label, {case.defect_label!r}, and its "
+            "retraining ticket was removed."
+        ),
+    }
+
+
 def _enabled() -> bool:
     return settings.relabel_agent_enabled
 
 
 RELABEL_CASE = ChatTool(relabel_case, label="Relabel proposal", enabled=_enabled, shows_card=True)
 CONFIRM_RELABEL = ChatTool(confirm_relabel, label="Relabel", enabled=_enabled, shows_card=True)
+LIST_MY_CORRECTIONS = ChatTool(list_my_corrections, label="My corrections", enabled=_enabled)
+WITHDRAW_CORRECTION = ChatTool(withdraw_correction, label="Withdraw correction", enabled=_enabled)
 
 
 def _describe(target: Target) -> dict[str, Any]:

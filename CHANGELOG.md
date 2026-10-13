@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **your corrections, and taking one back.** `list_my_corrections` answers "what happened to
+  my corrections?" (what the model said, what you corrected it to, and whether it is waiting for a
+  plan, in a plan, or retrained). `withdraw_correction` takes one back - the case returns to the
+  model's own label and its ticket is removed in one commit - while it is your own and not yet in a
+  retraining plan; once it is in a plan it says so and points to cancelling the plan in the Models
+  tab. Work-tab corrections are not touched.
 - Chat: **look up cases.** `get_case` answers "what happened to CASE-000123?" (what the model
   said, any correction and why, a relabel waiting to be confirmed, the retraining ticket) and
   `list_cases` answers "which cases are there for U7 on BOARD-1?" or "what did I correct?" (board,

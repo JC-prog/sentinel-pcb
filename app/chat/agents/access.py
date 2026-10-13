@@ -15,6 +15,9 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # retraining ticket - an Admin still approves the retraining itself in the Models tab.
     "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_relabel": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # The user's own corrections: reading them, and taking one back while it is not in a plan yet.
+    "list_my_corrections": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "withdraw_correction": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a case review saves nothing; confirming it resolves the case (APPROVED/OVERRIDDEN).
     "review_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_review": frozenset({UserRole.QA, UserRole.ADMIN}),

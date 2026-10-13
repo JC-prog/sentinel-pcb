@@ -60,6 +60,8 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
     assert set(model.offered) == {
         "relabel_case",
         "confirm_relabel",
+        "list_my_corrections",
+        "withdraw_correction",
         "report_model_drift",
         "get_drift_summary",
         "draft_retraining_plan",

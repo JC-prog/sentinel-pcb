@@ -29,7 +29,12 @@ from app.chat.agents.monitoring_agent import (
     REPORT_MODEL_DRIFT,
 )
 from app.chat.agents.registry import ToolNotFound, ToolRegistry
-from app.chat.agents.relabel_agent import CONFIRM_RELABEL, RELABEL_CASE
+from app.chat.agents.relabel_agent import (
+    CONFIRM_RELABEL,
+    LIST_MY_CORRECTIONS,
+    RELABEL_CASE,
+    WITHDRAW_CORRECTION,
+)
 from app.chat.agents.review_agent import CONFIRM_REVIEW, REVIEW_CASE
 from app.chat.agents.sample_agent import GET_RUN_DRIFT, GET_SAMPLE, LIST_REVIEW_CASES, LIST_RUNS
 
@@ -39,6 +44,8 @@ tool_registry = ToolRegistry(
         CREATE_CASE,
         RELABEL_CASE,
         CONFIRM_RELABEL,
+        LIST_MY_CORRECTIONS,
+        WITHDRAW_CORRECTION,
         REVIEW_CASE,
         CONFIRM_REVIEW,
         GET_DRIFT_SUMMARY,

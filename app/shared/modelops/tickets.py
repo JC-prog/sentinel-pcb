@@ -10,7 +10,11 @@ import logging
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.shared.db.models import RetrainingTicket, RetrainingTicketStatus
+from app.shared.db.models import (
+    RetrainingJob,
+    RetrainingTicket,
+    RetrainingTicketStatus,
+)
 from app.shared.modelops import drift as drift_repo
 
 logger = logging.getLogger(__name__)
@@ -127,3 +131,29 @@ async def count_tickets(
     if run_id is not None:
         stmt = stmt.where(RetrainingTicket.run_id == run_id)
     return {name: count for name, count in (await session.execute(stmt)).tuples()}
+
+
+async def list_flagged_by(
+    session: AsyncSession, user_id: str, *, limit: int = 10
+) -> list[tuple[RetrainingTicket, str | None]]:
+    """The corrections a user confirmed (newest first), each with the status of the retraining job
+    it is part of - None while it is not in any plan."""
+
+    rows = await session.execute(
+        select(RetrainingTicket, RetrainingJob.status)
+        .outerjoin(RetrainingJob, RetrainingJob.id == RetrainingTicket.job_id)
+        .where(RetrainingTicket.flagged_by_user_id == user_id)
+        .order_by(RetrainingTicket.created_at.desc())
+        .limit(limit)
+    )
+    return [(ticket, job_status) for ticket, job_status in rows.tuples()]
+
+
+async def withdraw_ticket(session: AsyncSession, ticket: RetrainingTicket) -> None:
+    """Removes a ticket that is not in any plan yet. The caller checks that; a ticket already
+    drafted into a job is that job's record and is released by cancelling the job instead."""
+
+    if ticket.job_id is not None or ticket.status != RetrainingTicketStatus.OPEN:
+        raise ValueError("only an open ticket outside any plan can be withdrawn")
+    await session.delete(ticket)
+    await session.commit()
