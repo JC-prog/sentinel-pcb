@@ -15,34 +15,52 @@
     </div>
   }
   @if (!conversation() || conversation()!.messages.length === 0) {
-    <div class="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-4 py-6">
+    <div class="flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-4 py-6">
       <div class="max-w-2xl text-center">
         <h1 class="text-2xl font-semibold text-slate-800 dark:text-slate-200">
           Hi, I'm the Sentinel PCB assistant
         </h1>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          I inspect PCB AOI images for defects. Attach an image (and an inspection XML, if you
-          have one) to classify it, flag an ambiguous result as a case for a person to review, or
-          check on cases already flagged.
+          Attach an AOI image (and its inspection XML, if you have one) and I'll classify it. If
+          the label is wrong, tell me the right one and I'll record the correction. I can also look
+          up what the Work tab stored and tell you how the models are being corrected.
         </p>
         <p class="mt-2 text-xs text-slate-400 dark:text-slate-500">
           Drop or paste images anywhere, or use the paperclip to attach images and XML.
         </p>
       </div>
-      <div class="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
-        @for (suggestion of visibleSuggestions(); track suggestion.label) {
-          <button
-            type="button"
-            class="rounded-xl border border-slate-200 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-            (click)="useSuggestion(suggestion)"
-          >
-            <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{
-              suggestion.label
-            }}</span>
-            <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{{
-              suggestion.hint
-            }}</span>
-          </button>
+      <div class="flex w-full max-w-2xl flex-col gap-5">
+        @for (group of suggestionGroups(); track group.title) {
+          <section [attr.aria-label]="group.title">
+            <h2
+              class="mb-2 px-1 text-xs font-semibold tracking-wide text-slate-400 uppercase dark:text-slate-500"
+            >
+              {{ group.title }}
+            </h2>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              @for (suggestion of group.items; track suggestion.label) {
+                <button
+                  type="button"
+                  class="group flex items-start gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-500 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                  (click)="useSuggestion(suggestion)"
+                >
+                  <span
+                    class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 group-hover:bg-white dark:bg-slate-800 dark:text-slate-300 dark:group-hover:bg-slate-700"
+                  >
+                    <app-icon [name]="suggestion.icon" [size]="16" />
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200">{{
+                      suggestion.label
+                    }}</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{{
+                      suggestion.hint
+                    }}</span>
+                  </span>
+                </button>
+              }
+            </div>
+          </section>
         }
       </div>
       <div class="w-full max-w-2xl">

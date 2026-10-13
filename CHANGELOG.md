@@ -261,6 +261,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- UI: the chat's empty state groups its suggestions under Inspect, Look up and Model health, each
+  with an icon, and drops the ones that only make sense later ("Correct a wrong label" is offered
+  after an inspection; "Draft a retraining plan" is a deliberate action, not an opening move).
+  "Check model health" became "Are corrections piling up?". The intro now describes what the
+  assistant does today.
 - Chat: **"is the model drifting?" now counts corrections.** `get_drift_summary` used to report
   review, override and low-confidence rates over saved Cases, which no longer mean anything now that
   a Case is only made when someone corrects a label (and approve/override is off): the sample was

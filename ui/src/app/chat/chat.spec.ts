@@ -73,6 +73,45 @@ describe('Chat', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Model status and queue');
   });
 
+  it('groups the empty-state tiles by what they are for', async () => {
+    await setup(new FakeActivatedRoute(), 'admin');
+
+    const sections = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('section[aria-label]'),
+    ).map((section) => ({
+      title: section.getAttribute('aria-label'),
+      tiles: Array.from(section.querySelectorAll('button')).map((b) =>
+        b.querySelector('span.block')?.textContent?.trim(),
+      ),
+    }));
+
+    expect(sections).toEqual([
+      { title: 'Inspect', tiles: ['Classify an inspection image'] },
+      {
+        title: 'Look up',
+        tiles: ['Look up a sample', "What's waiting for review?", 'What runs do I have?'],
+      },
+      {
+        title: 'Model health',
+        tiles: ["Review a run's corrections", 'Are corrections piling up?', 'Model status and queue'],
+      },
+    ]);
+  });
+
+  it('shows QA the same tiles without the Admin-only one', async () => {
+    await setup(new FakeActivatedRoute(), 'qa');
+
+    const tiles = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('section[aria-label] button'),
+    ).map((b) => b.querySelector('span.block')?.textContent?.trim());
+
+    expect(tiles).toHaveLength(6);
+    expect(tiles).not.toContain('Model status and queue');
+    // a label can only be corrected after an inspection, so it is not an opening move
+    expect(tiles).not.toContain('Correct a wrong label');
+    expect(tiles).not.toContain('Draft a retraining plan');
+  });
+
   it('creates a conversation and navigates to it when sending the first message', async () => {
     await setup(new FakeActivatedRoute());
     const router = TestBed.inject(Router);

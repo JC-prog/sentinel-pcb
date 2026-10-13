@@ -17,7 +17,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
 import { AuthService } from '../auth.service';
 import { ChatService } from './chat.service';
-import { Icon } from './icons/icon';
+import { Icon, IconName } from './icons/icon';
 import { MarkdownView } from './markdown/markdown-view';
 import { ChatMessage, Conversation } from './models/chat.models';
 import { ToolResultCard } from './tool-result-card/tool-result-card';
@@ -40,7 +40,12 @@ interface PendingXml {
   file: File;
 }
 
+type SuggestionGroup = 'Inspect' | 'Look up' | 'Model health';
+
 interface Suggestion {
+  /** The heading it sits under on the empty state. */
+  group: SuggestionGroup;
+  icon: IconName;
   label: string;
   hint: string;
   prompt: string;
@@ -69,59 +74,76 @@ export class Chat {
 
   protected readonly suggestions: Suggestion[] = [
     {
+      group: 'Inspect',
+      icon: 'paperclip',
       label: 'Classify an inspection image',
       hint: 'Attach an AOI image (and its XML, if you have one)',
       prompt: 'Classify this AOI inspection image for defects.',
       needsAttachment: true,
     },
     {
+      group: 'Look up',
+      icon: 'search',
+      label: 'Look up a sample',
+      hint: "Verdict, Agent 2's review and the decision",
+      prompt: 'Show me sample S000001.',
+    },
+    {
+      group: 'Look up',
+      icon: 'file',
       label: "What's waiting for review?",
-      hint: 'Samples flagged in the Work tab',
+      hint: 'Samples flagged in the latest run',
       prompt: 'Which samples are waiting for review?',
       send: true,
     },
     {
+      group: 'Look up',
+      icon: 'menu',
       label: 'What runs do I have?',
       hint: 'The stored Work-tab runs, to pick a run id',
       prompt: 'Which Work-tab runs are stored?',
       send: true,
     },
     {
-      label: 'Look up a sample',
-      hint: "Verdict, Agent 2's review and the decision",
-      prompt: 'Show me sample S000001.',
-    },
-    {
-      label: 'Correct a wrong label',
-      hint: "Record the right label; it's queued for retraining",
-      prompt: 'The model got this wrong - the correct label is Golden.',
-    },
-    {
-      label: 'Check model health',
-      hint: 'Review, override and correction rates',
-      prompt: 'Is the defect model drifting?',
-      send: true,
-    },
-    {
+      group: 'Model health',
+      icon: 'check',
       label: "Review a run's corrections",
-      hint: 'Drift for the latest run, and what is already queued',
+      hint: 'What the operator corrected, and what is queued',
       prompt: "Show the drift for the latest run and which of the operator's corrections are already queued for retraining.",
       send: true,
     },
     {
+      group: 'Model health',
+      icon: 'arrow-up',
+      label: 'Are corrections piling up?',
+      hint: 'Corrections to a model this week against last',
+      prompt: 'Are corrections to the defect models piling up?',
+      send: true,
+    },
+    {
+      group: 'Model health',
+      icon: 'settings',
       label: 'Model status and queue',
-      hint: 'Live versions, open drift reports and the retraining queue',
+      hint: 'Live versions, open drift reports, retraining queue',
       prompt: 'What is the model status, and what is in the retraining queue?',
       send: true,
       adminOnly: true,
     },
-    {
-      label: 'Draft a retraining plan',
-      hint: 'Group the open tickets into a job for approval',
-      prompt: 'Draft a retraining plan from the open tickets.',
-      send: true,
-    },
   ];
+
+  /** The tiles this user can use, grouped by what they are for, in the order they are declared. */
+  protected readonly suggestionGroups = computed(() => {
+    const groups: { title: SuggestionGroup; items: Suggestion[] }[] = [];
+    for (const suggestion of this.visibleSuggestions()) {
+      const group = groups.find((g) => g.title === suggestion.group);
+      if (group) {
+        group.items.push(suggestion);
+      } else {
+        groups.push({ title: suggestion.group, items: [suggestion] });
+      }
+    }
+    return groups;
+  });
 
   private readonly auth = inject(AuthService);
   /** The suggestions this user can use: Admin-only ones are not shown to QA. */
