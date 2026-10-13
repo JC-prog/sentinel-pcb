@@ -37,3 +37,13 @@ output "rds_endpoint" {
   value     = aws_db_instance.main.endpoint
   sensitive = true
 }
+
+output "ipc_corpus_bucket_name" {
+  description = "Upload the IPC corpus export here: aws s3 cp ipc-corpus.jsonl s3://<this>/<ipc_corpus_key>."
+  value       = aws_s3_bucket.ipc_corpus.bucket
+}
+
+output "ipc_corpus_load_command" {
+  description = "Run once after Qdrant is up (and again after every Qdrant restart) to load the IPC corpus."
+  value       = "aws ecs run-task --cluster ${aws_ecs_cluster.main.name} --launch-type FARGATE --task-definition ${aws_ecs_task_definition.ipc_corpus_loader.family} --network-configuration 'awsvpcConfiguration={subnets=[${join(",", data.aws_subnets.default.ids)}],securityGroups=[${aws_security_group.ecs_tasks.id}],assignPublicIp=ENABLED}' --region ${var.aws_region}"
+}

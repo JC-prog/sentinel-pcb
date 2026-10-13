@@ -115,6 +115,18 @@ variable "qdrant_task_memory" {
   default     = 1024
 }
 
+variable "ipc_corpus_key" {
+  description = "Object key of the IPC corpus export in the corpus bucket (ipc_corpus.tf), made with `python -m app.workflow.services.ipc_ingest export FILE`."
+  type        = string
+  default     = "ipc-corpus.jsonl"
+}
+
+variable "aws_cli_image_tag" {
+  description = "Tag of the public amazon/aws-cli image the corpus loader uses to copy the export from S3."
+  type        = string
+  default     = "2.17.0"
+}
+
 variable "budget_alert_email" {
   description = "Email address for the monthly cost budget alerts (budget.tf). Empty (the default) creates no budget."
   type        = string

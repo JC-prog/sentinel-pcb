@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Production can restore Agent 2's IPC corpus after a Qdrant restart (`infra/production/ipc_corpus.tf`):
+  a private S3 bucket for an `ipc_ingest export` file and a one-shot ECS task (`aws-cli` copies it,
+  the backend image imports it) that loads it without any embedding call. Run on demand with the
+  `ipc_corpus_load_command` output; nothing is automatic and Qdrant itself still has no volume.
 - `ipc_ingest` can move a corpus without embedding it again: **`export FILE`** writes the collection
   with its vectors (a header records the embedding model and dimension) and **`import FILE`** loads
   it into another Qdrant with no OpenAI key; a file from a different model or dimension is refused.
