@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Dev: `scripts/reset-dev.ps1` / `scripts/reset-dev.sh` clear the local dev data for a clean slate -
+  this project's Docker volumes (or, with `-KeepStack`, Postgres and Qdrant in place, keeping the IPC
+  standards index) plus the local upload, run and log folders - then rebuild an empty, migrated
+  database. It asks first and has a dry run; it never touches `.env` or other Docker projects.
 - Production runs "Explain this result": Agent 2's MCP service is a sidecar container in the backend
   task (`explain_enabled`, default on), on loopback, sharing the uploads volume; backend memory
   default 2048 -> 3072 MiB. A failure leaves the backend up and the chat button reporting
