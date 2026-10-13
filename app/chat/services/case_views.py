@@ -74,8 +74,22 @@ class CaseListOut(BaseModel):
 
 
 def _filters(
-    stmt: Select[Any], *, status: str | None, model: str | None, q: str | None, corrected: bool | None
+    stmt: Select[Any],
+    *,
+    status: str | None,
+    model: str | None,
+    q: str | None,
+    corrected: bool | None,
+    board: str | None = None,
+    component: str | None = None,
+    created_by_user_id: str | None = None,
 ) -> Select[Any]:
+    if board:
+        stmt = stmt.where(Case.board_id.ilike(board.strip()))
+    if component:
+        stmt = stmt.where(Case.component_ref.ilike(component.strip()))
+    if created_by_user_id:
+        stmt = stmt.where(Case.created_by_user_id == created_by_user_id)
     if status:
         stmt = stmt.where(Case.status == status)
     if model:
@@ -130,12 +144,24 @@ async def list_cases(
     model: str | None = None,
     q: str | None = None,
     corrected: bool | None = None,
+    board: str | None = None,
+    component: str | None = None,
+    created_by_user_id: str | None = None,
     limit: int = 25,
     offset: int = 0,
 ) -> CaseListOut:
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, offset)
-    base = _filters(select(Case), status=status, model=model, q=q, corrected=corrected)
+    base = _filters(
+        select(Case),
+        status=status,
+        model=model,
+        q=q,
+        corrected=corrected,
+        board=board,
+        component=component,
+        created_by_user_id=created_by_user_id,
+    )
     total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
     cases = list(
         await session.scalars(

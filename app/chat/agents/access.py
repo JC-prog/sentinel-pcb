@@ -33,6 +33,9 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "get_retraining_job": frozenset({UserRole.ADMIN}),
     # Read-only views of the Work tab's stored runs, which are QA/Admin only there too.
     "get_sample": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Read-only views of saved cases - the same list the Cases tab shows to QA and Admin.
+    "get_case": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "list_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_runs": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_review_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_run_drift": frozenset({UserRole.QA, UserRole.ADMIN}),

@@ -190,6 +190,10 @@ class Settings(BaseSettings):
     # pattern as the others.
     sample_lookup_agent_enabled: bool = True
 
+    # Case agent (app/chat/agents/case_agent/) - read-only lookups of the Cases chat has saved
+    # (get_case, list_cases): what the Cases tab shows, answerable in the conversation.
+    case_lookup_agent_enabled: bool = True
+
     # Chat guardrails (app/chat/guardrails/) - a NeMo Guardrails input rail run on the raw user
     # message before it reaches any chat LLM call, checking for
     # jailbreak/prompt-injection attempts and off-topic (non-PCB-inspection) requests in a single

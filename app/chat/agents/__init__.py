@@ -9,6 +9,7 @@ its logic and its rules:
 - relabel_agent    - `relabel_case` / `confirm_relabel`: record a QA's correction of a wrong label.
 - review_agent     - `review_case` / `confirm_review`: approve or override a case flagged for review.
 - monitoring_agent - drift summaries and reports, retraining plans, the Admin status overview.
+- case_agent       - `get_case` / `list_cases`: read the cases chat has saved (the Cases tab's data).
 - sample_agent     - `get_sample` / `list_review_cases` / `get_run_drift`: read what the Work tab
   stored about a sample or a run (including how often the operator corrected the model).
 
@@ -17,6 +18,7 @@ app/chat/services/. This module, supervisor.py, registry.py, access.py and toolk
 plumbing beside them.
 """
 
+from app.chat.agents.case_agent import GET_CASE, LIST_CASES
 from app.chat.agents.inspection_agent import CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
@@ -45,6 +47,8 @@ tool_registry = ToolRegistry(
         MONITORING_STATUS,
         LIST_DRIFT_REPORTS,
         GET_RETRAINING_JOB,
+        GET_CASE,
+        LIST_CASES,
         GET_SAMPLE,
         LIST_RUNS,
         LIST_REVIEW_CASES,

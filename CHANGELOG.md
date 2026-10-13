@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **look up cases.** `get_case` answers "what happened to CASE-000123?" (what the model
+  said, any correction and why, a relabel waiting to be confirmed, the retraining ticket) and
+  `list_cases` answers "which cases are there for U7 on BOARD-1?" or "what did I correct?" (board,
+  component, model, status, corrected, mine; newest 10 with the total). Read-only, QA and Admin,
+  behind `CASE_LOOKUP_AGENT_ENABLED`.
 - Chat: **several attached images are all inspected.** Before, only the first was, silently.
   `inspect_image` takes an `image_number`; the assistant inspects each in turn, the card says "image
   2 of 3", and it tells the user that only the most recent inspection can be corrected or saved.
