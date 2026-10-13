@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **"Explain this result."** Agent 2's advisory explanation of the image just inspected - what
+  is visible, the IPC criteria, and whether that supports the model's label (it can disagree) -
+  shown as a card, with its own guardrail flags and whether measurements were read from the
+  inspection XML. It decides nothing and saves nothing. It is asked of a new service,
+  `python -m app.workflow.services.agent2_mcp_service` (compose profile `explain`), over MCP; set
+  `AGENT2_MCP_URL` to turn it on, and the button appears only then. The service serves one guarded
+  tool that takes an uploaded file's *name*; the teammate's MCP server is untouched and not exposed
+  (it cannot load under a real FastMCP, reads arbitrary paths, and invents telemetry). New
+  dependency `fastmcp`. Uploads are now a shared compose volume so both containers see them.
 - Chat: **"what happened this week?"** `get_activity_summary` gives counts over the last N days (up
   to 90): images inspected by verdict and model, how many were confirmed right, cases created and
   corrected, drift reports opened (and raised automatically), Work-tab runs saved, and how replies

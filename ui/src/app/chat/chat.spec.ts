@@ -417,6 +417,33 @@ describe('Chat', () => {
     expect(buttonWithText('The label is right.')).toBeUndefined();
   });
 
+  it('offers "Explain this result." only when the server has an explanation service', async () => {
+    const inspection = (explainAvailable: boolean) => ({
+      name: 'inspect_image',
+      result: {
+        case_created: false,
+        verdict: 'accepted',
+        review_required: false,
+        review_reasons: [],
+        inspection_summary: null,
+        region: null,
+        defect: null,
+        measurement_validation: null,
+        explain_available: explainAvailable,
+      },
+    });
+    await openConversation(() =>
+      of({ type: 'toolResult', toolResult: inspection(true) } as never),
+    );
+    expect(buttonWithText('Explain this result.')).toBeTruthy();
+
+    TestBed.resetTestingModule();
+    await openConversation(() =>
+      of({ type: 'toolResult', toolResult: inspection(false) } as never),
+    );
+    expect(buttonWithText('Explain this result.')).toBeUndefined();
+  });
+
   it('sends a self-contained suggestion immediately', async () => {
     await setup(new FakeActivatedRoute());
     const chatService = TestBed.inject(ChatService);

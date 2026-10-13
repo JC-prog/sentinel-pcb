@@ -391,3 +391,19 @@ async def test_a_failure_to_log_never_costs_the_user_their_result(
 
     assert result["verdict"] == "accepted"
     assert len(await _drafts(db_async_session)) == 1
+
+
+@pytest.mark.parametrize(("url", "expected"), [("", False), ("http://agent2-mcp:8002/mcp", True)])
+async def test_the_result_says_whether_an_explanation_can_be_asked_for(
+    db_async_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    uploads: Any,
+    url: str,
+    expected: bool,
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+    monkeypatch.setattr(settings, "agent2_mcp_url", url)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert result["explain_available"] is expected

@@ -9,6 +9,8 @@ its logic and its rules:
 - relabel_agent    - `relabel_case` / `confirm_relabel`: record a QA's correction of a wrong label.
 - review_agent     - `review_case` / `confirm_review`: approve or override a case flagged for review.
 - monitoring_agent - drift summaries and reports, retraining plans, the Admin status overview.
+- explain_agent   - `explain_inspection`: an advisory explanation of the image just inspected,
+  from Agent 2 over MCP (off until AGENT2_MCP_URL is set).
 - case_agent       - `get_case` / `list_cases`: read the cases chat has saved (the Cases tab's data).
 - sample_agent     - `get_sample` / `list_review_cases` / `get_run_drift`: read what the Work tab
   stored about a sample or a run (including how often the operator corrected the model).
@@ -24,6 +26,7 @@ from app.chat.agents.case_agent import (
     GET_COMPONENT_HISTORY,
     LIST_CASES,
 )
+from app.chat.agents.explain_agent import EXPLAIN_INSPECTION
 from app.chat.agents.inspection_agent import CONFIRM_LABEL_CORRECT, CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
@@ -47,6 +50,7 @@ tool_registry = ToolRegistry(
     [
         INSPECT_IMAGE,
         CONFIRM_LABEL_CORRECT,
+        EXPLAIN_INSPECTION,
         CREATE_CASE,
         RELABEL_CASE,
         CONFIRM_RELABEL,

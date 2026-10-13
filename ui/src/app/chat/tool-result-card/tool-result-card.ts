@@ -1,6 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import {
   CaseCreated,
+  Explanation,
   InspectionResult,
   RelabelDone,
   RelabelProposal,
@@ -25,6 +26,11 @@ export class ToolResultCard {
   protected readonly inspection = computed<InspectionResult | null>(() => {
     const t = this.toolResult();
     return t.name === 'inspect_image' ? t.result : null;
+  });
+
+  protected readonly explanation = computed<Explanation | null>(() => {
+    const t = this.toolResult();
+    return t.name === 'explain_inspection' ? t.result : null;
   });
 
   protected readonly caseCreated = computed<CaseCreated | null>(() => {

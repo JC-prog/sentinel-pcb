@@ -23,6 +23,10 @@ services:
       # Same story for LangFuse (--profile langfuse below) - only matters when this container and
       # that profile are both up; LANGFUSE_ENABLED/keys still come from .env either way.
       LANGFUSE_HOST: http://langfuse-web:3000
+    volumes:
+      # Uploads (chat images/XML) are written here and read by the explain service below, so both
+      # containers must see the same directory (the app's chat_upload_dir, cwd-relative).
+      - sentinelchat-uploads:/code/data/uploads
     extra_hosts:
       # host.docker.internal is built into Docker Desktop (Mac/Windows); on Linux it needs this
       # explicit mapping to the host gateway.
@@ -75,6 +79,7 @@ services:
   #   docker compose ... up -d                      # db + qdrant + app (backend default)
   #   docker compose ... --profile ui up -d         # + the containerized UI
   #   docker compose ... --profile inference up -d  # + the ONNX inference service
+#   docker compose ... --profile explain up -d    # + Agent 2's explanation service (chat "Explain")
   #   docker compose ... --profile langfuse up -d   # + self-hosted LangFuse tracing UI
   #   docker compose ... --profile full up -d       # everything
 
@@ -108,6 +113,30 @@ services:
     environment:
       LOG_FORMAT: json
       REQUIRE_MODELS_ON_STARTUP: "false"
+
+  # Agent 2's explanation as a service (app/workflow/services/agent2_mcp_service.py): the chat's
+  # "Explain this result" asks it over MCP. Same image as "app". Only the one guarded
+  # explain_inspection tool is served - the ported MCP server's raw tools are never exposed. Needs
+  # OPENAI_API_KEY (from .env) and the same uploads volume as "app". To use it, set
+  # AGENT2_MCP_URL=http://agent2-mcp:8002/mcp in .env (or http://localhost:8002/mcp for a native
+  # backend); with it unset the chat simply does not offer the button.
+  agent2-mcp:
+    profiles: ["explain", "full"]
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    labels:
+      project: sentinelchat
+    command: [".venv/bin/python", "-m", "app.workflow.services.agent2_mcp_service"]
+    env_file:
+      - ../../.env
+    environment:
+      AGENT2_MCP_HOST: 0.0.0.0
+      AGENT2_MCP_PORT: "8002"
+    ports:
+      - "8002:8002"
+    volumes:
+      - sentinelchat-uploads:/code/data/uploads
 
   # Self-hosted LangFuse (LLM observability/tracing for the LangGraph pipelines - see
   # app/shared/config/langfuse.py). Opt-in like ui/inference above - `--profile langfuse` or
@@ -278,6 +307,7 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: sentinelchat-dev-password
 
 volumes:
+  sentinelchat-uploads:
   sentinelchat-db-data:
   sentinelchat-qdrant-data:
   sentinelchat-langfuse-db-data:

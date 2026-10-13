@@ -349,6 +349,7 @@ export class Chat {
         }
         case 'inspect_image':
           return [
+            ...(result.explain_available ? ['Explain this result.'] : []),
             ...(result.defect ? ['The label is right.'] : []),
             "The model's defect label is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
@@ -356,6 +357,10 @@ export class Chat {
               ? 'Why was this flagged for review?'
               : 'What else did the model consider?',
           ];
+        case 'explain_inspection':
+          return result.agrees_with_model === false
+            ? ["The model's defect label is wrong - I'll tell you the right one.", 'The label is right.']
+            : [];
         case 'relabel_case':
           return ['Yes, confirm the relabel.', "No, cancel it - keep the model's label."];
         case 'confirm_relabel':

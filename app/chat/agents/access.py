@@ -13,6 +13,8 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "create_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     # The positive half of feedback: the label was right. Saves a confirmation, not a case.
     "confirm_label_correct": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Advisory only: Agent 2's explanation of the inspection the user is looking at. Nothing saved.
+    "explain_inspection": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a relabel saves nothing; confirming it records the correction and queues a
     # retraining ticket - an Admin still approves the retraining itself in the Models tab.
     "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),

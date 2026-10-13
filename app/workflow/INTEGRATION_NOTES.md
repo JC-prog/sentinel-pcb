@@ -242,8 +242,19 @@ review's evidence flags).
 
 ## Explicitly kept, not wired
 
-- **`src/agent2_explainability/{a2a,mcp}/`** - the A2A server and the FastMCP tool server. Present
-  in the drop-in, unused: the review pipeline is called directly in-process.
+- **`src/agent2_explainability/a2a/`** - the A2A server. Present in the drop-in, unused: the review
+  pipeline is called directly in-process.
+- **`src/agent2_explainability/mcp/agent2_mcp_server.py`** - kept exactly as ported and *not served
+  directly*. It cannot load under a real FastMCP (`case_context_retrieval_tool` takes `**kwargs`),
+  its visual and measurement tools read any path they are given (its own upstream traversal test
+  fails), and `measurement_evidence_tool` invents nominal telemetry - even `FAIL` values keyed off
+  the image's file name - when it finds none. `app/workflow/services/agent2_mcp_service.py` imports
+  it with a plain stand-in for the decorator, uses its tools as functions, and serves a single
+  guarded tool, `explain_inspection`, that takes an uploaded file's *name*, uses telemetry only when
+  read from an inspection XML, and maps the guardrail's classes (`WRONG_PART`...) to the app's
+  (`wrong part`...). Chat's explain agent calls it over MCP at `AGENT2_MCP_URL`. This is a second
+  explanation path next to the Work tab's in-process review, by decision: both are advisory.
+  Precedent search still finds nothing (the Qdrant store it imports was not ported).
 - **`adc_shared/data_api.py`, `agent2_api.py`, `client.py`, `adc_rest.py`, `test_rest.py`,
   `README_rest.md`, `compose.qdrant.yaml`** - the separate Shared Data API + Agent 2 REST API
   processes (and their own dedicated Qdrant in `compose.qdrant.yaml`). Not run: only

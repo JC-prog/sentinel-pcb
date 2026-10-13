@@ -201,6 +201,8 @@ def _result(outcome: InspectionOutcome) -> dict[str, Any]:
         raise ToolRefused(run.error or "inspection failed", observations=run.observations)
     return {
         "case_created": False,
+        # Whether "explain this" can be offered (the UI shows its button only when it can).
+        "explain_available": settings.explain_available,
         "instruction": (
             "Nothing is saved as a case yet. Report the result. If the user says the defect label "
             "is wrong, call relabel_case - the inspection does not need to be a case first; "

@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { InspectionResult, ToolResult } from '../models/chat.models';
+import { Explanation, InspectionResult, ToolResult } from '../models/chat.models';
 import { ToolResultCard } from './tool-result-card';
 
 const ACCEPTED: InspectionResult = {
@@ -298,6 +298,76 @@ describe('ToolResultCard', () => {
       expect(card).toContain('Accepted');
       expect(card).toContain('defect not classified');
       expect(card).toContain('no label to correct');
+    });
+  });
+
+  describe('an explanation', () => {
+    const EXPLANATION: Explanation = {
+      status: 'ok',
+      advisory: true,
+      label: 'tombstone',
+      confidence: 0.8,
+      summary: 'One end of the part is lifted off its pad.',
+      visual_evidence_cited: 'lifted at one end',
+      ipc_precedent_cited: 'IPC-A-610 tombstone criteria',
+      model_label: 'tombstone',
+      agrees_with_model: true,
+      guardrail: { status: 'PASSED', hallucination_flagged: false, note: null },
+      evidence: { visual: 'lifted', telemetry_recorded: false, precedents_found: false },
+    };
+
+    it('shows what Agent 2 found, that it agrees, and that it is advisory', () => {
+      const { el } = render({ name: 'explain_inspection', result: EXPLANATION });
+
+      expect(text(el, 'explanation-label')).toContain('tombstone');
+      expect(text(el, 'explanation-label')).toContain('80%');
+      expect(text(el, 'agreement')).toBe('Agrees with the model');
+      expect(text(el, 'explanation-summary')).toContain('lifted off its pad');
+      expect(text(el, 'explanation')).toContain('Advisory only');
+      expect(text(el, 'telemetry')).toBe('Not recorded');
+    });
+
+    it('says plainly when it disagrees and what the model said', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, label: 'missing part', model_label: 'tombstone', agrees_with_model: false },
+      });
+
+      expect(text(el, 'agreement')).toBe('Disagrees with the model');
+      expect(text(el, 'explanation')).toContain('The model said tombstone');
+    });
+
+    it('does not pretend to decide when Agent 2 declined to', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, label: null, confidence: 0.2, agrees_with_model: null },
+      });
+
+      expect(text(el, 'explanation-label')).toContain('Could not decide');
+      expect(text(el, 'agreement')).toBe('No comparison');
+    });
+
+    it('warns when its own checks flagged the explanation', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: {
+          ...EXPLANATION,
+          status: 'flagged',
+          guardrail: { status: 'FLAGGED', hallucination_flagged: true, note: 'Visual evidence is too vague.' },
+        },
+      });
+
+      expect(text(el, 'flagged')).toContain('weakly grounded');
+      expect(text(el, 'flagged')).toContain('too vague');
+    });
+
+    it('says when measurements were read from the inspection XML', () => {
+      const { el } = render({
+        name: 'explain_inspection',
+        result: { ...EXPLANATION, evidence: { ...EXPLANATION.evidence, telemetry_recorded: true } },
+      });
+
+      expect(text(el, 'telemetry')).toBe('Read from the inspection XML');
     });
   });
 });
