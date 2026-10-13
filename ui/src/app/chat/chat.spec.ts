@@ -73,6 +73,16 @@ describe('Chat', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Model status and queue');
   });
 
+  it('opens with a short line on what it does and how to attach, not a paragraph', async () => {
+    await setup(new FakeActivatedRoute());
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('h1')?.textContent).toContain("Hi, I'm the Sentinel PCB assistant");
+    expect(el.textContent).toContain('Classify an AOI image, correct a label, or look up');
+    expect(el.querySelector('[data-testid="attach-hint"]')?.textContent).toContain('attach images');
+    expect(el.textContent).not.toContain('flag an ambiguous result');
+  });
+
   it('groups the empty-state tiles by what they are for', async () => {
     await setup(new FakeActivatedRoute(), 'admin');
 
