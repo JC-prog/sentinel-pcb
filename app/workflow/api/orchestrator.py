@@ -5,7 +5,7 @@ settings.orchestrator_agent_enabled; never registered as a chat Tool, so the cha
 function-calling loop can never reach any of this.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -14,7 +14,7 @@ from app.shared.auth import get_current_user
 from app.shared.auth.dependencies import SessionDep
 from app.shared.config.settings import settings
 from app.shared.db import User, UserRole
-from app.workflow.services import monitoring, reviews
+from app.workflow.services import monitoring, reviews, run_store
 from app.workflow.services import uploads as orchestrator_uploads
 from app.workflow.services.monitoring import UnresolvableSample
 from app.workflow.services.schemas import (
@@ -35,6 +35,8 @@ from app.workflow.services.schemas import (
     WorkflowReviewOut,
     WorkflowReviewRunRequest,
     WorkflowRunDriftOut,
+    WorkflowRunListOut,
+    WorkflowRunSummaryOut,
 )
 from app.workflow.services.streaming import orchestrator_sse
 
@@ -68,6 +70,48 @@ async def orchestrator_status(
         raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
     _require_qa_or_admin(user)
     return OrchestratorStatus(llm_configured=bool(settings.orchestrator_api_key))
+
+
+@router.get("/api/orchestrator/runs")
+async def orchestrator_list_runs(
+    user: Annotated[User, Depends(get_current_user)],
+    limit: int = 30,
+) -> WorkflowRunListOut:
+    """The stored runs, newest first, so a past run can be found and reopened. Runs are shared by
+    all QA and Admin users (a run records no owner). An unreachable store is `available: false`
+    with no runs, not an error - the Work tab still works without history."""
+
+    if not settings.orchestrator_agent_enabled:
+        raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
+    _require_qa_or_admin(user)
+    try:
+        runs = await run_store.list_runs(max(1, min(limit, 100)))
+    except run_store.StoreUnavailable:
+        return WorkflowRunListOut(runs=[], available=False)
+    return WorkflowRunListOut(runs=[WorkflowRunSummaryOut(**run) for run in runs])
+
+
+@router.get("/api/orchestrator/runs/{run_id}")
+async def orchestrator_get_run(
+    run_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """A stored run in the shape of a live run's final `result` frame. Also loads the run into the
+    Review Console's registry, so its cases, drift and decisions work for it right away."""
+
+    if not settings.orchestrator_agent_enabled:
+        raise HTTPException(status_code=503, detail="orchestrator agent is disabled")
+    _require_qa_or_admin(user)
+    try:
+        result = await run_store.get_run_result(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"run {run_id} is not stored") from exc
+    except run_store.StoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="the run store is unavailable") from exc
+    except Exception as exc:  # Conflict: the run is still being written
+        raise HTTPException(status_code=409, detail="that run is still being saved") from exc
+    await reviews.ensure_run_loaded(run_id)
+    return result
 
 
 @router.post("/api/orchestrator/uploads/dataset")

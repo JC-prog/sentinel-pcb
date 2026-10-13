@@ -216,3 +216,97 @@ async def test_decision_for_a_run_qdrant_has_never_seen_falls_back_to_postgres(
     assert (row.run_id, row.final_result) == ("old-run", "wrong part")
     listed = authenticated_client.get(DECISIONS_URL, params={"run_id": "old-run"}).json()
     assert [d["sample_id"] for d in listed] == ["S1"]
+
+
+# --- run history ---------------------------------------------------------------------------------
+
+RUNS_URL = "/api/orchestrator/runs"
+
+
+def _counted_state(*decisions: str) -> dict[str, Any]:
+    state = _state(*decisions)
+    state.update(
+        input_samples=len(decisions),
+        accepted=sum(d == "ACCEPTED" for d in decisions),
+        review_required=sum(d == "REVIEW_REQUIRED" for d in decisions),
+        inference_completed=len(decisions),
+        errors=["Verification GOLDEN_IMAGE_NOT_FOUND: 1 sample(s) (e.g. S3)"],
+    )
+    return state
+
+
+async def test_runs_are_listed_newest_first_with_their_counters() -> None:
+    await run_store.save_run("run-old", _counted_state("ACCEPTED"))
+    await run_store.save_run("run-new", _counted_state("REVIEW_REQUIRED", "REVIEW_REQUIRED", "ACCEPTED"))
+
+    runs = await run_store.list_runs()
+
+    assert [r["run_id"] for r in runs] == ["run-new", "run-old"]
+    new = runs[0]
+    assert (new["input_samples"], new["review_required"], new["accepted"], new["decided"]) == (3, 2, 1, 0)
+    assert len(await run_store.list_runs(limit=1)) == 1
+
+
+async def test_a_run_still_being_written_is_not_listed(run_store_repo: Any) -> None:
+    await run_store.save_run("run-a", _counted_state("REVIEW_REQUIRED"))
+    run = run_store_repo.get(RUNS, "run-a")
+    run_store_repo.put(RUNS, ("run-a",), {**run, "storage_status": "WRITING"})
+
+    assert await run_store.list_runs() == []
+
+
+async def test_decided_counts_flagged_samples_the_operator_has_ruled_on(
+    authenticated_client: TestClient,
+) -> None:
+    await run_store.save_run("run-a", _counted_state("REVIEW_REQUIRED", "REVIEW_REQUIRED"))
+    saved = authenticated_client.put(
+        DECISION_URL,
+        json={
+            "run_id": "run-a",
+            "sample_id": "S1",
+            "selected_source": "MANUAL",
+            "final_result": "wrong part",
+            "operator_notes": "",
+        },
+    )
+    assert saved.status_code == 200
+
+    (run,) = await run_store.list_runs()
+
+    assert run["review_required"] == 2 and run["decided"] == 1
+
+
+def test_the_runs_route_lists_history_and_says_when_the_store_is_down(
+    authenticated_client: TestClient,
+) -> None:
+    class Down:
+        client = None
+
+    run_store.set_repository(Down())
+
+    body = authenticated_client.get(RUNS_URL).json()
+
+    assert body == {"runs": [], "available": False}
+
+
+async def test_a_stored_run_reopens_with_the_same_summary_and_loads_the_review_console(
+    authenticated_client: TestClient,
+) -> None:
+    await run_store.save_run("run-a", _counted_state("REVIEW_REQUIRED", "ACCEPTED"))
+    _restart()
+
+    response = authenticated_client.get(f"{RUNS_URL}/run-a")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == "run-a" and body["workflow_status"] == "REVIEW_REQUIRED"
+    assert (body["input_samples"], body["review_required"], body["accepted"]) == (2, 1, 1)
+    assert [r["sample_id"] for r in body["results"]] == ["S1", "S2"]
+    assert body["errors"] == ["Verification GOLDEN_IMAGE_NOT_FOUND: 1 sample(s) (e.g. S3)"]
+    # the Review Console works for it straight away
+    cases = authenticated_client.get(CASES_URL, params={"run_id": "run-a"}).json()
+    assert [c["sample_id"] for c in cases] == ["S1"]
+
+
+def test_an_unknown_run_is_a_404(authenticated_client: TestClient) -> None:
+    assert authenticated_client.get(f"{RUNS_URL}/nope").status_code == 404

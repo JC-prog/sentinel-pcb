@@ -164,3 +164,94 @@ async def save_decision(run_id: str, sample_id: str, decision: dict[str, Any]) -
 
 async def reviews_for_run(run_id: str) -> list[dict[str, Any]]:
     return await _pages(lambda repo, cursor: repo.reviews_for_run(run_id, _PAGE, cursor))
+
+
+# What a run's stored state is summarised by. Selected by nested key so the (large) stored result -
+# every prepared sample - is never loaded just to list runs.
+_SUMMARY_COUNTERS = (
+    "input_samples",
+    "preparation_ready",
+    "preparation_failed",
+    "verification_passed",
+    "verification_failed",
+    "inference_attempted",
+    "inference_completed",
+    "accepted",
+    "review_required",
+    "inference_aborted",
+)
+
+
+def _list_runs(repo: Any, limit: int) -> list[dict[str, Any]]:
+    include = ["run_id", "saved_at_utc", "status", *(f"result.{k}" for k in _SUMMARY_COUNTERS)]
+    ready = models.Filter(
+        must=[models.FieldCondition(key="storage_status", match=models.MatchValue(value="READY"))]
+    )
+    runs: list[dict[str, Any]] = []
+    offset: Any = None
+    while True:
+        points, offset = repo.client.scroll(
+            RUNS,
+            scroll_filter=ready,
+            limit=_PAGE,
+            offset=offset,
+            with_payload=models.PayloadSelectorInclude(include=include),
+            with_vectors=False,
+        )
+        runs.extend(dict(point.payload or {}) for point in points)
+        if offset is None:
+            break
+
+    runs.sort(key=lambda run: str(run.get("saved_at_utc") or ""), reverse=True)
+    summaries: list[dict[str, Any]] = []
+    for run in runs[:limit]:
+        stored = run.get("result")
+        counters: dict[str, Any] = stored if isinstance(stored, dict) else {}
+        run_id = str(run["run_id"])
+        decided = repo.client.count(
+            REVIEWS,
+            count_filter=models.Filter(
+                must=[models.FieldCondition(key="run_id", match=models.MatchValue(value=run_id))],
+                must_not=[models.IsEmptyCondition(is_empty=models.PayloadField(key="human_decision"))],
+            ),
+            exact=True,
+        ).count
+        summaries.append(
+            {
+                "run_id": run_id,
+                "saved_at_utc": str(run.get("saved_at_utc") or ""),
+                "status": str(run.get("status") or ""),
+                "decided": decided,
+                **{k: int(counters.get(k) or 0) for k in _SUMMARY_COUNTERS},
+            }
+        )
+    return summaries
+
+
+async def list_runs(limit: int = 30) -> list[dict[str, Any]]:
+    """The stored (READY) runs, newest first, each with the counters of its final state and how
+    many flagged samples already have an operator decision. Raises StoreUnavailable when Qdrant
+    cannot be reached."""
+
+    return await _call(lambda repo: _list_runs(repo, limit))
+
+
+def _run_result(repo: Any, run_id: str) -> dict[str, Any]:
+    run = repo.ready_run(run_id)  # KeyError when unknown, Conflict while still being written
+    state = run.get("result") or {}
+    return {
+        "run_id": run_id,
+        "saved_at_utc": run.get("saved_at_utc"),
+        "workflow_status": state.get("status") or run.get("status") or "",
+        "termination_reason": state.get("termination_reason"),
+        "results": state.get("inference_results") or [],
+        "errors": state.get("errors") or [],
+        **{k: int(state.get(k) or 0) for k in _SUMMARY_COUNTERS},
+    }
+
+
+async def get_run_result(run_id: str) -> dict[str, Any]:
+    """A stored run in the shape of the final `result` frame of a live run (streaming.py), so the
+    Work tab can show a past run exactly like the one it just finished. KeyError when not stored."""
+
+    return await _call(lambda repo: _run_result(repo, run_id))
