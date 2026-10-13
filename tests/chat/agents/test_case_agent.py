@@ -188,3 +188,68 @@ async def test_a_component_never_seen_has_an_empty_history(db_async_session: Asy
     assert "required" in (
         await call(GET_COMPONENT_HISTORY, _ctx(db_async_session, user), board_id=" ", component_ref="U1")
     )["error"]
+
+
+async def test_activity_summary_counts_what_happened_in_the_window(
+    db_async_session: AsyncSession,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.chat.agents.case_agent import GET_ACTIVITY_SUMMARY
+    from app.shared.modelops import drift as drift_repo
+
+    user = await make_user(db_async_session)
+    fields: dict[str, Any] = {
+        "board_id": "BOARD-1",
+        "component_ref": "U7",
+        "image_id": "a.png",
+        "region": "Body",
+        "defect_model": "pcb_body_defect",
+        "defect_label": "MissingPart",
+        "status": "review_required",
+    }
+    rows = []
+    for status in ("review_required", "accepted", "accepted"):
+        row = await inspection_log.record(
+            db_async_session,
+            user_id=user.id,
+            conversation_id="c1",
+            case_fields={**fields, "status": status},
+        )
+        assert row is not None
+        rows.append(row)
+    rows[1].verified = True
+    old = await inspection_log.record(
+        db_async_session, user_id=user.id, conversation_id="c1", case_fields=fields
+    )
+    assert old is not None
+    old.created_at = datetime.now(UTC) - timedelta(days=40)
+    await _case(db_async_session, user)
+    await drift_repo.create_drift_report(
+        db_async_session,
+        model_name="pcb_body_defect",
+        reported_by_user_id=user.id,
+        description="raised itself",
+        stats={"auto": True},
+    )
+    await db_async_session.commit()
+
+    result = await call(GET_ACTIVITY_SUMMARY, _ctx(db_async_session, user))
+
+    assert result["window_days"] == 7
+    assert result["inspected"] == 3
+    assert result["by_verdict"] == {"review_required": 1, "accepted": 2}
+    assert result["by_model"] == {"pcb_body_defect": 3}
+    assert result["confirmed_right"] == 1
+    assert result["cases_created"] == 1
+    assert result["drift_reports_opened"] == 1
+    assert result["drift_reports_raised_automatically"] == 1
+    assert result["replies_rated"] == {}
+    # the run store is not configured in these tests; "unknown" is not the same as none
+    assert "work_runs_saved" in result
+
+    wide = await call(GET_ACTIVITY_SUMMARY, _ctx(db_async_session, user), days=90)
+    assert wide["inspected"] == 4 and wide["window_days"] == 90
+    assert (await call(GET_ACTIVITY_SUMMARY, _ctx(db_async_session, user), days=9999))[
+        "window_days"
+    ] == 90

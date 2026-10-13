@@ -4,13 +4,15 @@ are answerable without leaving the conversation. Neither tool writes anything; a
 corrected by the inspection and relabel agents (two steps, confirmed in a later turn).
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from langchain_core.tools import tool
 
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, required, returns_json, text
-from app.chat.services import case_views, inspection_log
+from app.chat.services import case_views, inspection_log, run_samples
 from app.shared.config.settings import settings
+from app.shared.modelops import drift as drift_repo
 
 MAX_CASES = 10
 
@@ -132,12 +134,50 @@ async def get_component_history(
     }
 
 
+_MAX_DAYS = 90
+
+
+@tool("get_activity_summary")
+@returns_json
+async def get_activity_summary(
+    runtime: Runtime,
+    days: Annotated[int | None, f"How many days back, 1 to {_MAX_DAYS}. Default 7."] = None,
+) -> dict[str, Any]:
+    """A short account of what happened over the last N days, for 'what happened this week?': how
+    many images chat inspected (by verdict and model), how many a person confirmed right or
+    corrected, cases created, drift reports opened, how many Work-tab runs were saved, and how
+    replies were rated. Read-only counts - summarise them in a few lines and say the window. It
+    covers chat and stored runs; model status and the retraining queue are the Admin tools'."""
+
+    span = max(1, min(days or 7, _MAX_DAYS))
+    since = datetime.now(UTC) - timedelta(days=span)
+    session = runtime.context.session
+
+    summary = await inspection_log.activity(session, since=since)
+    reports = await drift_repo.list_drift_reports(session, since=since, limit=200)
+    try:
+        runs = await run_samples.ready_runs()
+        runs_saved: int | None = sum(
+            1 for r in runs if (r.saved_at_utc or "") >= since.isoformat()
+        )
+    except run_samples.RunStoreUnavailable:
+        runs_saved = None  # the store could not be read - not the same as none
+    return {
+        "window_days": span,
+        **summary,
+        "drift_reports_opened": len(reports),
+        "drift_reports_raised_automatically": sum(1 for r in reports if (r.stats or {}).get("auto")),
+        "work_runs_saved": runs_saved,
+    }
+
+
 def _enabled() -> bool:
     return settings.case_lookup_agent_enabled
 
 
 GET_CASE = ChatTool(get_case, label="Case lookup", enabled=_enabled)
 LIST_CASES = ChatTool(list_cases, label="Case list", enabled=_enabled)
+GET_ACTIVITY_SUMMARY = ChatTool(get_activity_summary, label="Activity summary", enabled=_enabled)
 GET_COMPONENT_HISTORY = ChatTool(
     get_component_history, label="Component history", enabled=_enabled
 )

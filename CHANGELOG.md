@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **"what happened this week?"** `get_activity_summary` gives counts over the last N days (up
+  to 90): images inspected by verdict and model, how many were confirmed right, cases created and
+  corrected, drift reports opened (and raised automatically), Work-tab runs saved, and how replies
+  were rated. Read-only; the assistant summarises it in a few lines.
 - Chat: **rate a reply.** Thumbs up and down under each assistant reply (click again to take it
   back), saved with the reply (`messages.feedback`, new migration `a8d4f1c6e203`; `PUT
   /api/messages/{id}/feedback`). The `done` frame now carries the saved reply's `message_id`, which

@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.db.models import Case, InspectionLog
+from app.chat.db.models import Case, InspectionLog, Message
 from app.chat.services.cases import REGION_MODEL
 from app.shared.config.settings import settings
 from app.shared.db.models import RetrainingTicket
@@ -233,4 +233,62 @@ async def component_history(
             }
             for r in rows
         ],
+    }
+
+
+async def activity(
+    session: AsyncSession, *, since: datetime, until: datetime | None = None
+) -> dict[str, Any]:
+    """What happened in chat over a period: inspections (by verdict and by model), how many a person
+    confirmed right or corrected, cases created, and how replies were rated. Counts only."""
+
+    until = until or datetime.now(UTC) + timedelta(seconds=1)
+    window = [InspectionLog.created_at >= since, InspectionLog.created_at < until]
+    inspected = await session.scalar(select(func.count()).where(*window)) or 0
+    by_verdict = await session.execute(
+        select(InspectionLog.verdict, func.count()).where(*window).group_by(InspectionLog.verdict)
+    )
+    by_model = await session.execute(
+        select(InspectionLog.defect_model, func.count())
+        .where(*window)
+        .group_by(InspectionLog.defect_model)
+    )
+    confirmed = (
+        await session.scalar(
+            select(func.count()).where(*window, InspectionLog.verified.is_(True))
+        )
+        or 0
+    )
+    cases_made = (
+        await session.scalar(
+            select(func.count()).where(Case.created_at >= since, Case.created_at < until)
+        )
+        or 0
+    )
+    cases_corrected = (
+        await session.scalar(
+            select(func.count()).where(
+                Case.corrected_at.is_not(None), Case.corrected_at >= since, Case.corrected_at < until
+            )
+        )
+        or 0
+    )
+    ratings = await session.execute(
+        select(Message.feedback, func.count())
+        .where(
+            Message.feedback.is_not(None),
+            Message.role == "assistant",
+            Message.created_at >= since,
+            Message.created_at < until,
+        )
+        .group_by(Message.feedback)
+    )
+    return {
+        "inspected": inspected,
+        "by_verdict": {verdict: n for verdict, n in by_verdict.tuples()},
+        "by_model": {(model or "no defect model ran"): n for model, n in by_model.tuples()},
+        "confirmed_right": confirmed,
+        "cases_created": cases_made,
+        "cases_corrected": cases_corrected,
+        "replies_rated": {value: n for value, n in ratings.tuples()},
     }

@@ -57,6 +57,7 @@ reference; sections 3-8 explain each row.
 | Say the label is right | nothing | "That label is right." | `confirm_label_correct` | Yes - a confirmation, no case |
 | Keep that inspection as a case | nothing | "Save this as a case." | `create_case` | Yes - a case, after "yes" |
 | Correct a wrong defect label | nothing | "That label is wrong - it's actually a wrong part, because the markings don't match." then "Yes, confirm it." | `relabel_case`, then `confirm_relabel` | Yes, after "yes" |
+| Summarise a period | nothing | "What happened this week?" | `get_activity_summary` | No |
 | See what chat knows about a part | nothing | "Has U7 on BOARD-1 failed before?" | `get_component_history` | No |
 | See which Work-tab runs exist | nothing | "Which runs do I have?" | `list_runs` | No |
 | Look up a Work-tab sample | nothing | "What do you know about sample S000001?" | `get_sample` | No |

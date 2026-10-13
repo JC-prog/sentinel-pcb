@@ -42,6 +42,8 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "get_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_component_history": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Counts of what happened over a period - cases, inspections, ratings are shared QA/Admin data.
+    "get_activity_summary": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_runs": frozenset({UserRole.QA, UserRole.ADMIN}),
     "list_review_cases": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_run_drift": frozenset({UserRole.QA, UserRole.ADMIN}),

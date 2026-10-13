@@ -34,6 +34,8 @@ and to contact an administrator; do not guess it from other tools.
 - The user gives a case number such as CASE-000123, or asks which cases exist for a board or component, \
 or what they corrected: get_case, list_cases. Whether a part has been seen before ("has U7 on BOARD-1 \
 failed before?"): get_component_history.
+- They ask what happened over a period ("what happened this week?"): get_activity_summary; give a \
+few lines, not a table of every number.
 - The user gives a sample id such as S000001 (a row of a Work-tab bulk run, not a case number): get_sample.
 - They ask which Work-tab runs exist, or you need a run id to answer: list_runs. Sample ids restart every \
 run, so name the run you answered from.

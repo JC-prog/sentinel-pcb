@@ -18,7 +18,12 @@ app/chat/services/. This module, supervisor.py, registry.py, access.py and toolk
 plumbing beside them.
 """
 
-from app.chat.agents.case_agent import GET_CASE, GET_COMPONENT_HISTORY, LIST_CASES
+from app.chat.agents.case_agent import (
+    GET_ACTIVITY_SUMMARY,
+    GET_CASE,
+    GET_COMPONENT_HISTORY,
+    LIST_CASES,
+)
 from app.chat.agents.inspection_agent import CONFIRM_LABEL_CORRECT, CREATE_CASE, INSPECT_IMAGE
 from app.chat.agents.monitoring_agent import (
     DRAFT_RETRAINING_PLAN,
@@ -58,6 +63,7 @@ tool_registry = ToolRegistry(
         GET_CASE,
         LIST_CASES,
         GET_COMPONENT_HISTORY,
+        GET_ACTIVITY_SUMMARY,
         GET_SAMPLE,
         LIST_RUNS,
         LIST_REVIEW_CASES,
