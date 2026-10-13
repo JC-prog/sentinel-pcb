@@ -51,6 +51,16 @@ describe('ToolResultCard', () => {
       expect(text(el, 'defect')).toContain('MissingPart · 87%');
     });
 
+    it('says which image it is when several were attached', () => {
+      const { el } = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, image_number: 2, images_attached: 3 },
+      });
+
+      expect(text(el, 'card-title')).toContain('image 2 of 3');
+      expect(text(render({ name: 'inspect_image', result: ACCEPTED }).el, 'card-title')).not.toContain('image');
+    });
+
     it('shows which model version answered, and a confidence meter for each stage', () => {
       const { el } = render({ name: 'inspect_image', result: ACCEPTED });
 

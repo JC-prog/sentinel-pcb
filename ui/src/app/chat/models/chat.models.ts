@@ -28,6 +28,9 @@ export interface InspectionResult {
   /** Null when the region was too uncertain for a defect model to run. */
   defect: StageResult | null;
   measurement_validation: { valid: boolean; issues: string[] } | null;
+  /** Which of several attached images this is (1-based), and how many were attached. */
+  image_number?: number;
+  images_attached?: number;
 }
 
 /** relabel_case: a correction waiting for the user's confirmation - nothing is saved yet. */

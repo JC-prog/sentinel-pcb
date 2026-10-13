@@ -34,6 +34,10 @@ _TOP_SCORES = 3
 async def inspect_image(
     runtime: Runtime,
     question: Annotated[str | None, "What the user wants to know about the image, in their words."] = None,
+    image_number: Annotated[
+        int | None,
+        "Which attached image, counting from 1, when several are attached. Omit for the first.",
+    ] = None,
     board_id: Annotated[str | None, "The AOI board identifier, if the user gave one."] = None,
     component_ref: Annotated[str | None, "The component reference designator (e.g. U7), if known."] = None,
     package: Annotated[str | None, "The component's package type, if known."] = None,
@@ -44,12 +48,15 @@ async def inspect_image(
     what defect it has (two-stage classification through the inference service), optionally
     validates an attached inspection XML's measurements. It saves NOTHING - it reports what it found.
     Use it whenever the user attaches an image and asks what is wrong with it. Report the region,
-    the defect, the confidence and the verdict it returns. If they say the label is wrong use
-    relabel_case; offer create_case only if they want to keep the inspection as a case."""
+    the defect, the confidence and the verdict it returns. If several images are attached it
+    inspects one per call: call it again with image_number 2, 3, ... for the others, and say how
+    many were attached. If they say the label is wrong use relabel_case (it applies to the most
+    recent inspection); offer create_case only if they want to keep the inspection as a case."""
 
     ctx = runtime.context
     request = _request(
         ctx,
+        image_number=image_number or 1,
         board_id=text(board_id) or UNKNOWN,
         component_ref=text(component_ref) or UNKNOWN,
         package=text(package) or None,
@@ -57,7 +64,19 @@ async def inspect_image(
         issue_symptom=text(issue_symptom) or None,
     )
     outcome = await run_inspection(ctx.session, request, question=text(question) or None)
-    return _result(outcome)
+    result = _result(outcome)
+    attached = len(ctx.image_ids)
+    if attached > 1:
+        number = image_number or 1
+        result["image_number"] = number
+        result["images_attached"] = attached
+        others = [n for n in range(1, attached + 1) if n != number]
+        result["instruction"] += (
+            f" {attached} images are attached and this was number {number}. Inspect the others "
+            f"with image_number {', '.join(str(n) for n in others)}, and tell the user that only "
+            "the most recent inspection can be corrected or saved."
+        )
+    return result
 
 
 @tool("create_case")
@@ -120,12 +139,16 @@ INSPECT_IMAGE = ChatTool(
 CREATE_CASE = ChatTool(create_case, label="Case creation", enabled=_enabled, shows_card=True)
 
 
-def _request(ctx: ToolContext, **identity: Any) -> InspectionRequest:
-    """The first attached image (and inspection XML, if any) - read from the user's own uploads."""
+def _request(ctx: ToolContext, *, image_number: int = 1, **identity: Any) -> InspectionRequest:
+    """The chosen attached image (and inspection XML, if any) - read from the user's own uploads."""
 
     if not ctx.image_ids:
         raise ToolRefused("no image is attached to this message")
-    image_id = ctx.image_ids[0]
+    if not 1 <= image_number <= len(ctx.image_ids):
+        raise ToolRefused(
+            f"image_number {image_number} is out of range: {len(ctx.image_ids)} image(s) attached"
+        )
+    image_id = ctx.image_ids[image_number - 1]
     image_path = resolve_upload_path(image_id)
     if image_path is None:
         raise ToolRefused("the attached image could not be found - ask the user to re-attach it")

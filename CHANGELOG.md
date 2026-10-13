@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: **several attached images are all inspected.** Before, only the first was, silently.
+  `inspect_image` takes an `image_number`; the assistant inspects each in turn, the card says "image
+  2 of 3", and it tells the user that only the most recent inspection can be corrected or saved.
 - Chat: when the assistant asks you to confirm or choose in plain text ("Please confirm...",
   "Shall I save it as a case?"), **Yes** and **No** buttons appear under it. A case with no defect
   label (the region was too uncertain) no longer offers "relabel it", and its card and the

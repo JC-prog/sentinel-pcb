@@ -6,8 +6,11 @@
   >
     <header class="mb-3 flex items-center justify-between gap-2">
       <div>
-        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400" data-testid="card-title">
           Inspection result
+          @if (result.images_attached && result.images_attached > 1) {
+            · image {{ result.image_number }} of {{ result.images_attached }}
+          }
         </p>
         <p class="font-semibold" data-testid="case-state">Not saved as a case yet</p>
       </div>

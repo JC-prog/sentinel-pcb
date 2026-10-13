@@ -316,3 +316,44 @@ def test_the_model_cannot_name_an_image_or_a_user() -> None:
     assert not {"image_bytes", "image_name", "image_id", "user_id", "session", "runtime"} & set(
         properties
     )
+
+
+async def test_with_several_images_attached_each_is_inspected_by_number(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+    user, conversation = await _user_and_conversation(db_async_session)
+    ids = (uploads(VALID_IMAGE, "first.png"), uploads(VALID_IMAGE, "second.png"))
+    ctx = tool_context(
+        db_async_session, user, conversation_id=conversation.id, image_ids=ids
+    )
+
+    first = await call(INSPECT_IMAGE, ctx)
+    second = await call(INSPECT_IMAGE, ctx, image_number=2)
+
+    assert (first["image_number"], first["images_attached"]) == (1, 2)
+    assert "image_number 2" in first["instruction"]
+    assert second["image_number"] == 2 and "image_number 1" in second["instruction"]
+    # only the most recent inspection waits to be corrected or saved
+    assert (await _only_draft(db_async_session))["image_id"] == "second.png"
+
+
+async def test_a_single_image_carries_no_numbering(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    result = await _inspect(db_async_session, uploads)
+
+    assert "image_number" not in result and "images_attached" not in result
+
+
+async def test_an_image_number_that_is_not_attached_is_refused(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+
+    result = await _inspect(db_async_session, uploads, image_number=3)
+
+    assert "out of range" in result["error"]
+    assert await _drafts(db_async_session) == []
