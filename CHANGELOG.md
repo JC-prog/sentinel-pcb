@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Cases tab** (Chat | Work | Cases | Models): every case chat has saved, with the model's call and
+  version, the scores, any correction and its reason, the retraining ticket and a link back to the
+  conversation (for its owner). Filter by status, model, corrected or free text. Read-only: a case
+  is made and corrected in chat. Visible to all QA and Admin. New `GET /api/cases` and
+  `GET /api/cases/{case_number}`; case numbers in the Models tab (drift reports, retraining plans)
+  now open the case here.
 - Work: **run history.** The sidebar on the Work tab lists the stored runs (when, samples, flagged,
   decided); clicking one reopens it as if it had just finished, with its summary, Review Console,
   Model feedback and Retraining queue. New `GET /api/orchestrator/runs` (newest first, each run's

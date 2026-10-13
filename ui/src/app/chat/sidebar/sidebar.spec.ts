@@ -35,6 +35,7 @@ describe('Sidebar', () => {
           { path: '', component: StubComponent },
           { path: 'work', component: StubComponent },
           { path: 'models', component: StubComponent },
+          { path: 'cases', component: StubComponent },
         ]),
         { provide: CHAT_RESPONDER, useValue: { respond: () => of({ type: 'delta', text: 'mock reply' }) } },
       ],
@@ -206,6 +207,14 @@ describe('Sidebar', () => {
 
     expect(fixture.nativeElement.textContent).not.toContain('New chat');
     expect(fixture.nativeElement.querySelector('nav')).toBeFalsy();
+  });
+
+  it('keeps the chat list hidden on the Cases route, also with a case open', async () => {
+    await TestBed.inject(Router).navigateByUrl('/cases?case=CASE-000012');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('New chat');
+    expect(fixture.nativeElement.querySelector('nav[aria-label="Conversations"]')).toBeFalsy();
   });
 
   it('shows "New chat" and conversation history again after navigating back to chat', async () => {

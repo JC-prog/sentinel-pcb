@@ -14,7 +14,7 @@ import { WorkflowRunSummary } from '../../work/models/orchestrator.models';
 // conversation history, so the sidebar shows on those routes too (app.ts's ROUTES_WITHOUT_SIDEBAR)
 // but without its "New chat" button and conversation list - just branding, Settings, and the
 // user/logout footer, same reasoning app.ts documents for hiding the sidebar entirely pre-login.
-const ROUTES_WITHOUT_CHAT_NAV = new Set(['/work', '/models']);
+const ROUTES_WITHOUT_CHAT_NAV = new Set(['/work', '/models', '/cases']);
 
 @Component({
   imports: [RouterLink, Icon],
@@ -69,8 +69,10 @@ export class Sidebar {
       ),
       { initialValue: this.router.url },
     );
-    this.showChatNav = computed(() => !ROUTES_WITHOUT_CHAT_NAV.has(url()));
-    this.showRuns = computed(() => url() === '/work');
+    // A query string (the Cases tab opens a case with ?case=...) does not change which page it is.
+    const path = computed(() => url().split('?')[0]);
+    this.showChatNav = computed(() => !ROUTES_WITHOUT_CHAT_NAV.has(path()));
+    this.showRuns = computed(() => path() === '/work');
     this.runs = this.workService.runs;
     this.currentRunId = computed(() => this.workService.result()?.run_id ?? null);
 

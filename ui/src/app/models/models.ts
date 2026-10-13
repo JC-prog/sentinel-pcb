@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { AuthService } from '../auth.service';
 import { ModelOpsService } from './model-ops.service';
 import {
@@ -72,7 +73,18 @@ export class Models implements OnInit, OnDestroy {
   constructor(
     protected readonly service: ModelOpsService,
     private readonly authService: AuthService,
+    private readonly router: Router,
   ) {}
+
+  /** A case number as a link to the Cases tab. Only chat cases have one; a Work-tab sample does not. */
+  protected isCaseNumber(value: string | null | undefined): boolean {
+    return !!value && /^CASE-\d+$/i.test(value);
+  }
+
+  protected openCase(event: Event, caseNumber: string): void {
+    event.preventDefault();
+    void this.router.navigate(['/cases'], { queryParams: { case: caseNumber } });
+  }
 
   ngOnInit(): void {
     void this.service.refresh();

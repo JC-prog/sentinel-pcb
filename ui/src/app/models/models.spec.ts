@@ -1,5 +1,6 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { vi } from 'vitest';
 import { AuthService, AuthUser } from '../auth.service';
 import { Models } from './models';
@@ -326,6 +327,17 @@ describe('Models', () => {
       expect(card.textContent).toContain('mean confidence 0.82');
       expect(card.textContent).toContain('override rate rose from 0% to 80%');
       expect(card.textContent).toContain('CASE-000007');
+    });
+
+    it('links a report\'s case numbers to the Cases tab', async () => {
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      const link = root().querySelector('[data-report="r-1"] a[href="/cases?case=CASE-000007"]') as HTMLElement;
+
+      link.click();
+
+      expect(link.textContent).toContain('CASE-000007');
+      expect(navigate).toHaveBeenCalledWith(['/cases'], { queryParams: { case: 'CASE-000007' } });
     });
 
     it('summarises reported and open counts per model', () => {
