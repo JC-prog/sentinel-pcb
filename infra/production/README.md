@@ -153,9 +153,13 @@ aws cloudfront create-invalidation --distribution-id <cloudfront_distribution_id
   start-up (`app/shared/db/session.py`), which is right for a fresh, short-lived RDS instance but
   does not alter an existing one. Keeping a database across versions means running
   `alembic upgrade head` against it first.
-- **"Explain this result" is not deployed.** The MCP service that serves it (`agent2-mcp`) has no
-  task here, so `AGENT2_MCP_URL` is unset and the tool stays off. The IPC corpus loader above fills
-  a collection that nothing reads until that service is added.
+- **"Explain this result" runs as a sidecar of the backend task** (`explain_enabled`, default on):
+  Agent 2's MCP service (`agent2-mcp`, `ecs.tf`) listens on the task's loopback and reads uploads from
+  a volume shared with the backend, so `AGENT2_MCP_URL` is set for you. It is not an essential
+  container, so if it dies the backend keeps running and the chat button just reports the explanation
+  is unavailable. Its precedents come from the corpus the loader above restores; with an empty
+  collection it explains without citing any. Set `explain_enabled = false` to leave it out (the
+  backend then also needs only 2048 MiB).
 
 ## Tearing down
 

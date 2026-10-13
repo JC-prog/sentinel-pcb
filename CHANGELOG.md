@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Production runs "Explain this result": Agent 2's MCP service is a sidecar container in the backend
+  task (`explain_enabled`, default on), on loopback, sharing the uploads volume; backend memory
+  default 2048 -> 3072 MiB. A failure leaves the backend up and the chat button reporting
+  "unavailable".
 - Production can restore Agent 2's IPC corpus after a Qdrant restart (`infra/production/ipc_corpus.tf`):
   a private S3 bucket for an `ipc_ingest export` file and a one-shot ECS task (`aws-cli` copies it,
   the backend image imports it) that loads it without any embedding call. Run on demand with the

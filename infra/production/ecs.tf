@@ -15,7 +15,13 @@ resource "aws_ecs_task_definition" "backend" {
   memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
-  container_definitions = jsonencode([
+  # Chat uploads, shared with the Agent 2 sidecar below (it reads the image by upload id). Scratch
+  # space like the task's own disk was: gone when the task stops, same as before.
+  volume {
+    name = "uploads"
+  }
+
+  container_definitions = jsonencode(concat([
     {
       name      = "backend"
       image     = "${aws_ecr_repository.backend.repository_url}:${var.container_image_tag}"
@@ -23,7 +29,8 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [
         { containerPort = var.container_port, protocol = "tcp" }
       ]
-      environment = [
+      mountPoints = [{ sourceVolume = "uploads", containerPath = "/code/data/uploads" }]
+      environment = concat([
         # CloudFront is the one browser-facing origin (see static_site.tf) - the ALB itself has
         # no cert and is never called directly by the browser, but CORS is still checked against
         # whatever Origin header the browser sends, which will be the CloudFront domain.
@@ -37,7 +44,10 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "COOKIE_SECURE", value = "True" },
         # Qdrant (qdrant.tf), resolved over Cloud Map private DNS like the inference service.
         { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
-      ]
+        ], var.explain_enabled ? [
+        # "Explain this result": Agent 2's MCP service runs beside the backend (sidecar below).
+        { name = "AGENT2_MCP_URL", value = "http://127.0.0.1:${var.agent2_mcp_port}/mcp" },
+      ] : [])
       secrets = [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.db_password.arn },
         { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
@@ -52,7 +62,36 @@ resource "aws_ecs_task_definition" "backend" {
         }
       }
     }
-  ])
+    ], var.explain_enabled ? [
+    # Agent 2's MCP service (app/workflow/services/agent2_mcp_service.py): serves only the one
+    # guarded `explain_inspection` tool, on the task's loopback - nothing outside the task can reach
+    # it. A sidecar rather than its own service because it reads the user's upload from the same
+    # volume; not essential, so if it dies the backend keeps running and the chat button just fails
+    # open. Precedents come from Qdrant (restore the corpus: ipc_corpus.tf).
+    {
+      name        = "agent2-mcp"
+      image       = "${aws_ecr_repository.backend.repository_url}:${var.container_image_tag}"
+      essential   = false
+      command     = [".venv/bin/python", "-m", "app.workflow.services.agent2_mcp_service"]
+      mountPoints = [{ sourceVolume = "uploads", containerPath = "/code/data/uploads", readOnly = true }]
+      environment = [
+        { name = "AGENT2_MCP_HOST", value = "127.0.0.1" },
+        { name = "AGENT2_MCP_PORT", value = tostring(var.agent2_mcp_port) },
+        { name = "QDRANT_URL", value = "http://${aws_service_discovery_service.qdrant.name}.${aws_service_discovery_private_dns_namespace.internal.name}:${var.qdrant_container_port}" },
+      ]
+      secrets = [
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.openai.arn}:OPENAI_API_KEY::" },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "agent2-mcp"
+        }
+      }
+    },
+  ] : []))
 }
 
 resource "aws_ecs_service" "backend" {
