@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Chat: when the assistant asks you to confirm or choose in plain text ("Please confirm...",
+  "Shall I save it as a case?"), **Yes** and **No** buttons appear under it. A case with no defect
+  label (the region was too uncertain) no longer offers "relabel it", and its card and the
+  assistant say there is nothing to correct instead of mentioning approve/override, which is off.
+  The assistant is told to propose a relabel as soon as it has the label, not to ask in text first.
 - **Drift reports raise themselves.** When one model version collects 5 confirmed corrections
   (chat relabels and Work-tab queued corrections) within 7 days, an open drift report is created
   with the corrections as evidence; further corrections refresh it instead of adding another, and

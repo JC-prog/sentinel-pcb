@@ -300,10 +300,14 @@ export class Chat {
       return ['Please continue from where you stopped.'];
     }
     const results = message.toolResults ?? [];
+    if (results.length === 0 && this.asksForConfirmation(message.content)) {
+      return ['Yes', 'No'];
+    }
     for (const { name, result } of [...results].reverse()) {
       switch (name) {
         case 'create_case': {
-          return [`The label on case ${result.case_number} is wrong - relabel it.`];
+          // A case with no defect label has nothing to correct, so a relabel would only be refused.
+          return result.defect ? [`The label on case ${result.case_number} is wrong - relabel it.`] : [];
         }
         case 'inspect_image':
           return [
@@ -322,6 +326,22 @@ export class Chat {
       }
     }
     return [];
+  }
+
+  /**
+   * True when the reply ends by asking the user to confirm or choose yes/no, so a Yes / No chip is
+   * worth offering. Looks only at the last paragraph: an answer that merely contains "confirm"
+   * earlier on is not a question. Cards that ask for confirmation (a relabel proposal) have their
+   * own chips, so this is only for a plain-text ask.
+   */
+  private asksForConfirmation(content: string): boolean {
+    const last = content.trim().split(/\n\s*\n/).pop() ?? '';
+    if (last.length === 0 || last.length > 400) {
+      return false;
+    }
+    const ask =
+      /\b(please confirm|confirm (that|if|whether|this|the)|would you like|do you want|shall i|should i|want me to|ok to proceed|proceed\b.*\?)/i;
+    return ask.test(last) && (/[?]\s*$/.test(last) || /please confirm/i.test(last));
   }
 
   protected sendFollowUp(text: string): void {

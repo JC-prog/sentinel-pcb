@@ -235,10 +235,11 @@ describe('ToolResultCard', () => {
       expect(card).toContain('Body');
       expect(card).toContain('Bridge');
       expect(card).toContain('61%');
-      expect(card).toContain('needs a person to approve or override');
+      expect(card).toContain('tell me if the label is wrong');
+      expect(card).not.toContain('approve');
     });
 
-    it('tells the user an accepted case can still be relabelled', () => {
+    it('says there is nothing to correct when no defect model ran', () => {
       const { el } = render({
         name: 'create_case',
         result: {
@@ -254,7 +255,7 @@ describe('ToolResultCard', () => {
       const card = text(el, 'case-created');
       expect(card).toContain('Accepted');
       expect(card).toContain('defect not classified');
-      expect(card).toContain('relabel it');
+      expect(card).toContain('no label to correct');
     });
   });
 });

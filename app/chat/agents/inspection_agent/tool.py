@@ -18,6 +18,7 @@ from app.chat.agents.inspection_agent.pipeline import InspectionOutcome, run_ins
 from app.chat.agents.inspection_agent.state import InspectionRequest, Stage
 from app.chat.agents.toolkit import ChatTool, Runtime, ToolRefused, returns_json, text
 from app.chat.core.tools import ToolContext
+from app.chat.db.models import Case
 from app.chat.uploads import resolve_upload_path
 from app.shared.config.settings import settings
 
@@ -86,11 +87,23 @@ async def create_case(runtime: Runtime) -> dict[str, Any]:
         "region": case.region,
         "defect": case.defect_label,
         "defect_confidence": case.defect_confidence,
-        "instruction": (
-            f"Tell the user {case.case_number} was created. They can now ask to relabel it "
-            "(if the label is wrong) or, when it is flagged for review, to approve or override it."
-        ),
+        "instruction": _after_creating(case),
     }
+
+
+def _after_creating(case: Case) -> str:
+    created = f"Tell the user {case.case_number} was created."
+    if not case.defect_label:
+        # Offering a relabel here would only end in a refusal: there is no label to correct.
+        return (
+            f"{created} No defect model ran (the region was too uncertain), so there is no defect "
+            "label to correct. Say so, and that a clearer image can be inspected instead. Do not "
+            "offer to relabel it."
+        )
+    follow_up = "They can ask to relabel it if the label is wrong."
+    if settings.review_agent_enabled and case.status == "review_required":
+        follow_up += " Or approve or override it, as it is flagged for review."
+    return f"{created} {follow_up}"
 
 
 def _enabled() -> bool:

@@ -118,11 +118,11 @@
       }
     </p>
     <p class="mt-2 text-xs text-emerald-800 dark:text-emerald-200">
-      {{
-        result.verdict === 'review_required'
-          ? 'Saved - it needs a person to approve or override it.'
-          : 'Saved - you can still relabel it if the label is wrong.'
-      }}
+      @if (result.defect) {
+        Saved - tell me if the label is wrong and I'll record the correction.
+      } @else {
+        Saved - no defect model ran, so there is no label to correct. A clearer image may classify.
+      }
     </p>
   </section>
 }

@@ -456,6 +456,65 @@ describe('Chat', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('CASE-12');
   });
 
+  it('offers Yes and No when the assistant asks the user to confirm in plain text', async () => {
+    await openConversation(() =>
+      of({
+        type: 'delta',
+        text: 'I will propose relabeling case CASE-1 to "Wrong part". Please confirm if you would like to proceed.',
+      }),
+    );
+
+    expect(buttonWithText('Yes')).toBeTruthy();
+    expect(buttonWithText('No')).toBeTruthy();
+  });
+
+  it('offers Yes and No for a question that asks whether to proceed', async () => {
+    await openConversation(() =>
+      of({ type: 'delta', text: 'The model said Tombstone at 71%.\n\nShall I save it as a case?' }),
+    );
+
+    expect(buttonWithText('Yes')).toBeTruthy();
+    expect(buttonWithText('No')).toBeTruthy();
+  });
+
+  it('does not offer Yes and No for a reply that is not asking anything', async () => {
+    await openConversation(() =>
+      of({ type: 'delta', text: 'You can confirm the retraining plan later in the Models tab.' }),
+    );
+
+    expect(buttonWithText('Yes')).toBeUndefined();
+    expect(buttonWithText('No')).toBeUndefined();
+  });
+
+  it('sends Yes when its chip is clicked', async () => {
+    const { id, chatService } = await openConversation(() =>
+      of({ type: 'delta', text: 'Do you want me to save this as a case?' }),
+    );
+
+    buttonWithText('Yes')!.click();
+
+    const sent = chatService.get(id)()?.messages.filter((m) => m.role === 'user');
+    expect(sent?.map((m) => m.content)).toContain('Yes');
+  });
+
+  it('does not offer a relabel for a case that has no defect label', async () => {
+    const created = {
+      name: 'create_case',
+      result: {
+        status: 'created',
+        case_number: 'CASE-14',
+        verdict: 'review_required',
+        region: 'Body',
+        defect: null,
+        defect_confidence: null,
+      },
+    };
+    await openConversation(() => of({ type: 'toolResult', toolResult: created }));
+
+    expect(buttonWithText('The label on case CASE-14')).toBeUndefined();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('no label to correct');
+  });
+
   it('only offers a relabel for an accepted case', async () => {
     const created = {
       name: 'create_case',

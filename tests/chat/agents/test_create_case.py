@@ -98,6 +98,42 @@ async def _create(
     return await call(CREATE_CASE, ctx)
 
 
+async def test_a_case_with_no_defect_label_is_not_offered_a_relabel(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+    conversation = await _conversation(db_async_session, user)
+    await _park(
+        db_async_session,
+        user,
+        conversation,
+        defect_model=None,
+        defect_label=None,
+        defect_confidence=None,
+        status="review_required",
+    )
+
+    result = await _create(db_async_session, user, conversation, _later_turn())
+
+    assert result["defect"] is None
+    assert "no defect label to correct" in result["instruction"]
+    assert "Do not offer to relabel" in result["instruction"]
+    assert "approve" not in result["instruction"].lower()
+
+
+async def test_a_classified_case_is_offered_a_relabel_and_no_approve_while_review_is_off(
+    db_async_session: AsyncSession,
+) -> None:
+    user = await make_user(db_async_session)
+    conversation = await _conversation(db_async_session, user)
+    await _park(db_async_session, user, conversation, status="review_required")
+
+    result = await _create(db_async_session, user, conversation, _later_turn())
+
+    assert "relabel it if the label is wrong" in result["instruction"]
+    assert "approve" not in result["instruction"].lower()
+
+
 async def test_creating_in_a_later_turn_makes_exactly_one_case_from_the_inspection(
     db_async_session: AsyncSession,
 ) -> None:
