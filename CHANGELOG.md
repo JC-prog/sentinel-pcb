@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `ipc_ingest` can move a corpus without embedding it again: **`export FILE`** writes the collection
+  with its vectors (a header records the embedding model and dimension) and **`import FILE`** loads
+  it into another Qdrant with no OpenAI key; a file from a different model or dimension is refused.
+  Re-ingesting a folder now skips files whose content is unchanged (a stored SHA-256), so the whole
+  corpus is a 2 s no-op; `--force` embeds anyway. Exports hold the documents' text, so they stay out
+  of git.
 - Agent 2's ported unit tests are run again, and CI runs them: a new job runs `app/workflow/tests/`
   (graph, MCP tools, the Qdrant reader, filename metadata, security) one file per process. Adding
   `fastmcp` had made two of them fail at collection unnoticed; `app/workflow/tests/conftest.py` fixes

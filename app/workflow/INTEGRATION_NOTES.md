@@ -310,11 +310,14 @@ data (a paper, a JSON file and a PDF). What was done with it:
 - **`evals/`** (4 scripts) ported to `app/workflow/evals/` as manual CLI scripts with only their paths
   adapted (see its README). One of them seeds each case with the ground truth.
 - **Corpus** (ingested locally with `services/ipc_ingest.py`, into `data/ipc_corpus/`, **never
-  committed**): `AOI based on IPC Standards.pdf` (a 2025 open-access journal paper, 20 pages) and
+  committed**; 7 PDFs and 1 JSON, 272 chunks): from the older folder, two blog articles (JLCPCB's AOI
+  and tombstoning posts) and three IPC tables of contents (IPC-A-610F, IPC-9712, IPC-9716); from the
+  newer data, `AOI based on IPC Standards.pdf` (a 2025 open-access journal paper, 20 pages) and
   `ipc_a_610_chip_components.json` (despite the name, a 21-entry overview of IPC standards, sent
-  wrapped in a markdown code fence). **`ipc-9716.pdf` was not ingested**: its last page carries a
-  standards-piracy site's watermark, so it is an unlicensed copy of a purchasable IPC standard. The
-  older folder's PDFs (two blog articles, three IPC tables of contents) were not ingested either.
+  wrapped in a markdown code fence). `ipc-9716.pdf` was **ingested on the owner's say-so**: its last
+  page carries a standards-piracy site's watermark, so it is an unlicensed copy of a purchasable IPC
+  standard. It is only front matter, a TOC and the scope, and it is the first thing to remove
+  (`--replace` of a folder without it, or delete its points by `source_file`) if licensing says so.
 - **What retrieval returned** on the first look (94 chunks; scores are cosine, `text-embedding-3-small`):
   an unrelated query scores 0.12-0.16 (dropped at 0.3), AOI-quality questions 0.59-0.67, defect
   questions 0.37-0.49. Two limits: the corpus has no tombstone content, so a tombstone query returns
@@ -322,6 +325,24 @@ data (a paper, a JSON file and a PDF). What was done with it:
   in "Defect inspection for ... IPC criteria", which swamps the symptom (all such queries return the
   same generic AOI chunks at 0.61-0.63). `IPC_PRECEDENT_MIN_SCORE` 0.3 looks too low (about 0.4 would
   drop the irrelevant ones); not changed.
+
+### Moving the corpus without re-embedding (dev and production)
+
+Embedding is the only slow, paid step (about 10 s and cents for the 272 chunks), but it needs an
+OpenAI key and the documents. `services/ipc_ingest.py` therefore has:
+
+- **skip unchanged**: each chunk carries its file's SHA-256; re-ingesting a folder embeds only files
+  that changed (a 2 s no-op for the whole corpus). `--force` embeds anyway.
+- **`export FILE`** writes every chunk with its vector as JSONL, behind a header naming the embedding
+  model and dimension; **`import FILE [--replace] [--force]`** loads it into any Qdrant with no
+  embedding call and no key. Import refuses a different dimension outright and a different model
+  unless `--force`, because those vectors would not match the app's queries.
+- **Keep the export out of git.** It holds the documents' text, so it is as licensed as they are
+  (`/data/ipc_corpus/` is gitignored).
+- **Production:** the Qdrant task has no persistent volume (`infra/production/qdrant.tf`), so the
+  collection is empty after every restart. Until it has one, run `import` as a one-off step from a
+  private location (an S3 object, say) after Qdrant starts; with an EFS/EBS volume it is a one-time
+  load. Nothing in the infrastructure does this yet.
 
 ## See also
 

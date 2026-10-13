@@ -307,3 +307,208 @@ def test_json_standards_are_searchable_next_to_documents(qdrant: QdrantClient, t
 
     assert stored == {"ipc.txt": 1, "standards.json": 2}
     assert hits and hits[0]["source"] == "standards.json"
+
+
+# --- moving a collection without embedding again ------------------------------------------------
+
+
+class CountingEmbed:
+    """fake_embed that remembers how many texts it was asked to embed."""
+
+    def __init__(self) -> None:
+        self.texts = 0
+
+    def __call__(self, texts: list[str]) -> list[list[float]]:
+        self.texts += len(texts)
+        return fake_embed(texts)
+
+
+def _corpus(tmp_path: Path) -> Path:
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    _write(folder, "a.txt", "Tombstone: a component detached at one end.")
+    _write(folder, "b.md", "Shifted: side overhang above fifty percent.")
+    return folder
+
+
+def test_an_unchanged_file_is_not_embedded_again(qdrant: QdrantClient, tmp_path: Path) -> None:
+    docs = _corpus(tmp_path)
+    embed = CountingEmbed()
+    first = ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+    assert embed.texts == 2
+
+    second = ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+
+    assert second == first
+    assert embed.texts == 2  # nothing was sent for embedding the second time
+    assert qdrant.count(store.COLLECTION_NAME).count == 2
+
+
+def test_only_the_file_that_changed_is_embedded_again(qdrant: QdrantClient, tmp_path: Path) -> None:
+    docs = _corpus(tmp_path)
+    embed = CountingEmbed()
+    ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+    (docs / "a.txt").write_text("Tombstone: now with a longer, edited description of the defect.")
+
+    ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+
+    assert embed.texts == 3  # a.txt only
+    hits = store.query_defect_precedents("tombstone", top_k=1)
+    assert "edited description" in hits[0]["text"]
+
+
+def test_force_embeds_an_unchanged_file_anyway(qdrant: QdrantClient, tmp_path: Path) -> None:
+    docs = _corpus(tmp_path)
+    embed = CountingEmbed()
+    ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+
+    ipc_ingest.ingest(docs, force=True, client=qdrant, embed=embed)
+
+    assert embed.texts == 4
+
+
+def test_a_file_that_got_shorter_is_not_skipped(qdrant: QdrantClient, tmp_path: Path) -> None:
+    padding = " filler" * 100
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    path = _write(docs, "a.txt", f"First.{padding}\n\nSecond.{padding}")
+    embed = CountingEmbed()
+    assert ipc_ingest.ingest(docs, client=qdrant, embed=embed) == {"a.txt": 2}
+    path.write_text("First.")  # one chunk now, but a stale second chunk is still stored
+
+    ipc_ingest.ingest(docs, client=qdrant, embed=embed)
+
+    assert embed.texts == 3  # re-embedded, not mistaken for unchanged
+
+
+def test_an_export_loads_into_a_fresh_qdrant_without_embedding(
+    qdrant: QdrantClient, tmp_path: Path
+) -> None:
+    docs = _corpus(tmp_path)
+    ipc_ingest.ingest(docs, client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+
+    assert ipc_ingest.export_corpus(export, client=qdrant) == 2
+    elsewhere = QdrantClient(":memory:")
+    loaded = ipc_ingest.import_corpus(export, client=elsewhere)
+
+    assert loaded == 2
+    original = {p.id: (p.vector, p.payload) for p in qdrant.scroll(store.COLLECTION_NAME, limit=10, with_vectors=True)[0]}
+    copy = {p.id: (p.vector, p.payload) for p in elsewhere.scroll(store.COLLECTION_NAME, limit=10, with_vectors=True)[0]}
+    assert copy == original  # ids, vectors and payloads, exactly
+
+
+def test_the_export_says_which_model_and_dimension_it_was_made_with(
+    qdrant: QdrantClient, tmp_path: Path
+) -> None:
+    import json
+
+    ipc_ingest.ingest(_corpus(tmp_path), client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+    ipc_ingest.export_corpus(export, client=qdrant)
+
+    header = json.loads(export.read_text().splitlines()[0])
+
+    assert header["format"] == "ipc-corpus/1"
+    assert header["embedding_model"] == settings.openai_embedding_model
+    assert header["dimension"] == store.VECTOR_DIM and header["count"] == 2
+
+
+def test_an_import_from_another_embedding_model_is_refused_unless_forced(
+    qdrant: QdrantClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ipc_ingest.ingest(_corpus(tmp_path), client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+    ipc_ingest.export_corpus(export, client=qdrant)
+    monkeypatch.setattr(settings, "openai_embedding_model", "text-embedding-3-large")
+    elsewhere = QdrantClient(":memory:")
+
+    with pytest.raises(ValueError, match="embedded with 'text-embedding-3-small'"):
+        ipc_ingest.import_corpus(export, client=elsewhere)
+    assert not elsewhere.collection_exists(store.COLLECTION_NAME)  # nothing half-loaded
+
+    assert ipc_ingest.import_corpus(export, force=True, client=elsewhere) == 2
+
+
+def test_a_file_with_the_wrong_dimension_is_refused_even_when_forced(
+    tmp_path: Path, qdrant: QdrantClient
+) -> None:
+    import json
+
+    bad = tmp_path / "small.jsonl"
+    bad.write_text(
+        json.dumps({"format": "ipc-corpus/1", "dimension": 384, "embedding_model": "x", "count": 0})
+        + "\n"
+    )
+
+    with pytest.raises(ValueError, match="384-dimension"):
+        ipc_ingest.import_corpus(bad, force=True, client=qdrant)
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("not json at all\n", "bad header"),
+        ('{"format": "something-else"}\n', "not an ipc-ingest export"),
+    ],
+)
+def test_a_file_that_is_not_an_export_is_refused_by_name(
+    tmp_path: Path, qdrant: QdrantClient, content: str, message: str
+) -> None:
+    path = tmp_path / "thing.jsonl"
+    path.write_text(content)
+
+    with pytest.raises(ValueError, match=message) as raised:
+        ipc_ingest.import_corpus(path, client=qdrant)
+
+    assert "thing.jsonl" in str(raised.value)
+
+
+def test_a_truncated_export_is_refused(qdrant: QdrantClient, tmp_path: Path) -> None:
+    ipc_ingest.ingest(_corpus(tmp_path), client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+    ipc_ingest.export_corpus(export, client=qdrant)
+    lines = export.read_text().splitlines()
+    export.write_text("\n".join(lines[:-1]) + "\n")  # drop the last point
+
+    with pytest.raises(ValueError, match="says 2 points but holds 1"):
+        ipc_ingest.import_corpus(export, client=QdrantClient(":memory:"))
+
+
+def test_import_replace_makes_the_collection_exactly_the_file(
+    qdrant: QdrantClient, tmp_path: Path
+) -> None:
+    docs = _corpus(tmp_path)
+    ipc_ingest.ingest(docs, client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+    ipc_ingest.export_corpus(export, client=qdrant)
+    (docs / "extra.txt").write_text("Something added after the export was made.")
+    ipc_ingest.ingest(docs, client=qdrant, embed=fake_embed)
+    assert qdrant.count(store.COLLECTION_NAME).count == 3
+
+    ipc_ingest.import_corpus(export, replace=True, client=qdrant)
+
+    assert qdrant.count(store.COLLECTION_NAME).count == 2
+
+
+def test_exporting_a_collection_that_does_not_exist_says_so(
+    qdrant: QdrantClient, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="does not exist"):
+        ipc_ingest.export_corpus(tmp_path / "x.jsonl", client=qdrant)
+
+
+def test_the_command_line_has_export_and_import(
+    qdrant: QdrantClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ipc_ingest.ingest(_corpus(tmp_path), client=qdrant, embed=fake_embed)
+    export = tmp_path / "corpus.jsonl"
+    monkeypatch.setattr(store, "get_qdrant_client", lambda: qdrant)
+
+    assert ipc_ingest.main(["export", str(export)]) == 0
+    assert ipc_ingest.main(["import", str(export), "--replace"]) == 0
+    assert ipc_ingest.main(["import", str(tmp_path / "missing.jsonl")]) == 1
+
+    out = capsys.readouterr()
+    assert "exported 2 chunk(s)" in out.out and "imported 2 chunk(s)" in out.out
+    assert "import failed" in out.err
