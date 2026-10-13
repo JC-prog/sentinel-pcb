@@ -1,4 +1,14 @@
-import { Component, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
@@ -52,6 +62,10 @@ export class Cases implements OnDestroy {
   protected readonly imageUrl = signal<string | null>(null);
   protected readonly imageMissing = signal(false);
 
+  /** The detail pane; on a narrow screen it sits below the list, so opening a case scrolls to it. */
+  private readonly detailPane = viewChild<ElementRef<HTMLElement>>('detailPane');
+  protected readonly copied = signal(false);
+
   protected readonly selectedNumber = toSignal(
     this.route.queryParamMap.pipe(map((params) => params.get('case'))),
     { initialValue: null },
@@ -85,6 +99,34 @@ export class Cases implements OnDestroy {
 
   statusClass(status: string): string {
     return STATUS_CLASSES[status] ?? STATUS_CLASSES['overridden'];
+  }
+
+  /** "12 Oct 2026, 14:05" in the viewer's time zone; the raw ISO string if it will not parse. */
+  formatDate(iso: string | null): string {
+    if (!iso) {
+      return '-';
+    }
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) {
+      return iso;
+    }
+    return date.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  async copyNumber(caseNumber: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(caseNumber);
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 1500);
+    } catch {
+      // clipboard blocked (insecure origin, permissions): the number is on screen to select
+    }
   }
 
   percent(value: number | null): string {
@@ -181,6 +223,8 @@ export class Cases implements OnDestroy {
         return;
       }
       this.detail.set(detail);
+      // Below the lg breakpoint the pane is under the list, off screen - bring it into view.
+      setTimeout(() => this.detailPane()?.nativeElement.scrollIntoView?.({ block: 'start' }), 0);
       try {
         const url = await this.client.imageUrl(detail.image_id);
         if (request !== this.detailRequest) {

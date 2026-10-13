@@ -261,6 +261,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- UI: the inspection card in chat shows a confidence meter and the model version for the region and
+  defect stages, the assistant's one-line summary when there is one, and what to do next (correct
+  the label, or inspect a clearer image when no defect model ran). The Cases tab shows dates
+  readably instead of as ISO strings, keeps the detail pane in view beside a long list (and
+  scrolls to it on a narrow screen), and can copy a case number.
 - UI: the Chat | Work | Cases | Models switch and the theme toggle are in a top bar centred over the
   page beside the sidebar, and the page starts below it. Before, they floated over the window, so a
   message scrolled underneath and the switch was centred on the whole window instead of the page.

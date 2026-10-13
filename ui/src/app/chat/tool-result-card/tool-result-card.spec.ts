@@ -45,10 +45,42 @@ describe('ToolResultCard', () => {
     it('shows the verdict and what each classifier found, and that no case was saved', () => {
       const { el } = render({ name: 'inspect_image', result: ACCEPTED });
 
-      expect(text(el, 'case-state')).toBe('Not saved as a case');
+      expect(text(el, 'case-state')).toBe('Not saved as a case yet');
       expect(text(el, 'verdict')).toBe('Accepted');
-      expect(text(el, 'region')).toBe('Body · 91%');
-      expect(text(el, 'defect')).toBe('MissingPart · 87%');
+      expect(text(el, 'region')).toContain('Body · 91%');
+      expect(text(el, 'defect')).toContain('MissingPart · 87%');
+    });
+
+    it('shows which model version answered, and a confidence meter for each stage', () => {
+      const { el } = render({ name: 'inspect_image', result: ACCEPTED });
+
+      expect(text(el, 'region')).toContain('JcProg/region@v1');
+      expect(text(el, 'defect')).toContain('JcProg/body@v1');
+      const meters = Array.from(el.querySelectorAll('[role="meter"]')).map((m) =>
+        m.getAttribute('aria-valuenow'),
+      );
+      expect(meters).toEqual(['91', '87']);
+    });
+
+    it("shows the assistant's one-line summary of the inspection when there is one", () => {
+      const { el } = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, inspection_summary: 'Clean pads, no visible defect.' },
+      });
+
+      expect(text(el, 'summary')).toBe('Clean pads, no visible defect.');
+      expect(render({ name: 'inspect_image', result: ACCEPTED }).el.querySelector('[data-testid="summary"]')).toBeNull();
+    });
+
+    it('says what to do next: correct the label, or inspect a clearer image', () => {
+      const classified = render({ name: 'inspect_image', result: ACCEPTED }).el;
+      const unclassified = render({
+        name: 'inspect_image',
+        result: { ...ACCEPTED, defect: null, review_required: true, verdict: 'review_required' },
+      }).el;
+
+      expect(text(classified, 'next-step')).toContain('tell me the right one');
+      expect(text(unclassified, 'next-step')).toContain('no label to correct');
     });
 
     it('lists what else the model considered, best first', () => {

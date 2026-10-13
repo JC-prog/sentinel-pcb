@@ -175,6 +175,26 @@ describe('Cases', () => {
     expect(text()).toContain('Open the conversation');
   });
 
+  it('shows dates readably, not as raw ISO strings', async () => {
+    await setup({ total: 1, limit: 25, offset: 0, cases: [summary()] }, 'CASE-000001');
+    await settle();
+
+    expect(text()).not.toContain('2026-10-12T14:05:00');
+    expect(text()).toContain('2026');
+  });
+
+  it('copies the case number', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    await setup({ total: 1, limit: 25, offset: 0, cases: [summary()] }, 'CASE-000001');
+    await settle();
+
+    (fixture.nativeElement.querySelector('[aria-label="Copy case number"]') as HTMLElement).click();
+
+    expect(writeText).toHaveBeenCalledWith('CASE-000001');
+    vi.unstubAllGlobals();
+  });
+
   it('shows an error for a case that cannot be loaded', async () => {
     await setup({ total: 0, limit: 25, offset: 0, cases: [] });
     client.detail.mockRejectedValue(new Error('case not found'));

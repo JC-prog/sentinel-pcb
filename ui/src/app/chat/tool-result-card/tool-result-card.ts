@@ -67,4 +67,9 @@ export class ToolResultCard {
   protected percent(value: number): string {
     return `${Math.round(value * 100)}%`;
   }
+
+  /** 0.8731 -> 87, for a meter's aria-valuenow. */
+  protected percentValue(value: number): number {
+    return Math.round(value * 100);
+  }
 }
