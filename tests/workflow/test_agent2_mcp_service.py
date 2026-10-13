@@ -65,7 +65,12 @@ def fake_tools(
     )
 
 
-def test_the_ported_tools_load_under_a_real_fastmcp_without_leaving_a_stand_in_behind() -> None:
+def test_the_ported_tools_load_under_a_real_fastmcp_without_leaving_a_stand_in_behind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # no key: the precedent search must not reach OpenAI from a test, whatever .env holds
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(type(settings), "orchestrator_api_key", property(lambda self: ""))
     before = sys.modules.get("fastmcp")
 
     tools = service.load_ported_tools()

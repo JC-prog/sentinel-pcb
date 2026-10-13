@@ -205,6 +205,11 @@ class Settings(BaseSettings):
     agent2_mcp_host: str = "127.0.0.1"
     agent2_mcp_port: int = 8002
 
+    # The lowest cosine score a retrieved IPC-standard chunk may have to be given to Agent 2 as a
+    # precedent (app/workflow/src/data/qdrant_store.py). Not calibrated against real documents -
+    # raise it if unrelated chunks are cited, lower it if nothing ever comes back.
+    ipc_precedent_min_score: float = 0.3
+
     # Case agent (app/chat/agents/case_agent/) - read-only lookups of the Cases chat has saved
     # (get_case, list_cases): what the Cases tab shows, answerable in the conversation.
     case_lookup_agent_enabled: bool = True

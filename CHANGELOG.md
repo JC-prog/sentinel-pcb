@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Agent 2's **precedent search is ported and can be filled.** Upstream's reader searched a
+  collection nothing ever created, so it always came back empty (and its writer filled a different
+  one). `src/data/qdrant_store.py` is ported, reads this app's Qdrant and embeds with OpenAI (no new
+  model download), returns nothing rather than inventing a vector, and ignores hits under
+  `IPC_PRECEDENT_MIN_SCORE`. New `python -m app.workflow.services.ipc_ingest <path> [--replace]`
+  fills it from `.txt`, `.md` and `.pdf` files you supply (page-aware for PDFs, idempotent). No
+  standards text is shipped. Chat's "Explain this result" uses it; the Work tab's in-process review
+  still uses its fixed IPC rules. New dependency `pypdf`.
 - Chat: **"Explain this result."** Agent 2's advisory explanation of the image just inspected - what
   is visible, the IPC criteria, and whether that supports the model's label (it can disagree) -
   shown as a card, with its own guardrail flags and whether measurements were read from the

@@ -254,7 +254,31 @@ review's evidence flags).
   read from an inspection XML, and maps the guardrail's classes (`WRONG_PART`...) to the app's
   (`wrong part`...). Chat's explain agent calls it over MCP at `AGENT2_MCP_URL`. This is a second
   explanation path next to the Work tab's in-process review, by decision: both are advisory.
-  Precedent search still finds nothing (the Qdrant store it imports was not ported).
+  Precedent search is now ported - see "Precedents" below.
+
+## Precedents: the reader was ported, and the collection it reads is now filled (Oct 2026)
+
+Upstream had a writer and a reader that never met: `data/qdrant_indexer.py` wrote inspection
+records to `ipc_defect_precedents` (OpenAI, 1536 dims), while `src/data/qdrant_store.py` searched
+`pcb_standards_precedents` (FastEmbed `bge-small`, 384 dims) - a collection of IPC *document chunks*
+(`text`, `source_file`, `page`) that nothing in the project created, so its search was always empty.
+`fastembed` was not even in its requirements.
+
+- **`src/data/qdrant_store.py`** - ported and *adapted*: reads this app's Docker Qdrant
+  (`settings.qdrant_url`) instead of an embedded `qdrant_db/`; embeds with the app's OpenAI embedding
+  model instead of FastEmbed (no model download, no extra dependency); returns nothing, never a
+  made-up vector, when no embedding can be made; drops hits under `IPC_PRECEDENT_MIN_SCORE`. The
+  function names and the hit shape are upstream's.
+- **`services/ipc_ingest.py`** - new, this repo's own: fills `pcb_standards_precedents` from `.txt`,
+  `.md` and `.pdf` files you supply (`python -m app.workflow.services.ipc_ingest <path> [--replace]`).
+  It ships no content: IPC-A-610 is a licensed document. Until something is ingested the search finds
+  nothing, as before, and the explanation says no precedents were found.
+- **Not changed:** `data/qdrant_indexer.py` still writes `ipc_defect_precedents`, which nothing reads.
+  Its records carry almost no descriptive fields (it reads `board_id` / `defect_hint`, which the
+  prepared samples do not have), its point ids come from `sample_id` and so overwrite each other
+  across runs, and it falls back to hash vectors offline. Left as ported; worth raising upstream.
+- **Min score is uncalibrated.** 0.3 is a starting point for `text-embedding-3-small`, not a tuned
+  value; raise it if unrelated chunks are cited.
 - **`adc_shared/data_api.py`, `agent2_api.py`, `client.py`, `adc_rest.py`, `test_rest.py`,
   `README_rest.md`, `compose.qdrant.yaml`** - the separate Shared Data API + Agent 2 REST API
   processes (and their own dedicated Qdrant in `compose.qdrant.yaml`). Not run: only

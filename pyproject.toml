@@ -28,6 +28,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.11.0",
+    "pypdf>=6.20.1",
     "python-multipart>=0.0.20",
     "qdrant-client>=1.19.0",
     "sqlalchemy[asyncio]>=2.0.51",
