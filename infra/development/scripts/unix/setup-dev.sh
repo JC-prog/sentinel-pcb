@@ -2,8 +2,19 @@
 # SentinelChat dev environment setup (macOS/Linux). Idempotent - safe to re-run after pulling
 # changes.
 #
-# Usage: bash infra/development/scripts/unix/setup-dev.sh
+# Usage: bash infra/development/scripts/unix/setup-dev.sh [--run-checks]
+#
+# --run-checks also runs ruff, mypy, pytest and the UI unit tests at the end (what CI runs). Off by
+# default so a failing test never reports a working environment as a failed setup.
 set -euo pipefail
+
+RUN_CHECKS=false
+for arg in "$@"; do
+  case "$arg" in
+    --run-checks) RUN_CHECKS=true ;;
+    *) echo "ERROR: unknown argument: $arg (supported: --run-checks)"; exit 1 ;;
+  esac
+done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "$ROOT_DIR"
@@ -105,13 +116,17 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 (cd ui && npm install)
 
-echo "==> Backend checks (ruff, mypy, pytest)"
-uv run ruff check .
-uv run mypy .
-uv run pytest -q
+if [ "$RUN_CHECKS" = true ]; then
+  echo "==> Backend checks (ruff, mypy, pytest)"
+  uv run ruff check .
+  uv run mypy .
+  uv run pytest -q
 
-echo "==> UI checks (unit tests)"
-(cd ui && npx ng test --watch=false)
+  echo "==> UI checks (unit tests)"
+  (cd ui && npx ng test --watch=false)
+else
+  echo "==> Skipping ruff/mypy/pytest/ng test (re-run with --run-checks to include them)"
+fi
 
 echo ""
 echo "Setup complete. Postgres + Qdrant are running in Docker (docker compose -f infra/development/docker-compose.yml --env-file .env down to stop them)."

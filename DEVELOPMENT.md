@@ -11,6 +11,9 @@ bash infra/development/scripts/unix/setup-dev.sh        # macOS/Linux
 powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
+The script installs and starts the stack but does not run the test suite; add `--run-checks`
+(`-RunChecks` on Windows) to also run ruff, mypy, pytest and the UI tests.
+
 [`ONBOARDING.md`](ONBOARDING.md) is the exact step-by-step: software to install first, what the
 script does, the one `.env` value you may need to set (`OPENAI_API_KEY`), how to run and
 verify the app, per-section extras, and troubleshooting. Re-run the setup script any time after

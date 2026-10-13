@@ -341,6 +341,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Dev: `setup-dev.sh` / `setup-dev.ps1` no longer run ruff, mypy, pytest and the UI tests by default,
+  so a failing test can't report a working environment as a failed setup (CI still runs them). Pass
+  `--run-checks` / `-RunChecks` to include them.
 - UI: the chat's empty state groups its suggestions under Inspect, Look up and Model health, each
   with an icon, and drops the ones that only make sense later ("Correct a wrong label" is offered
   after an inspection; "Draft a retraining plan" is a deliberate action, not an opening move).

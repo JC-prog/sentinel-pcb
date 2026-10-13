@@ -1,6 +1,12 @@
 # SentinelChat dev environment setup (Windows). Idempotent - safe to re-run after pulling changes.
 #
-# Usage: powershell -File infra\development\scripts\windows\setup-dev.ps1
+# Usage: powershell -File infra\development\scripts\windows\setup-dev.ps1 [-RunChecks]
+#
+# -RunChecks also runs ruff, mypy, pytest and the UI unit tests at the end (what CI runs). Off by
+# default so a failing test never reports a working environment as a failed setup.
+param(
+    [switch]$RunChecks
+)
 
 # Deliberately NOT "Stop": PowerShell surfaces a native command's stderr output as an error
 # regardless of how (or whether) that stream is redirected - 2>&1, 2>$null, tried both - so
@@ -98,21 +104,25 @@ try {
     Pop-Location
 }
 
-Write-Host "==> Backend checks (ruff, mypy, pytest)"
-uv run ruff check .
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uv run mypy .
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-uv run pytest -q
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host "==> UI checks (unit tests)"
-Push-Location ui
-try {
-    npx ng test --watch=false
+if ($RunChecks) {
+    Write-Host "==> Backend checks (ruff, mypy, pytest)"
+    uv run ruff check .
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-} finally {
-    Pop-Location
+    uv run mypy .
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    uv run pytest -q
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "==> UI checks (unit tests)"
+    Push-Location ui
+    try {
+        npx ng test --watch=false
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Host "==> Skipping ruff/mypy/pytest/ng test (re-run with -RunChecks to include them)"
 }
 
 Write-Host ""
