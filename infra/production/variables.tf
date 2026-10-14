@@ -83,6 +83,12 @@ variable "openai_api_key" {
   sensitive   = true
 }
 
+variable "db_backup_retention_days" {
+  description = "Days RDS keeps automated backups. 1 is the most an AWS free-plan account may use (a higher value is refused with FreeTierRestrictionError); with skip_final_snapshot and a stack meant to be destroyed, backups are not what protects this data. Raise it on a paid plan for anything longer-lived."
+  type        = number
+  default     = 1
+}
+
 variable "db_instance_class" {
   type    = string
   default = "db.t4g.micro"

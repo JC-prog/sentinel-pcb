@@ -48,7 +48,8 @@ It is idempotent (safe to re-run after every `git pull`). It:
 4. starts the `db` and `qdrant` containers:
    `docker compose -f infra/development/docker-compose.yml --env-file .env up -d --wait db qdrant`
 5. `npm install` in `ui/`
-6. runs the backend checks (`ruff`, `mypy`, `pytest`) and the UI unit tests
+6. only with `--run-checks` (`-RunChecks` on Windows): runs the backend checks (`ruff`, `mypy`,
+   `pytest`) and the UI unit tests. Skipped by default; CI runs them either way.
 
 It finishes with `Setup complete.` and a reminder of the run commands. If it fails partway, see
 [Troubleshooting](#8-troubleshooting) and re-run it.
