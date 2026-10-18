@@ -87,6 +87,44 @@ async def drift_overview(session: AsyncSession, model: str, *, days: int) -> dic
     }
 
 
+async def drift_overview_all(session: AsyncSession, *, days: int) -> dict[str, Any]:
+    """The same drift summary for every model there is something to say about - each model with a
+    known version or with corrections filed against it - in one answer, most corrected first. For
+    'are the models getting worse?' without a model named."""
+
+    versions = await version_repo.list_versions(session)
+    tickets = await ticket_repo.count_tickets(session)
+    names = sorted({v.model_name for v in versions} | {m for m in tickets if m})
+    open_reports = await drift_repo.count_reports_by_model(session, status=DriftReportStatus.OPEN)
+    open_tickets = await ticket_repo.count_tickets(session, status=RetrainingTicketStatus.OPEN)
+    live = {v.model_name: v.version for v in versions if v.status == ModelVersionStatus.LIVE}
+
+    models = []
+    for name in names:
+        trend = await _trend(session, name, days=days)
+        models.append(
+            {
+                "model": name,
+                "live_version": live.get(name),
+                "corrections": trend["corrections"],
+                "signals": trend["signals"],
+                "chat": trend["chat"],
+                "open_drift_reports": open_reports.get(name, 0),
+                "open_retraining_tickets": open_tickets.get(name, 0),
+            }
+        )
+    models.sort(key=lambda m: (-m["corrections"]["recent"], m["model"]))
+    return {
+        "window_days": days,
+        "models": models,
+        "models_with_signals": [m["model"] for m in models if m["signals"]],
+        "basis": (
+            "Counts of corrections people confirmed, this window against the one before - not an "
+            "error rate."
+        ),
+    }
+
+
 async def file_drift_report(
     session: AsyncSession,
     *,

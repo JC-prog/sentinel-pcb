@@ -8,6 +8,8 @@ from app.shared.db.models import UserRole
 
 TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     "inspect_image": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Same as inspect_image, on an image already uploaded to this conversation. Saves nothing.
+    "reinspect_image": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Inspecting saves nothing; creating the Case (only after the user says yes) is what makes the
     # inspection something to relabel or review.
     "create_case": frozenset({UserRole.QA, UserRole.ADMIN}),
@@ -19,12 +21,17 @@ TOOL_ROLES: dict[str, frozenset[UserRole]] = {
     # retraining ticket - an Admin still approves the retraining itself in the Models tab.
     "relabel_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_relabel": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Discarding the user's own unconfirmed proposal; nothing was saved, nothing is saved.
+    "cancel_relabel": frozenset({UserRole.QA, UserRole.ADMIN}),
     # The user's own corrections: reading them, and taking one back while it is not in a plan yet.
     "list_my_corrections": frozenset({UserRole.QA, UserRole.ADMIN}),
     "withdraw_correction": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Proposing a case review saves nothing; confirming it resolves the case (APPROVED/OVERRIDDEN).
     "review_case": frozenset({UserRole.QA, UserRole.ADMIN}),
     "confirm_review": frozenset({UserRole.QA, UserRole.ADMIN}),
+    "cancel_review": frozenset({UserRole.QA, UserRole.ADMIN}),
+    # Taking back a review the user confirmed themselves: the case awaits review again.
+    "withdraw_review": frozenset({UserRole.QA, UserRole.ADMIN}),
     "report_model_drift": frozenset({UserRole.QA, UserRole.ADMIN}),
     "get_drift_summary": frozenset({UserRole.QA, UserRole.ADMIN}),
     # Drafting only queues a plan as pending approval; approving it (and promoting a retrained
