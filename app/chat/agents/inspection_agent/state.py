@@ -3,6 +3,7 @@ each sub-agent adds to it). Plain dataclasses - the sub-agents run in a fixed or
 so there is no graph state to thread."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -23,6 +24,10 @@ class InspectionRequest:
     package: str | None = None
     feature: str | None = None
     issue_symptom: str | None = None
+    # Which attached image this is (counting from 1) and when the chat turn began: each image
+    # inspected in a turn keeps its own draft, and a later turn's inspections replace them.
+    image_number: int = 1
+    turn_started_at: datetime | None = None
 
 
 @dataclass

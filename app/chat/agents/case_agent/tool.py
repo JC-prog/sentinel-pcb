@@ -19,6 +19,7 @@ MAX_CASES = 10
 # What the model needs; the image/XML file names and the conversation are not for it to repeat.
 _DETAIL_EXCLUDE = {"image_id", "inspection_xml_id", "conversation_id"}
 _STATUSES = {"accepted", "review_required", "approved", "overridden"}
+_MAX_DAYS = 90
 
 
 @tool("get_case")
@@ -55,11 +56,16 @@ async def list_cases(
     ] = None,
     corrected: Annotated[bool | None, "true: only corrected cases; false: only uncorrected."] = None,
     mine: Annotated[bool | None, "true: only cases the user created."] = None,
+    days: Annotated[
+        int | None, f"Only cases created in the last N days, 1 to {_MAX_DAYS}, e.g. 7 for 'this week'."
+    ] = None,
+    page: Annotated[int | None, "Which page of results, from 1, when more matched than were shown."] = None,
 ) -> dict[str, Any]:
-    """Lists saved cases, newest first (at most 10), optionally for one board or component, one
-    model, a status, corrected or not, or just the user's own. Read-only. Use it for 'which cases do
+    """Lists saved cases, newest first (10 per page), optionally for one board or component, one
+    model, a status, corrected or not, the last N days, or just the user's own. Read-only. Use it for 'which cases do
     I have?', 'has U7 on BOARD-1 been corrected before?' or 'what did I correct today?'. It says how
-    many matched in total, so tell the user when more exist than are shown."""
+    many matched in total and whether there is a next page, so tell the user when more exist than
+    are shown and offer the next page."""
 
     wanted = text(status).lower()
     if wanted and wanted not in _STATUSES:
@@ -72,11 +78,16 @@ async def list_cases(
         board=text(board_id) or None,
         component=text(component_ref) or None,
         created_by_user_id=runtime.context.user.id if mine else None,
+        since=(datetime.now(UTC) - timedelta(days=max(1, min(days, _MAX_DAYS)))) if days else None,
         limit=MAX_CASES,
+        offset=(max(1, page or 1) - 1) * MAX_CASES,
     )
+    shown_to = listing.offset + len(listing.cases)
     return {
         "total": listing.total,
         "shown": len(listing.cases),
+        "page": listing.offset // MAX_CASES + 1,
+        "next_page": listing.offset // MAX_CASES + 2 if shown_to < listing.total else None,
         "cases": [
             {
                 "case_number": c.case_number,
@@ -87,6 +98,7 @@ async def list_cases(
                 "model_label": c.defect_label,
                 "model_confidence": c.defect_confidence,
                 "corrected_label": c.corrected_label,
+                "corrected_model": c.corrected_model,
                 "created_by": c.created_by,
                 "created_at": c.created_at.isoformat(),
             }
@@ -132,9 +144,6 @@ async def get_component_history(
             for c in cases.cases
         ],
     }
-
-
-_MAX_DAYS = 90
 
 
 @tool("get_activity_summary")

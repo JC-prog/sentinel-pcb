@@ -3,6 +3,7 @@ inspection parked as a draft - no Case yet (create_case makes one after the user
 test_create_case.py). The inference service is faked at the HTTP boundary; uploads are real files."""
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -334,8 +335,31 @@ async def test_with_several_images_attached_each_is_inspected_by_number(
     assert (first["image_number"], first["images_attached"]) == (1, 2)
     assert "image_number 2" in first["instruction"]
     assert second["image_number"] == 2 and "image_number 1" in second["instruction"]
-    # only the most recent inspection waits to be corrected or saved
-    assert (await _only_draft(db_async_session))["image_id"] == "second.png"
+    # Both wait, each under its own number, so either can be corrected or saved.
+    waiting = {d.image_number: d.payload["image_id"] for d in await _drafts(db_async_session)}
+    assert waiting == {1: "first.png", 2: "second.png"}
+
+
+async def test_a_later_turn_replaces_the_images_an_earlier_turn_inspected(
+    db_async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, uploads: Any
+) -> None:
+    _mock_async_client(monkeypatch, _confident_handler)
+    user, conversation = await _user_and_conversation(db_async_session)
+    ids = (uploads(VALID_IMAGE, "first.png"), uploads(VALID_IMAGE, "second.png"))
+    earlier = tool_context(db_async_session, user, conversation_id=conversation.id, image_ids=ids)
+    await call(INSPECT_IMAGE, earlier)
+    await call(INSPECT_IMAGE, earlier, image_number=2)
+
+    later = tool_context(
+        db_async_session,
+        user,
+        conversation_id=conversation.id,
+        image_ids=(uploads(VALID_IMAGE, "third.png"),),
+        turn_started_at=datetime.now(UTC),
+    )
+    await call(INSPECT_IMAGE, later)
+
+    assert (await _only_draft(db_async_session))["image_id"] == "third.png"
 
 
 async def test_a_single_image_carries_no_numbering(

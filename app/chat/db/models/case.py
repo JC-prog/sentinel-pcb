@@ -103,6 +103,10 @@ class Case(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
     correction_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Which model the correction is of: the defect model (defect_model) or the region model
+    # (pcb_region), when the region itself was wrong. None on rows older than region corrections,
+    # which were all of the defect model.
+    corrected_model: Mapped[str | None] = mapped_column(String, nullable=True)
     # A relabel is proposed in one chat turn and confirmed in a later one. The proposal waits here;
     # confirming commits it to corrected_*, and proposing again replaces it.
     pending_label: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -111,6 +115,8 @@ class Case(Base):
         String, ForeignKey("users.id"), nullable=True
     )
     pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Which model the pending relabel corrects (see corrected_model).
+    pending_model: Mapped[str | None] = mapped_column(String, nullable=True)
     # The same two-step shape for a reviewer's approve/override of a REVIEW_REQUIRED case (the review
     # agent): "approve" or "override", proposed in one turn and confirmed in a later one.
     pending_resolution: Mapped[str | None] = mapped_column(String, nullable=True)

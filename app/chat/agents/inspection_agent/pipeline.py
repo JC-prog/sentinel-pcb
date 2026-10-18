@@ -54,6 +54,8 @@ async def run_inspection(
         conversation_id=run.request.conversation_id,
         user_id=run.request.user_id,
         payload=fields,
+        image_number=run.request.image_number,
+        turn_started_at=run.request.turn_started_at,
     )
     # The record that this image was inspected, kept whether or not anyone acts on it.
     await inspection_log.record(
