@@ -80,3 +80,7 @@ override.tf.json
 # IPC standards / reference documents Agent 2 retrieves from (app/workflow/services/ipc_ingest.py) -
 # licensed or third-party documents, ingested locally and never committed.
 /data/ipc_corpus/
+
+# Personal course / reference files kept beside the docs (never project docs)
+/docs/reports/*.pdf
+/docs/reports/*.textClipping
