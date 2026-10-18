@@ -82,7 +82,7 @@ describe('ToolResultCard', () => {
       expect(render({ name: 'inspect_image', result: ACCEPTED }).el.querySelector('[data-testid="summary"]')).toBeNull();
     });
 
-    it('says what to do next: correct the label, or inspect a clearer image', () => {
+    it('says what to do next: correct the label, or correct the region when no defect model ran', () => {
       const classified = render({ name: 'inspect_image', result: ACCEPTED }).el;
       const unclassified = render({
         name: 'inspect_image',
@@ -90,7 +90,7 @@ describe('ToolResultCard', () => {
       }).el;
 
       expect(text(classified, 'next-step')).toContain('tell me the right one');
-      expect(text(unclassified, 'next-step')).toContain('no label to correct');
+      expect(text(unclassified, 'next-step')).toContain('If the region is wrong');
     });
 
     it('lists what else the model considered, best first', () => {
@@ -114,6 +114,24 @@ describe('ToolResultCard', () => {
 
       expect(text(el, 'verdict')).toBe('Review required');
       expect(el.textContent).toContain('defect confidence 0.55 is below the 0.70 threshold');
+    });
+
+    it('says when it is a re-inspection, and of which case', () => {
+      const { el } = render({
+        name: 'reinspect_image',
+        result: { ...ACCEPTED, reinspected: true, from_case: 'CASE-000042' },
+      });
+
+      expect(text(el, 'card-title')).toContain('Inspected again');
+      expect(text(el, 'card-title')).toContain('image of CASE-000042');
+    });
+
+    it('says when an attached inspection XML could not be paired with the image', () => {
+      const noted = render({ name: 'inspect_image', result: { ...ACCEPTED, xml_note: 'not matched' } }).el;
+      const plain = render({ name: 'inspect_image', result: ACCEPTED }).el;
+
+      expect(text(noted, 'xml-note')).toContain('one XML per image');
+      expect(plain.querySelector('[data-testid="xml-note"]')).toBeNull();
     });
 
     it('says the defect was not classified when the region was too uncertain', () => {
@@ -201,7 +219,72 @@ describe('ToolResultCard', () => {
     });
   });
 
+  describe('a region relabel', () => {
+    it('says it is the region being corrected, and which image when it is not a case yet', () => {
+      const { el } = render({
+        name: 'relabel_case',
+        result: {
+          status: 'awaiting_confirmation',
+          case_number: null,
+          image_number: 2,
+          stage: 'region',
+          model: 'pcb_region',
+          model_label: 'Body',
+          proposed_label: 'Lead',
+          reason: 'the lead is clearly visible',
+        },
+      });
+
+      const card = text(el, 'relabel-proposal');
+      expect(card).toContain('Region relabel proposed · image 2');
+      expect(card).toContain('Body');
+      expect(card).toContain('Lead');
+      expect(card).toContain('confirming also saves this inspection as a new case');
+    });
+  });
+
+  describe('a cancelled proposal', () => {
+    it('says the relabel was discarded and nothing was saved', () => {
+      const { el } = render({
+        name: 'cancel_relabel',
+        result: { status: 'cancelled', target: 'CASE-000042', cancelled_label: 'Golden' },
+      });
+
+      const card = text(el, 'proposal-cancelled');
+      expect(card).toContain('CASE-000042');
+      expect(card).toContain('Golden');
+      expect(card).toContain('Nothing was saved');
+    });
+
+    it('says the review was discarded', () => {
+      const { el } = render({
+        name: 'cancel_review',
+        result: { status: 'cancelled', target: 'image 1', cancelled_decision: 'override' },
+      });
+
+      expect(text(el, 'proposal-cancelled')).toContain('The proposed override was discarded');
+    });
+  });
+
   describe('a case review', () => {
+    it('can be proposed on an inspection that is not a case yet', () => {
+      const { el } = render({
+        name: 'review_case',
+        result: {
+          status: 'awaiting_confirmation',
+          case_number: null,
+          image_number: 1,
+          model_label: 'MissingPart',
+          decision: 'approve',
+          note: null,
+        },
+      });
+
+      const card = text(el, 'review-proposal');
+      expect(card).toContain('Review proposed · image 1');
+      expect(card).toContain('confirming also saves this inspection as a new case');
+    });
+
     it('shows a proposal as waiting for confirmation, with its meaning and nothing saved yet', () => {
       const { el } = render({
         name: 'review_case',

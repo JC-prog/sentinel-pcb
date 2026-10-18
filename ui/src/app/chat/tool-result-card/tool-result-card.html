@@ -7,7 +7,10 @@
     <header class="mb-3 flex items-center justify-between gap-2">
       <div>
         <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400" data-testid="card-title">
-          Inspection result
+          {{ result.reinspected ? 'Inspected again' : 'Inspection result' }}
+          @if (result.from_case) {
+            · image of {{ result.from_case }}
+          }
           @if (result.images_attached && result.images_attached > 1) {
             · image {{ result.image_number }} of {{ result.images_attached }}
           }
@@ -118,11 +121,18 @@
       </ul>
     }
 
+    @if (result.xml_note) {
+      <p class="mt-3 text-xs text-amber-800 dark:text-amber-200" data-testid="xml-note">
+        Inspection XML not checked: attach one XML per image, in the same order.
+      </p>
+    }
+
     <p class="mt-3 text-xs text-slate-500 dark:text-slate-400" data-testid="next-step">
       @if (result.defect) {
         If the label is wrong, tell me the right one and I'll record the correction.
       } @else {
-        No defect model ran, so there is no label to correct. A clearer image may classify.
+        No defect model ran. If the region is wrong, tell me the right one and I'll record that
+        instead; a clearer image may also classify.
       }
     </p>
   </section>
@@ -257,7 +267,7 @@
     data-testid="relabel-proposal"
   >
     <p class="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-200">
-      Relabel proposed · {{ result.case_number ?? 'this inspection' }}
+      {{ stageLabel(result.stage) }} relabel proposed · {{ subject(result.case_number, result.image_number) }}
     </p>
     <p class="mt-1">
       <span class="line-through">{{ result.model_label }}</span>
@@ -282,7 +292,7 @@
     data-testid="relabel-done"
   >
     <p class="text-xs uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-      Label corrected · {{ result.case_number }}{{ result.case_created ? ' (new case)' : '' }}
+      {{ stageLabel(result.stage) }} corrected · {{ result.case_number }}{{ result.case_created ? ' (new case)' : '' }}
     </p>
     <p class="mt-1">
       <span class="line-through">{{ result.model_label }}</span>
@@ -302,7 +312,7 @@
     data-testid="review-proposal"
   >
     <p class="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-200">
-      Review proposed · {{ result.case_number }}
+      Review proposed · {{ subject(result.case_number, result.image_number) }}
     </p>
     <p class="mt-1">
       <span class="font-semibold">{{ result.decision === 'approve' ? 'Approve' : 'Override' }}</span>
@@ -312,7 +322,11 @@
       <p class="mt-1 text-slate-600 dark:text-slate-300">{{ result.note }}</p>
     }
     <p class="mt-2 text-xs text-amber-800 dark:text-amber-200">
-      Nothing is saved yet - reply to confirm.
+      @if (result.case_number === null) {
+        Nothing is saved yet - confirming also saves this inspection as a new case.
+      } @else {
+        Nothing is saved yet - reply to confirm.
+      }
     </p>
   </section>
 }
@@ -324,7 +338,7 @@
     data-testid="review-done"
   >
     <p class="text-xs uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-      Case reviewed · {{ result.case_number }}
+      Case reviewed · {{ result.case_number }}{{ result.case_created ? ' (new case)' : '' }}
     </p>
     <p class="mt-1">
       Now <span class="font-semibold">{{ result.case_status }}</span>
@@ -333,5 +347,25 @@
     @if (result.note) {
       <p class="mt-1 text-slate-600 dark:text-slate-300">{{ result.note }}</p>
     }
+  </section>
+}
+
+@if (cancelled(); as result) {
+  <section
+    class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-900"
+    aria-label="Proposal cancelled"
+    data-testid="proposal-cancelled"
+  >
+    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      Proposal cancelled · {{ result.target }}
+    </p>
+    <p class="mt-1 text-slate-600 dark:text-slate-300">
+      @if (result.cancelled_label) {
+        The relabel to <span class="font-semibold">{{ result.cancelled_label }}</span> was discarded.
+      } @else if (result.cancelled_decision) {
+        The proposed {{ result.cancelled_decision }} was discarded.
+      }
+      Nothing was saved.
+    </p>
   </section>
 }
