@@ -31,7 +31,8 @@ from app.chat.agents.supervisor import Answer, ToolStarted, run_turn
 from app.chat.agents.toolkit import ChatTool
 from app.chat.core.chat import ChatTurn
 from app.chat.core.tools import ToolContext
-from app.chat.services.messages import CHAT_SYSTEM_PROMPT, build_messages
+from app.chat.services.messages import build_messages, compose_system_prompt
+from app.shared.config.settings import settings
 from app.shared.db import UserRole
 
 CASES_PATH = Path(__file__).parent / "cases.jsonl"
@@ -59,6 +60,14 @@ CANNED_RESULTS: dict[str, dict[str, Any]] = {
     "list_runs": {"total": 1, "shown": 1, "latest_run_id": "run-1", "runs": [{"run_id": "run-1"}]},
     "list_drift_reports": {"shown": 0, "more_not_shown": False, "reports": []},
     "get_retraining_job": {"job_id": "j1", "status": "pending_approval", "approval_needed": True},
+    "cancel_relabel": {"status": "cancelled", "target": "CASE-000012", "cancelled_label": "short"},
+    "cancel_review": {"status": "cancelled", "target": "CASE-000012", "cancelled_decision": "override"},
+    "withdraw_review": {"status": "withdrawn", "case_number": "CASE-000012"},
+    "reinspect_image": {
+        "verdict": "review_required",
+        "reinspected": True,
+        "defect": {"label": "open", "confidence": 0.64},
+    },
 }
 
 
@@ -135,13 +144,23 @@ def offered_tools(case: Case) -> list[ChatTool]:
 
 
 async def run_case(case: Case, *, provider: str) -> Trace:
+    # The review agent is off by default; a case about reviews runs with it on, prompt and tools.
+    previous = settings.review_agent_enabled
+    settings.review_agent_enabled = previous or "review" in case.tags
+    try:
+        return await _run_case(case, provider=provider)
+    finally:
+        settings.review_agent_enabled = previous
+
+
+async def _run_case(case: Case, *, provider: str) -> Trace:
     trace = Trace()
     tools = [_stub(t, trace) for t in offered_tools(case)]
     turns = [
         ChatTurn.model_validate({"role": role, "content": content}) for role, content in case.history
     ]
     messages = build_messages(
-        CHAT_SYSTEM_PROMPT,
+        compose_system_prompt(None),
         turns,
         case.message,
         image_ids=["eval-image"] if case.image else None,
