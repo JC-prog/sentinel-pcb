@@ -85,14 +85,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model's own label and its ticket is removed in one commit - while it is your own and not yet in a
   retraining plan; once it is in a plan it says so and points to cancelling the plan in the Models
   tab. Work-tab corrections are not touched.
+- Chat: **every inspected image waits as its own draft.** Drafts are now one per conversation, user
+  and image number (before, one per conversation, so a second image replaced the first). Each image
+  from a turn can be corrected, reviewed, explained or saved as a case; a later turn's inspections
+  replace them. **Migration** `b9e2c7d4a518` adds `inspection_drafts.image_number` (existing drafts
+  become image 1), the pending region and review columns on drafts, and `cases.corrected_model` /
+  `pending_model` (existing corrections are backfilled as defect-model corrections).
+- Chat: **`reinspect_image`** runs an image from earlier in the conversation again ("run that again",
+  "check CASE-000123 again") without attaching it again. It saves nothing, and a saved case is not
+  changed.
+- Chat: **correct the region as well as the defect.** `relabel_case` takes `stage="region"` when the
+  part area (Body, Lead, Text) was wrong, or no defect model ran because the region was uncertain.
+  The correction is recorded against `pcb_region` and feeds that model's drift and retraining.
+- Chat: **say no, or take it back.** `cancel_relabel` (and `cancel_review`, when reviews are on)
+  discards your own unconfirmed proposal. `withdraw_review` puts a case you resolved back to awaiting
+  review. A review can also be proposed on an inspection that is not a case yet; confirming it
+  creates the case already resolved.
+- Chat: **a proposal expires.** A relabel or review that is not confirmed within
+  `CHAT_PROPOSAL_TTL_MINUTES` (default 30) can no longer be committed, so a "yes" meant for something
+  else cannot confirm it. The assistant is told to propose it again.
 - Chat: **look up cases.** `get_case` answers "what happened to CASE-000123?" (what the model
   said, any correction and why, a relabel waiting to be confirmed, the retraining ticket) and
   `list_cases` answers "which cases are there for U7 on BOARD-1?" or "what did I correct?" (board,
   component, model, status, corrected, mine; newest 10 with the total). Read-only, QA and Admin,
   behind `CASE_LOOKUP_AGENT_ENABLED`.
 - Chat: **several attached images are all inspected.** Before, only the first was, silently.
-  `inspect_image` takes an `image_number`; the assistant inspects each in turn, the card says "image
-  2 of 3", and it tells the user that only the most recent inspection can be corrected or saved.
+  `inspect_image` takes an `image_number`; the assistant inspects each in turn and the card says
+  "image 2 of 3". Every one of them can then be corrected, saved or explained by passing its
+  `image_number` to the follow-up tool (see the per-image drafts entry below).
 - Chat: when the assistant asks you to confirm or choose in plain text ("Please confirm...",
   "Shall I save it as a case?"), **Yes** and **No** buttons appear under it. A case with no defect
   label (the region was too uncertain) no longer offers "relabel it", and its card and the

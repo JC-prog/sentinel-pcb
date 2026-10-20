@@ -171,6 +171,10 @@ class Settings(BaseSettings):
     # RetrainingTicket is queued. Actual retraining happens on the separate inference server, never
     # here. Kill switch, same pattern as the others.
     relabel_agent_enabled: bool = True
+    # How long a proposed relabel or review stays confirmable (app/chat/services/confirmation.py).
+    # Past this a "yes" no longer commits it - the user has moved on, and an old proposal must not
+    # be committed by a "yes" meant for something else. Proposing again starts a fresh one.
+    chat_proposal_ttl_minutes: int = 30
 
     # Review agent (app/chat/agents/review_agent/) - a QA/Admin approves or overrides a case flagged
     # REVIEW_REQUIRED; after an explicit confirmation the case becomes APPROVED or OVERRIDDEN (the

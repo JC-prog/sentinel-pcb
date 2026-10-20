@@ -37,6 +37,10 @@ ROUNDS_EXHAUSTED = (
     "request?"
 )
 
+# The same tool called with the same arguments this many times in one turn is a loop, not progress:
+# the model is stuck, so the turn is cut off instead of burning the rest of its rounds.
+MAX_IDENTICAL_CALLS = 3
+
 
 @dataclass(frozen=True)
 class TextChunk:
@@ -117,6 +121,8 @@ async def run_turn(
 
     answer = ""
     input_tokens = output_tokens = 0
+    call_counts: dict[str, int] = {}
+    progress: list[str] = []  # one line per finished tool, for the fallback if the turn is cut off
     try:
         # InputAgentState wants list[AnyMessage]; our list[BaseMessage] is the same messages.
         agent_input: Any = {"messages": messages}
@@ -143,23 +149,55 @@ async def run_turn(
                             output_tokens += message.usage_metadata["output_tokens"]
                         if message.tool_calls:
                             for call in message.tool_calls:
+                                signature = json.dumps(
+                                    [call["name"], call["args"]], sort_keys=True, default=str
+                                )
+                                call_counts[signature] = call_counts.get(signature, 0) + 1
+                                if call_counts[signature] >= MAX_IDENTICAL_CALLS:
+                                    raise _ToolLoop
                                 yield ToolStarted(call["name"], _label(by_name, call["name"]))
                         else:
                             answer = str(message.text)
                     elif node == "tools" and isinstance(message, ToolMessage):
                         name = message.name or ""
                         result = str(message.content)
+                        progress.append(_progress_line(by_name.get(name), name, result))
                         yield ToolFinished(name, result, _card(by_name.get(name), result))
-    except GraphRecursionError:
+    except (GraphRecursionError, _ToolLoop):
         if input_tokens or output_tokens:
             yield Usage(input_tokens, output_tokens)
-        yield Answer(ROUNDS_EXHAUSTED, rounds_exhausted=True)
+        yield Answer(_exhausted_text(progress), rounds_exhausted=True)
         return
 
     # Not every provider reports usage; say nothing rather than report zero.
     if input_tokens or output_tokens:
         yield Usage(input_tokens, output_tokens)
     yield Answer(answer)
+
+
+class _ToolLoop(Exception):
+    """The model asked for the same tool call again and again."""
+
+
+def _progress_line(tool: ChatTool | None, name: str, result: str) -> str:
+    label = tool.label if tool else name.replace("_", " ").title()
+    try:
+        payload = json.loads(result)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("error"), str):
+        return f"{label}: {payload['error']}"
+    return f"{label}: done"
+
+
+def _exhausted_text(progress: list[str]) -> str:
+    """The cut-off message, plus what the tools did get through - so the user is not left with
+    nothing after a turn that did real work (a saved record, an error they can act on)."""
+
+    if not progress:
+        return ROUNDS_EXHAUSTED
+    lines = "\n".join(f"- {line}" for line in progress[-5:])
+    return f"{ROUNDS_EXHAUSTED}\n\nWhat did run before I stopped:\n{lines}"
 
 
 def _label(tools: dict[str, ChatTool], name: str) -> str:

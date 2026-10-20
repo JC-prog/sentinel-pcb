@@ -60,6 +60,7 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
     assert set(model.offered) == {
         "relabel_case",
         "confirm_relabel",
+        "cancel_relabel",
         "list_my_corrections",
         "withdraw_correction",
         "report_model_drift",
@@ -70,6 +71,7 @@ def test_the_model_is_offered_every_tool_but_inspect_image_by_default(
         "get_retraining_job",
         "create_case",
         "confirm_label_correct",
+        "reinspect_image",
         "get_sample",
         "get_case",
         "list_cases",
@@ -229,11 +231,14 @@ def test_a_model_that_never_stops_calling_tools_is_cut_off_with_an_apology(
     body = _stream(authenticated_client, "keep calling tools forever")
 
     deltas = [str(data["text"]) for event, data in _parse_sse(body) if event == "delta"]
-    assert "".join(deltas) == (
+    reply = "".join(deltas)
+    assert reply.startswith(
         "I wasn't able to finish that after several tool calls - could you rephrase or "
         "simplify the request?"
     )
-    assert len(model.seen) == settings.chat_tool_max_rounds
+    assert "What did run before I stopped" in reply
+    # The identical call repeated is cut off before the round limit.
+    assert len(model.seen) <= settings.chat_tool_max_rounds
 
     messages = authenticated_client.get("/api/conversations/c1").json()["messages"]
     assert messages[-1]["role"] == "assistant"

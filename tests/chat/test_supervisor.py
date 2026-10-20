@@ -13,6 +13,7 @@ from langchain_core.tools import tool
 
 from app.chat.agents import supervisor
 from app.chat.agents.supervisor import (
+    MAX_IDENTICAL_CALLS,
     ROUNDS_EXHAUSTED,
     Answer,
     SupervisorEvent,
@@ -201,8 +202,23 @@ async def test_a_model_that_never_stops_calling_tools_is_cut_off_after_the_round
 
     events = await _run(monkeypatch, model, [ECHO])
 
-    assert events[-1] == Answer(ROUNDS_EXHAUSTED, rounds_exhausted=True)
-    assert len(model.seen) == settings.chat_tool_max_rounds
+    answer = events[-1]
+    assert isinstance(answer, Answer) and answer.rounds_exhausted
+    assert answer.text.startswith(ROUNDS_EXHAUSTED)
+    assert len(model.seen) <= settings.chat_tool_max_rounds
+
+
+async def test_the_same_call_repeated_is_cut_off_before_the_round_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = always(lambda messages: ai("", ("echo_user", {})))
+
+    events = await _run(monkeypatch, model, [ECHO])
+
+    assert isinstance(events[-1], Answer) and events[-1].rounds_exhausted
+    # What ran before the loop was cut is reported rather than dropped.
+    assert "What did run before I stopped" in events[-1].text
+    assert len(model.seen) == MAX_IDENTICAL_CALLS
 
 
 async def test_a_model_failure_propagates_for_the_caller_to_report(
