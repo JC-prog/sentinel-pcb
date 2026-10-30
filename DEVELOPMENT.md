@@ -11,10 +11,26 @@ bash infra/development/scripts/unix/setup-dev.sh        # macOS/Linux
 powershell -File infra\development\scripts\windows\setup-dev.ps1   # Windows
 ```
 
+The script installs and starts the stack but does not run the test suite; add `--run-checks`
+(`-RunChecks` on Windows) to also run ruff, mypy, pytest and the UI tests.
+
 [`ONBOARDING.md`](ONBOARDING.md) is the exact step-by-step: software to install first, what the
 script does, the one `.env` value you may need to set (`OPENAI_API_KEY`), how to run and
 verify the app, per-section extras, and troubleshooting. Re-run the setup script any time after
 pulling changes; it's idempotent.
+
+Start from a clean slate (deletes this project's local Postgres, Qdrant and upload/run/log data -
+asks first; `--dry-run` / `-DryRun` shows what it would do):
+
+```bash
+bash scripts/reset-dev.sh                       # macOS/Linux
+powershell -File scripts\reset-dev.ps1          # Windows
+```
+
+By default it removes this project's Docker volumes and rebuilds an empty, migrated database. Add
+`--keep-stack` / `-KeepStack` to keep the containers running and empty Postgres and Qdrant in place
+(this keeps the IPC standards index, which costs embeddings to rebuild; `--include-standards` /
+`-IncludeStandards` drops it too). The first user you register afterwards becomes Admin.
 
 Sanity check before writing anything:
 

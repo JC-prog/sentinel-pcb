@@ -33,13 +33,25 @@ export interface InspectionResult {
   /** Which of several attached images this is (1-based), and how many were attached. */
   image_number?: number;
   images_attached?: number;
+  /** reinspect_image: this ran again on an image from earlier in the conversation. */
+  reinspected?: boolean;
+  /** The case whose image was re-inspected (the case itself is unchanged). */
+  from_case?: string;
+  /** Why an attached inspection XML was not used for this image. */
+  xml_note?: string;
 }
+
+/** Which classifier a correction is of: the defect model, or the region model (pcb_region). */
+export type CorrectionStage = 'defect' | 'region';
 
 /** relabel_case: a correction waiting for the user's confirmation - nothing is saved yet. */
 export interface RelabelProposal {
   status: 'awaiting_confirmation';
   /** Null when the inspection is not a case yet: confirming creates it. */
   case_number: string | null;
+  /** Which of several images inspected in one turn, when it is not a case yet. */
+  image_number?: number | null;
+  stage?: CorrectionStage;
   model: string;
   model_label: string;
   proposed_label: string;
@@ -52,16 +64,28 @@ export interface RelabelDone {
   case_number: string;
   /** True when confirming the relabel is what saved the inspection as a new case. */
   case_created?: boolean;
+  stage?: CorrectionStage;
   model: string;
   model_label: string;
   corrected_label: string;
   ticket_id: string;
 }
 
+/** cancel_relabel / cancel_review: a proposal the user declined was discarded - nothing saved. */
+export interface ProposalCancelled {
+  status: 'cancelled';
+  /** What it was about: a case number, or "image 2" for an inspection not saved as a case. */
+  target: string;
+  cancelled_label?: string;
+  cancelled_decision?: 'approve' | 'override';
+}
+
 /** review_case: an approve/override waiting for the user's confirmation - nothing is saved yet. */
 export interface ReviewProposal {
   status: 'awaiting_confirmation';
-  case_number: string;
+  /** Null when the inspection is not a case yet: confirming creates it, already reviewed. */
+  case_number: string | null;
+  image_number?: number | null;
   model_label: string | null;
   decision: 'approve' | 'override';
   note: string | null;
@@ -71,6 +95,8 @@ export interface ReviewProposal {
 export interface ReviewDone {
   status: 'reviewed';
   case_number: string;
+  /** True when confirming the review is what saved the inspection as a new case. */
+  case_created?: boolean;
   model_label: string | null;
   decision: 'approve' | 'override';
   case_status: 'approved' | 'overridden';
@@ -109,21 +135,27 @@ export interface Explanation {
 
 export type ToolResult =
   | { name: 'inspect_image'; result: InspectionResult }
+  | { name: 'reinspect_image'; result: InspectionResult }
   | { name: 'explain_inspection'; result: Explanation }
   | { name: 'create_case'; result: CaseCreated }
   | { name: 'relabel_case'; result: RelabelProposal }
   | { name: 'confirm_relabel'; result: RelabelDone }
   | { name: 'review_case'; result: ReviewProposal }
-  | { name: 'confirm_review'; result: ReviewDone };
+  | { name: 'confirm_review'; result: ReviewDone }
+  | { name: 'cancel_relabel'; result: ProposalCancelled }
+  | { name: 'cancel_review'; result: ProposalCancelled };
 
 export const TOOL_RESULT_NAMES: readonly ToolResult['name'][] = [
   'inspect_image',
+  'reinspect_image',
   'explain_inspection',
   'create_case',
   'relabel_case',
   'confirm_relabel',
   'review_case',
   'confirm_review',
+  'cancel_relabel',
+  'cancel_review',
 ];
 
 export interface ChatMessage {

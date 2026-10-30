@@ -30,7 +30,7 @@ resource "aws_db_instance" "main" {
   publicly_accessible = false
 
   multi_az                = false # single-AZ - cost over availability, revisit if this needs HA
-  backup_retention_period = 7
+  backup_retention_period = var.db_backup_retention_days
   skip_final_snapshot     = true # acceptable for this stage; revisit before this holds real data
 }
 

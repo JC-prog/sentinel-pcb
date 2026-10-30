@@ -56,13 +56,17 @@ async def record(
 
 
 async def latest_for(
-    session: AsyncSession, *, conversation_id: str, user_id: str
+    session: AsyncSession, *, conversation_id: str, user_id: str, image_id: str | None = None
 ) -> InspectionLog | None:
+    """The latest inspection in the conversation - of `image_id`, when one of several is meant."""
+
+    stmt = select(InspectionLog).where(
+        InspectionLog.conversation_id == conversation_id, InspectionLog.user_id == user_id
+    )
+    if image_id is not None:
+        stmt = stmt.where(InspectionLog.image_id == image_id)
     row: InspectionLog | None = await session.scalar(
-        select(InspectionLog)
-        .where(InspectionLog.conversation_id == conversation_id, InspectionLog.user_id == user_id)
-        .order_by(InspectionLog.created_at.desc())
-        .limit(1)
+        stmt.order_by(InspectionLog.created_at.desc()).limit(1)
     )
     return row
 
@@ -76,11 +80,14 @@ class CannotConfirm(Exception):
 
 
 async def confirm_correct(
-    session: AsyncSession, *, conversation_id: str, user_id: str
+    session: AsyncSession, *, conversation_id: str, user_id: str, image_id: str | None = None
 ) -> InspectionLog:
-    """Records that the person looked at the latest inspection and the model's label was right."""
+    """Records that the person looked at the latest inspection (of `image_id`, when one of several
+    is meant) and the model's label was right."""
 
-    row = await latest_for(session, conversation_id=conversation_id, user_id=user_id)
+    row = await latest_for(
+        session, conversation_id=conversation_id, user_id=user_id, image_id=image_id
+    )
     if row is None:
         raise CannotConfirm(
             "there is no inspection in this conversation to confirm - inspect an image first."

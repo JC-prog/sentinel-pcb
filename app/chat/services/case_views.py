@@ -37,6 +37,8 @@ class CaseSummaryOut(BaseModel):
     defect_label: str | None
     defect_confidence: float | None
     corrected_label: str | None
+    # Which model the correction is of (the defect model, or pcb_region).
+    corrected_model: str | None
     created_by: str | None
     created_at: datetime
 
@@ -61,6 +63,7 @@ class CaseDetailOut(CaseSummaryOut):
     # A relabel proposed in chat and not yet confirmed.
     pending_label: str | None
     pending_reason: str | None
+    pending_model: str | None
     ticket: CaseTicketOut | None
     # Only set for the user who owns the conversation: it is theirs to open.
     conversation_id: str | None
@@ -83,7 +86,10 @@ def _filters(
     board: str | None = None,
     component: str | None = None,
     created_by_user_id: str | None = None,
+    since: datetime | None = None,
 ) -> Select[Any]:
+    if since is not None:
+        stmt = stmt.where(Case.created_at >= since)
     if board:
         stmt = stmt.where(Case.board_id.ilike(board.strip()))
     if component:
@@ -132,6 +138,7 @@ def _summary(case: Case, names: dict[str, str]) -> CaseSummaryOut:
         defect_label=case.defect_label,
         defect_confidence=case.defect_confidence,
         corrected_label=case.corrected_label,
+        corrected_model=(case.corrected_model or case.defect_model) if case.corrected_label else None,
         created_by=names.get(case.created_by_user_id),
         created_at=case.created_at,
     )
@@ -147,6 +154,7 @@ async def list_cases(
     board: str | None = None,
     component: str | None = None,
     created_by_user_id: str | None = None,
+    since: datetime | None = None,
     limit: int = 25,
     offset: int = 0,
 ) -> CaseListOut:
@@ -161,6 +169,7 @@ async def list_cases(
         board=board,
         component=component,
         created_by_user_id=created_by_user_id,
+        since=since,
     )
     total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
     cases = list(
@@ -220,6 +229,7 @@ async def get_case_detail(
         resolution_note=case.resolution_note,
         pending_label=case.pending_label,
         pending_reason=case.pending_reason,
+        pending_model=(case.pending_model or case.defect_model) if case.pending_label else None,
         ticket=(
             CaseTicketOut(
                 id=ticket.id,

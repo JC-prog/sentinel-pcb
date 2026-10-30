@@ -1,6 +1,6 @@
 variable "aws_region" {
   type    = string
-  default = "us-east-1"
+  default = "ap-southeast-1"
 }
 
 variable "project_name" {
@@ -81,6 +81,12 @@ variable "openai_api_key" {
   description = "OpenAI API key the backend calls api.openai.com with. Required - supply via a non-committed *.tfvars or TF_VAR_openai_api_key. Never appears in an output or a plain task-def env var; stored only in the sentinelchat/openai secret."
   type        = string
   sensitive   = true
+}
+
+variable "db_backup_retention_days" {
+  description = "Days RDS keeps automated backups. 1 is the most an AWS free-plan account may use (a higher value is refused with FreeTierRestrictionError); with skip_final_snapshot and a stack meant to be destroyed, backups are not what protects this data. Raise it on a paid plan for anything longer-lived."
+  type        = number
+  default     = 1
 }
 
 variable "db_instance_class" {

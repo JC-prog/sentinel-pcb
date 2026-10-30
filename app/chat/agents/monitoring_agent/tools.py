@@ -29,19 +29,24 @@ def _window_days(window_days: int | None) -> int:
 @returns_json
 async def get_drift_summary(
     runtime: Runtime,
-    model: Annotated[str, _MODEL],
+    model: Annotated[str | None, _MODEL + " Omit to get every model at once."] = None,
     window_days: Annotated[int | None, _WINDOW] = None,
 ) -> dict[str, Any]:
     """Shows whether corrections to a model are piling up: how many confirmed corrections it got in
     the recent window against the window before, split by model version, and where the automatic
-    drift-report threshold is. It counts corrections people made, NOT the model's error rate - say
-    so, and for how a run did use get_run_drift. The result's `chat` block gives how many images chat
-    inspected, how many were corrected and how many a person confirmed right, for the same window. Read-only, and the first thing to call for any
-    'is the model getting worse?' question - use it before reporting drift or planning a retrain."""
+    drift-report threshold is. Without a model it gives a shorter summary for every model, most
+    corrected first - use that for 'are the models getting worse?' when no model is named. It
+    counts corrections people made, NOT the model's error rate - say so, and for how a run did use
+    get_run_drift. The `chat` block gives how many images chat inspected, how many were corrected
+    and how many a person confirmed right, for the same window. Read-only, and the first thing to
+    call for any 'is the model getting worse?' question - use it before reporting drift or planning
+    a retrain."""
 
-    return await service.drift_overview(
-        runtime.context.session, required(model, "model"), days=_window_days(window_days)
-    )
+    days = _window_days(window_days)
+    name = text(model)
+    if not name:
+        return await service.drift_overview_all(runtime.context.session, days=days)
+    return await service.drift_overview(runtime.context.session, name, days=days)
 
 
 @tool("report_model_drift")

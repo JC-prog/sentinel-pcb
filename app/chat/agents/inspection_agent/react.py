@@ -92,8 +92,8 @@ async def run_react_pass(run: InspectionRun, *, question: str | None = None) -> 
     except GraphRecursionError:
         run.note("LLM-driven inspection stopped: tool-call budget exhausted.")
         return None
-    except Exception as exc:  # noqa: BLE001 - the LLM pass is best-effort by design (see docstring)
-        logger.warning("LLM-driven inspection pass failed; continuing deterministically: %s", exc)
+    except Exception as exc:
+        logger.warning("LLM-driven inspection pass failed; continuing deterministically: %s", exc, exc_info=True)
         run.note("LLM-driven inspection pass failed; the remaining steps ran deterministically.")
         return None
 

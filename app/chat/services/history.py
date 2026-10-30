@@ -43,7 +43,43 @@ async def load_history(
     of this window - only what gets sent to the LLM is trimmed."""
 
     messages = await repository.get_recent_messages(session, conversation_id, limit=max_turns)
-    return [ChatTurn(role=m.role, content=m.content) for m in messages]  # type: ignore[arg-type]
+    return [
+        ChatTurn(role=m.role, content=_with_tool_note(m))  # type: ignore[arg-type]
+        for m in messages
+    ]
+
+
+# The facts of a card worth carrying into a later turn, in the order they read best.
+_CARD_FACTS = (
+    "case_number",
+    "status",
+    "verdict",
+    "model_label",
+    "proposed_label",
+    "corrected_label",
+    "decision",
+    "case_status",
+)
+
+
+def _with_tool_note(message: Message) -> str:
+    """An assistant turn plus a one-line note of the cards its tools produced. History replays only
+    text, so without this the model forgets the case number or proposal a tool returned unless it
+    happened to repeat it in prose - and a follow-up ("who reviewed it?") has nothing to anchor on."""
+
+    if message.role != "assistant" or not message.tool_results:
+        return message.content
+    notes = []
+    for card in message.tool_results:
+        result = card.get("result")
+        if not isinstance(result, dict):
+            continue
+        facts = [f"{key}={result[key]}" for key in _CARD_FACTS if result.get(key) not in (None, "")]
+        if facts:
+            notes.append(f"{card.get('name', 'tool')}({', '.join(facts)})")
+    if not notes:
+        return message.content
+    return f"{message.content}\n\n[Earlier tool results this turn: {'; '.join(notes)}]"
 
 
 async def append_message(

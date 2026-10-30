@@ -348,10 +348,13 @@ export class Chat {
           return result.defect ? [`The label on case ${result.case_number} is wrong - relabel it.`] : [];
         }
         case 'inspect_image':
+        case 'reinspect_image':
           return [
             ...(result.explain_available ? ['Explain this result.'] : []),
             ...(result.defect ? ['The label is right.'] : []),
-            "The model's defect label is wrong - I'll tell you the right one.",
+            result.defect
+              ? "The model's defect label is wrong - I'll tell you the right one."
+              : "The region is wrong - I'll tell you the right one.",
             'Open a case for this inspection.',
             result.review_required
               ? 'Why was this flagged for review?'
@@ -364,7 +367,9 @@ export class Chat {
         case 'relabel_case':
           return ['Yes, confirm the relabel.', "No, cancel it - keep the model's label."];
         case 'confirm_relabel':
-          return ['Is the defect model drifting?'];
+          return [result.stage === 'region' ? 'Is the region model drifting?' : 'Is the defect model drifting?'];
+        case 'review_case':
+          return ['Yes, confirm the review.', 'No, cancel it.'];
         default:
           return [];
       }

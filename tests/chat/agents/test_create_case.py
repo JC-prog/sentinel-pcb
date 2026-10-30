@@ -250,10 +250,11 @@ async def test_deleting_the_conversation_discards_its_waiting_inspection(
     assert await _draft_rows(db_async_session) == []
 
 
-def test_creating_a_case_takes_no_arguments_from_the_model() -> None:
-    """What gets saved is whatever inspect_image found - the model cannot supply or alter it."""
+def test_creating_a_case_takes_no_data_from_the_model() -> None:
+    """What gets saved is whatever inspect_image found - the model cannot supply or alter it. Its
+    one argument only picks which of the images inspected in the latest turn."""
 
-    assert CREATE_CASE.model_schema().get("properties", {}) == {}
+    assert set(CREATE_CASE.model_schema().get("properties", {})) == {"image_number"}
 
 
 # --- end to end through the supervisor ----------------------------------------------------------

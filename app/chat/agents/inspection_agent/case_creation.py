@@ -32,9 +32,16 @@ _REFUSALS = {
 
 @traced("case-create")
 async def create_from_draft(
-    session: AsyncSession, *, conversation_id: str, user_id: str, turn_started_at: datetime
+    session: AsyncSession,
+    *,
+    conversation_id: str,
+    user_id: str,
+    turn_started_at: datetime,
+    image_number: int | None = None,
 ) -> Case:
-    draft = await drafts.get_draft(session, conversation_id=conversation_id, user_id=user_id)
+    draft = await drafts.get_draft(
+        session, conversation_id=conversation_id, user_id=user_id, image_number=image_number
+    )
 
     problem = confirmation_problem(
         pending_at=draft.created_at if draft else None,
@@ -46,16 +53,23 @@ async def create_from_draft(
         raise CaseRefused(_REFUSALS[problem or ConfirmationProblem.NOTHING_PENDING])
 
     payload = dict(draft.payload)
-    pending = (draft.pending_label, draft.pending_reason)
+    relabel = (draft.pending_model, draft.pending_label, draft.pending_reason)
+    review = (draft.pending_resolution, draft.pending_resolution_note)
     await session.delete(draft)  # create_case commits, so the draft goes in the same transaction
     case = await cases.create_case(
         session, created_by_user_id=user_id, conversation_id=conversation_id, **payload
     )
-    if pending[0]:
-        # A relabel was already proposed on this inspection: keep it, now on the Case, so the user
-        # confirms it in a later turn rather than being asked to propose it again.
-        case.pending_label, case.pending_reason = pending[0], pending[1]
-        case.pending_by_user_id, case.pending_at = user_id, datetime.now(UTC)
+    if relabel[1] or review[0]:
+        # A relabel or review was already proposed on this inspection: keep it, now on the Case, so
+        # the user confirms it in a later turn rather than being asked to propose it again. It is
+        # stamped now, so the "yes" that created the case cannot also commit it.
+        now = datetime.now(UTC)
+        if relabel[1]:
+            case.pending_model, case.pending_label, case.pending_reason = relabel
+            case.pending_by_user_id, case.pending_at = user_id, now
+        if review[0]:
+            case.pending_resolution, case.pending_resolution_note = review
+            case.pending_resolution_by_user_id, case.pending_resolution_at = user_id, now
         await session.commit()
         await session.refresh(case)
     return case

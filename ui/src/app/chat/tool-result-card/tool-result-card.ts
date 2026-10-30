@@ -3,6 +3,7 @@ import {
   CaseCreated,
   Explanation,
   InspectionResult,
+  ProposalCancelled,
   RelabelDone,
   RelabelProposal,
   ReviewDone,
@@ -25,7 +26,7 @@ export class ToolResultCard {
 
   protected readonly inspection = computed<InspectionResult | null>(() => {
     const t = this.toolResult();
-    return t.name === 'inspect_image' ? t.result : null;
+    return t.name === 'inspect_image' || t.name === 'reinspect_image' ? t.result : null;
   });
 
   protected readonly explanation = computed<Explanation | null>(() => {
@@ -57,6 +58,24 @@ export class ToolResultCard {
     const t = this.toolResult();
     return t.name === 'confirm_review' ? t.result : null;
   });
+
+  protected readonly cancelled = computed<ProposalCancelled | null>(() => {
+    const t = this.toolResult();
+    return t.name === 'cancel_relabel' || t.name === 'cancel_review' ? t.result : null;
+  });
+
+  /** What a relabel corrects, for the card's heading: "Region" or "Defect label". */
+  protected stageLabel(stage: string | undefined): string {
+    return stage === 'region' ? 'Region' : 'Defect label';
+  }
+
+  /** What a proposal is about when it is not a case yet: "image 2", or "this inspection". */
+  protected subject(caseNumber: string | null, imageNumber: number | null | undefined): string {
+    if (caseNumber) {
+      return caseNumber;
+    }
+    return imageNumber ? `image ${imageNumber}` : 'this inspection';
+  }
 
   /** What a decision means, for the card's wording. */
   protected meaning(decision: 'approve' | 'override'): string {
